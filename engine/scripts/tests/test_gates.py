@@ -181,6 +181,38 @@ def test_fixtures_no_operator_abs_paths():
 
 
 # ---------------------------------------------------------------------------
+# 1d-placement (spec 103 §1) — working documents are DATA, and the tree enforces it.
+# ---------------------------------------------------------------------------
+# Specs, plans, research, audits — working documents: private by audience, owned by the instance,
+# not shipped (spec 103 §4). They live in DATA (`.conclave/ops/`). CODE's `docs/` holds exactly one
+# thing: *descriptive* architecture, which is shipped canon.
+#
+# Prose alone cannot hold this line: `superpowers:writing-plans` hardcodes a save path of
+# `docs/superpowers/plans/`, and an agent following that skill will recreate the tree without ever
+# reading a rule that forbids it. So the rule is a gate — a stray working doc in CODE fails the
+# suite, which is the one instruction an agent cannot skim past.
+#
+# Allow-list, not deny-list: a deny-list only catches the trees we already know about, and the
+# failure mode here is a *new* name (`docs/plans/`, `docs/design/`) nobody thought to forbid.
+_DOCS_ALLOWED = {"architecture"}
+
+
+def test_working_docs_not_in_code():
+    docs = REPO_ROOT / "docs"
+    assert docs.is_dir(), "docs/ absent — the placement gate has nothing to check"
+    strays = sorted(
+        p.name for p in docs.iterdir()
+        if not p.name.startswith(".") and p.name not in _DOCS_ALLOWED
+    )
+    assert not strays, (
+        "placement gate FAIL — working documents in the CODE repo: docs/"
+        + ", docs/".join(strays)
+        + "\nWorking docs are DATA. Specs and plans: .conclave/ops/specs/<NNN-slug>/{spec,plan}.md"
+        + "\nCODE's docs/ ships descriptive architecture only."
+    )
+
+
+# ---------------------------------------------------------------------------
 # 1c. Publication gate (#83) — machine-local wiring must be gitignored, never committable.
 # ---------------------------------------------------------------------------
 # `.claude/settings.json` holds resolved absolute machine paths and is regenerated per-machine by
@@ -207,6 +239,34 @@ def test_machine_local_settings_are_gitignored():
             offenders.append(f"{rel} — already tracked; gitignore alone will not untrack it")
     assert not offenders, "publication gate FAIL — machine-local wiring is committable:\n" + "\n".join(
         offenders
+    )
+
+
+# ---------------------------------------------------------------------------
+# 1d. Instance-data gate (spec 103 §4) — DATA must never be tracked in CODE.
+# ---------------------------------------------------------------------------
+# Hired advisors, proof-instances and the instance's own identity doc are DATA per the
+# instance contract §4 — they were tracked in CODE until W3, which was a contract violation
+# the tree could not detect. Asked of `git ls-files` rather than of `.gitignore`, because
+# gitignore does not untrack what is already in the index: the two disagree exactly when it
+# matters.
+_INSTANCE_DATA_PATHS = (".claude", "instances", "project-context.md")
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not on PATH")
+def test_instance_data_not_tracked_in_code():
+    if _git("rev-parse", "--is-inside-work-tree").returncode != 0:
+        pytest.skip("not a git work tree")
+    tracked = [
+        line
+        for rel in _INSTANCE_DATA_PATHS
+        for line in _git("ls-files", "--", rel).stdout.splitlines()
+        if line
+    ]
+    assert not tracked, (
+        "instance-data gate FAIL — DATA is tracked in the CODE repo:\n  "
+        + "\n  ".join(tracked)
+        + "\nHired advisors live in .conclave/.claude/; .claude/{agents,skills} hold symlinks."
     )
 
 

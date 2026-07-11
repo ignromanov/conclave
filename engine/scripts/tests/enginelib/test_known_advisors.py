@@ -6,7 +6,6 @@ layout WITHOUT relying on CLAUDE_PROJECT_DIR, excluding forge (META) + exec-*.
 No hardcoded CANONICAL_ADVISORS fallthrough.
 """
 
-import pytest
 
 from enginelib.advisors import known_advisors
 

@@ -137,8 +137,10 @@ reasoning — creating wrong-domain hallucination pressure from session one.
 The correct flow:
 1. Consumer initialises Conclave with their own `project-context.md` + `constitution.md`.
 2. Consumer runs Forge's `hire` protocol for each advisor role needed.
-3. Forge generates a fresh advisor from the `templates/skill-frontmatter.md` scaffold, with
-   a blank biographical well and scope calibrated to the project.
+3. Forge generates a fresh advisor from the `templates/{agent-frontmatter,advisor-router,personality}.md`
+   scaffolds, with a blank biographical well and scope calibrated to the project.
+   (`templates/skill-frontmatter.md` describes an older `team.<id>/SKILL.md` shape that the create
+   path no longer reads — see #98.)
 4. VoidPay's advisory lineup ships as the `advisor-template-pack` — a starter set of
    persona blueprints (voice cadence only, domain-neutral) that a consumer can customise.
 

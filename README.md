@@ -154,8 +154,8 @@ so wrong lessons are demoted, never reinforced.
 <details>
 <summary><b>Architecture & design rationale</b></summary>
 
-Start with [`VISION.md`](VISION.md), then [`project-context.md`](project-context.md) (canonical
-identity loaded by every agent at session start) and [`constitution.md`](constitution.md) (binding
+Start with [`VISION.md`](VISION.md), then your instance's `project-context.md` (canonical identity;
+`/conclave:init` scaffolds it into `.conclave/`) and [`constitution.md`](constitution.md) (binding
 governance principles). The seven architecture principles — file-as-message-bus · cache-over-truth ·
 mandatory lifecycle · spec-driven · confidence-graduated authority · never-silent-delete ·
 guardrails-as-first-class — are defined in `VISION.md` §6.
@@ -172,12 +172,13 @@ plugin (spec 098). VoidPay remains the proving ground, not the parent.
 | Area               | Doc                                                                                                                                                                                                                                                                                       |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Architecture**   | [`overview`](docs/architecture/overview.md) · [`engine-modules`](docs/architecture/engine-modules.md) · [`roster-and-forge`](docs/architecture/roster-and-forge.md) · [`memory-and-knowledge`](docs/architecture/memory-and-knowledge.md) · [`lifecycle`](docs/architecture/lifecycle.md) |
-| **Implementation** | [`implementation`](docs/implementation.md) — current state, inventory, maturity                                                                                                                                                                                                           |
-| **Functionality**  | [`functionality`](docs/functionality.md) — end-to-end capability catalog                                                                                                                                                                                                                  |
-| **Product**        | [`positioning`](docs/product/positioning.md) · [`productization-path`](docs/product/productization-path.md) — AaaS/SaaS, Track B                                                                                                                                                          |
-| **Migration**      | [`extraction-plan`](docs/migration/extraction-plan.md) · [`bootstrap`](docs/migration/bootstrap.md) — how the engine moves + how a fresh roster is hired                                                                                                                                  |
-| **Research**       | [`migration-bootstrap`](docs/research/migration-bootstrap.md) (R1–R5 digest) · [`_mirror/`](docs/research/_mirror/) (source material)                                                                                                                                                     |
-| **Specs**          | [`docs/specs/`](docs/specs/) — packaging (098), the self-healing closing loop (093)                                                                                                                                                                                                       |
+| **Functionality**  | [`functionality`](docs/architecture/functionality.md) — end-to-end capability catalog                                                                                                                                                                                                     |
+| **Contract**       | [`instance-contract`](docs/architecture/instance-contract.md) · [`SCHEMA`](docs/architecture/SCHEMA.md) — what an instance owes the engine, and the file schemas                                                                                                                          |
+
+Working documents — specs, plans, research, product and migration notes — are **not** shipped: they
+are the instance's own record and live in its private DATA tree (`.conclave/ops/`). `docs/` here
+carries descriptive architecture only, and a gate enforces it
+(`engine/scripts/tests/test_gates.py::test_working_docs_not_in_code`).
 
 ---
 
@@ -192,5 +193,5 @@ businesses as a product.
 
 ## Status & License
 
-**Status**: packaged and installable (v0.1.0); design doc-set captured 2026-06-11. No license file is
-set yet — treat as private during the in-place phase.
+**Status**: packaged and installable (v0.1.0); design doc-set captured 2026-06-11.
+**License**: [MIT](LICENSE).

@@ -10,33 +10,47 @@ task-scoped executors + a mandatory lifecycle + an append-only memory + a feedba
 its own items and rewrites its own agents. It ships as a **clean, general-purpose distribution** —
 the engine + the always-present meta-role (Forge); the domain roster is **hired fresh per project**.
 
-Read [`VISION.md`](VISION.md) first, then [`project-context.md`](project-context.md) (project
-identity, loaded by every agent at session start) and [`constitution.md`](constitution.md) (binding
-governance principles). The full doc-set — architecture, implementation, functionality, product,
-migration — lives under [`docs/`](docs/) (index in [`README.md`](README.md)); the R1–R5 research
-digest is [`docs/research/migration-bootstrap.md`](docs/research/migration-bootstrap.md).
+Read [`VISION.md`](VISION.md) first, then `.conclave/project-context.md` (this instance's identity
+— DATA, scaffolded by `/conclave:init`) and [`constitution.md`](constitution.md) (binding
+governance principles). The shipped doc-set — descriptive architecture — lives under
+[`docs/architecture/`](docs/architecture/) (index in [`README.md`](README.md)).
 
-## Where things live (during the in-place phase)
+## Where you write things — CODE vs DATA (spec 103)
 
-The implementation is **still inside VoidPay's `.ai/`** and is being captured here before extraction
-(codec precedent 056: build in-place, extract at maturity).
+This checkout is **two repos**. The split is by *audience*, not by language:
 
-| Concern | Current home (VoidPay `.ai/`) | Conclave target |
-|---------|-------------------------------|-----------------|
-| Lifecycle skills | `.claude/skills/team.{start,processing,done,handoff,forge}` | `engine/lifecycle/` |
-| Advisor/executor personas | `.claude/skills/{team,exec}.*/` | `engine/roster/` |
-| Feedback substrate | `.claude/skills/team.forge/scripts/feedback/` | `engine/feedback/` |
-| Memory | `.ai/agent-memory/` | `engine/memory/` |
-| Specs (049/051/084/085/086/089/090/091/093) | migrated — no longer in `.ai/` | **`docs/specs/` (self-contained)** |
+| | CODE — this repo | DATA — `.conclave/` (separate repo) |
+|---|---|---|
+| **Holds** | the engine, skills, agents, commands, tests, and descriptive `docs/architecture/` | everything this instance *works on and remembers* |
+| **Audience** | anyone who installs Conclave | the operator |
+| **You write here** | code, tests, shipped docs | **specs, plans, research, decisions, feedback, handoffs, memory** |
+
+**Specs and plans go in DATA. Always.**
+
+- Spec → `.conclave/ops/specs/<NNN-slug>/spec.md`
+- Its plan → `.conclave/ops/specs/<NNN-slug>/plan.md` (beside the spec — *not* a separate plans tree)
+- Its research → `.conclave/ops/specs/<NNN-slug>/research.md`
+- Every spec must be listed in [`.conclave/ops/specs/REGISTRY.md`](.conclave/ops/specs/REGISTRY.md)
+  the moment it exists, or `engine audit specs-registry` reports it untraced.
+
+This **overrides the `superpowers:writing-plans` default** of `docs/superpowers/plans/`. That skill
+does not know about this project's two-repo split; when it tells you to save a plan under `docs/`,
+save it beside its spec in DATA instead. `docs/` in CODE holds `architecture/` and nothing else —
+`tests/test_gates.py::test_working_docs_not_in_code` fails the suite if a working doc lands there.
 
 ## Origin specs (read for canon before redesigning anything)
+
+All of them live in `.conclave/ops/specs/<NNN-slug>/spec.md`; the full list with statuses is
+[`REGISTRY.md`](.conclave/ops/specs/REGISTRY.md).
 
 - **086** unified feedback (notebook) · **084** briefings · **049** forge (agent factory)
 - **085** lifecycle simplification · **051** memory architecture
 - **089** autonomous pipeline + oracle/verifier signal
 - **090** self-improvement L2/L3 (oracle-falsified lesson acquisition) — stub
 - **091** deontic duty model (roster engine, Track-B spin-out unit) — design-locked
-- **093** self-healing closing loop — proposed (first Conclave component)
+- **093** self-healing closing loop — in-progress (P1 + P2 merged; the first Conclave component)
+- **103** two-repo CODE/DATA split — in-progress (the layout this file describes)
+- **104** constitution protocol — proposed (P0 efficacy gate planned, unbuilt)
 
 ## Working principles
 

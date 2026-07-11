@@ -84,7 +84,6 @@ def main(argv: list[str] | None = None) -> int:
     # Import here so startup is fast for --help / bad advisor names.
     from briefing import paths, render
     from briefing.render import _generated_at  # noqa: PLC2701
-    from enginelib.paths import advisor_skill_dir  # #48 prefix-tolerant SKILL dir
     from briefing.scans import (
         ScanCtx,
         closeability,
@@ -104,6 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         sessions,
         spec_progress,
     )
+    from enginelib.paths import advisor_skill_dir  # #48 prefix-tolerant SKILL dir
 
     root = paths.repo_root()
     ctx = ScanCtx(

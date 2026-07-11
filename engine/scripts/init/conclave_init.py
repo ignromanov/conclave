@@ -21,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 ENGINE = ROOT / "engine"
 HOOK_SCRIPT = ROOT / "hooks" / "sessionstart-conclave.py"
-OBSIDIAN_SRC = ROOT / ".obsidian"
+OBSIDIAN_SRC = ROOT / "engine" / "templates" / "obsidian"
 OBSIDIAN_FILES = ("app.json", "appearance.json", "core-plugins.json")
 
 NONINTERACTIVE = os.environ.get("CONCLAVE_INIT_NONINTERACTIVE") == "1"
@@ -137,6 +137,26 @@ def write_roster(data: Path, name: str, owner: str) -> bool:
     return True
 
 
+def write_project_context(data: Path, name: str) -> bool:
+    """Write the project-context.md stub roster.yaml:context_path points at (spec 103 §4).
+
+    Idempotent — skip if present. Without it, every fresh instance carries a roster
+    whose context_path names a file that nothing ever created.
+    """
+    context = data / "project-context.md"
+    if context.exists():
+        return False
+    context.write_text(
+        f"# {name} — Project Context\n\n"
+        "> Canonical identity of this instance. Advisors read it for what the project *is*;\n"
+        "> the engine never writes here. Fill it in — the scaffold is deliberately empty.\n\n"
+        "## What this project is\n\n_(one paragraph — the problem, not the solution)_\n\n"
+        "## Domain vocabulary\n\n_(terms an advisor must not get wrong)_\n\n"
+        "## Constraints\n\n_(what the project will not trade away)_\n"
+    )
+    return True
+
+
 def scaffold_wiki(data: Path, name: str) -> None:
     """Copy obsidian config (minus volatile workspace.json) + write a config stub."""
     obsidian_dst = data / "wiki" / ".obsidian"
@@ -241,6 +261,7 @@ def main() -> int:
     scaffold_tree(data)
     gitignore_written = write_gitignore(data)
     roster_written = write_roster(data, name, owner)
+    context_written = write_project_context(data, name)
     scaffold_wiki(data, name)
 
     sys.path.insert(0, str(ENGINE / "scripts"))
@@ -259,6 +280,7 @@ def main() -> int:
     print(f"  .gitignore     : {'written' if gitignore_written else 'kept (exists)'}"
           f"  ({data / '.gitignore'})")
     print(f"  roster.yaml    : {'written' if roster_written else 'kept (exists)'}")
+    print(f"  project-context: {'written' if context_written else 'kept (exists)'}")
     print(f"  wiki vault     : {data / 'wiki'}")
     print(f"  advisor minted : {'advisor' if minted else 'kept (exists)'}"
           f"  ({project / '.claude/agents' / (DEFAULT_ADVISOR_ID + '.md')})")

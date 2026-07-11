@@ -205,7 +205,6 @@ def test_set_verify_attaches_predicate(tmp_path):
                                  "--file", "foo.py", "--pattern", "BUG"])
     assert res.returncode == 0, res.stderr
     from briefing.frontmatter_io import read_commented
-
     from feedback.schema import Review
     meta2, _ = read_commented(path)
     item = next(i for i in meta2["items"] if i["id"] == "i1")

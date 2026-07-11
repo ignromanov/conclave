@@ -18,16 +18,18 @@ __pycache__/
 **/agent-memory/git-cache/
 **/agent-memory/run-log/
 
-# test pollution: env-less feedback tests resolve repo_root() to the repo root
-# (which now has ops/ via ops/SCHEMA.md, 098 D-5) and write here. Real feedback data
-# lives under instances/<project>/ops/feedback/, not the repo root.
+# test pollution: env-less feedback tests resolve repo_root() to the repo root and
+# write here. Real feedback data lives in DATA, at .conclave/ops/feedback/.
 /ops/feedback/
 
-# Obsidian live UI state (rewritten by the app; not source)
-.obsidian/workspace.json
+# hired advisors are DATA (spec 103 §4): the real files live in .conclave/.claude/,
+# and .claude/{agents,skills} hold per-item symlinks back to them.
+.claude/agents/
+.claude/skills/
 
-# Transient per-instance agent scratch (subagent reports, working notes)
-instances/*/ops/scratch/
+# Obsidian rewrites workspace.json live (open files, pane layout). The vault template
+# ships the three config files only — conclave_init.py:OBSIDIAN_FILES.
+engine/templates/obsidian/workspace.json
 
 # feature worktrees + SDD progress ledger/scratch
 worktrees/

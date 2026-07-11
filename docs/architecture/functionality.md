@@ -2,8 +2,9 @@
 
 > **Scope**: What the system does end-to-end, from an operator view. For each capability:
 > what it does, which module/skill provides it, how it is invoked.
-> Implementation detail (script counts, maturity) → [`docs/implementation.md`](../implementation.md).
-> Architecture breakdown → [`architecture/engine-modules.md`](architecture/engine-modules.md).
+> Implementation detail (script counts, maturity) lives in the authoring instance's private
+> build-state notes, not in this distribution.
+> Architecture breakdown → [`engine-modules.md`](engine-modules.md).
 
 ---
 

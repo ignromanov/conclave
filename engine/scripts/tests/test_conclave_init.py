@@ -35,6 +35,28 @@ def test_init_scaffolds_data_tree(tmp_path):
     assert list((tmp_path / ".claude/agents").rglob("*.md")), "init must mint >=1 advisor"
 
 
+def test_init_scaffolds_the_file_context_path_names(tmp_path):
+    # roster.yaml declares `context_path: project-context.md`; before spec 103 W3 nothing
+    # ever created it, so every fresh instance's roster named a file that did not exist.
+    _run(tmp_path)
+    d = tmp_path / ".conclave"
+    context_path = [ln.split(":", 1)[1].strip()
+                    for ln in (d / "roster.yaml").read_text().splitlines()
+                    if ln.strip().startswith("context_path:")][0]
+    assert (d / context_path).exists(), f"roster names {context_path}, init did not create it"
+
+
+def test_init_copies_obsidian_template_into_the_vault(tmp_path):
+    # scaffold_wiki() copies the config with `if src.exists()`, so a template that is
+    # not where OBSIDIAN_SRC points produces a vault with no Obsidian config and a
+    # green suite. Assert the files land, not just that wiki/ was created.
+    _run(tmp_path)
+    vault = tmp_path / ".conclave/wiki/.obsidian"
+    for fname in ("app.json", "appearance.json", "core-plugins.json"):
+        assert (vault / fname).exists(), f"obsidian template not copied: {fname}"
+    assert "file-explorer" in (vault / "core-plugins.json").read_text()
+
+
 def test_init_is_idempotent(tmp_path):
     _run(tmp_path)
     roster_before = (tmp_path / ".conclave/roster.yaml").read_text()

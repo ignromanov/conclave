@@ -296,11 +296,12 @@ lifecycle skills must not assume Quorum is present. Specifically:
 
 ### First-launch knowledge gap
 
-The bootstrap research (R3) found that `hire` produces voice scaffolding and empty dirs but
-zero project-knowledge files. `session_init.py` tells advisors to load `project-context.md` and
-`constitution.md`, but the scaffold never wires them. Fix: default
-`@${PROJECT_CONTEXT_PATH:-project-context.md}` in `templates/skill-frontmatter.md`.
-Filed as feedback item `it-1` in `fb-1781159734-e51973`.
+The bootstrap research (R3) found that `hire` produces voice scaffolding and empty dirs but zero
+project-knowledge files, and that `roster.yaml:context_path` named a `project-context.md` that
+nothing created. Spec 103 W3 closed the second half: `/conclave:init` now writes the stub at the
+DATA root, where `context_path` points. The first half stands — no shipped code reads `context_path`,
+and an advisor loads project context only because a human put it in `CLAUDE.md`.
+Originally filed as feedback item `it-1` in `fb-1781159734-e51973`.
 
 ---
 

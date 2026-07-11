@@ -6,7 +6,7 @@
 >
 > **Status**: **founding vision capture · 2026-06-11 · PRE-CORRECTION.** This document records the
 > original intent. It was **not** swept by the 2026-06-11 research-correction pass — where it
-> conflicts with `docs/architecture/` or `docs/product/`, **those corrected docs win** (e.g. the
+> conflicts with `docs/architecture/`, **those corrected docs win** (e.g. the
 > loop does not yet "ship"/"close its own items" — C-006 is complete-but-starved; v1 learning is
 > L1 human-gated only; nominations rewire to L1, not 090; live index = 339 rows / 18 open). It is
 > no longer the canonical mechanism definition — it is the founding capture.
@@ -185,10 +185,11 @@ different product.
 ## 8. First concrete step — Spec 093
 
 The closing loop is the smallest shippable slice that proves the thesis and pays for itself
-immediately (drains the 71-item accepted backlog). It is specced in `docs/specs/093-self-healing-feedback-loop.md`
-(dogfooded in VoidPay, where the feedback scripts live), and tracked here as Conclave's component-zero.
+immediately: it drains the accepted-but-unclosed feedback backlog instead of letting it grow. It is
+Conclave's component-zero, and P1 + P2 have shipped.
 
-See `docs/specs/093-self-healing-feedback-loop.md` for the design.
+The design is spec 093 — a working document, so it lives in the instance's private DATA tree
+(`.conclave/ops/specs/093-self-healing-feedback-loop/`), not in this repo.
 
 ---
 

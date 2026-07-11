@@ -422,7 +422,8 @@ def test_concurrent_set_no_lost_update(tmp_path):
         )
 
     p1, p2 = _spawn("it-1"), _spawn("it-2")
-    p1.wait(); p2.wait()
+    p1.wait()
+    p2.wait()
     assert p1.returncode == 0 and p2.returncode == 0
 
     statuses = {it["id"]: it.get("status") for it in fm_read(review_path)[0]["items"]}

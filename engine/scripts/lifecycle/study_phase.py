@@ -36,7 +36,7 @@ from pathlib import Path
 _SCRIPTS_DIR = str(Path(__file__).resolve().parent.parent)
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
-from enginelib.advisors import known_advisors
+from enginelib.advisors import known_advisors  # noqa: E402 (follows the sys.path bootstrap above)
 
 
 def _data_root() -> Path:

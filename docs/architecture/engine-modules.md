@@ -177,8 +177,8 @@ durable self-improvement requires a signal from outside the agent. C-007 is that
 C-007 at ~30% built in VoidPay (design-locked). The four executor agents (Scout, Ranker,
 Critic, Judge) are classified PORTABLE in the migration inventory and lift clean.
 
-**VoidPay origin**: spec 089. Research corpus: 13 research rounds (~4,517 lines, mirrored
-under `docs/research/_mirror/089-pipeline/`).
+**VoidPay origin**: spec 089. Research corpus: 13 research rounds (~4,517 lines), held in the
+authoring instance's private research tree.
 
 ---
 
@@ -241,7 +241,7 @@ feedback state, sessions/decisions, freshness — without hand-reading files. Bu
 Explicitly an internal operator/debugging instrument, **not** a product-facing SaaS dashboard
 (re-scoped from the earlier Track-B framing per spec 102).
 
-**Status**: design-locked — spec 102 (`docs/specs/102-engine-web-dashboard.md`), judge-verified
+**Status**: design-locked — spec 102 (a working document, private to the authoring instance), judge-verified
 (conditionally_fit 0.82); implementation not started. Depends on C-001 (notebook), C-002
 (briefings), and C-005 (memory).
 

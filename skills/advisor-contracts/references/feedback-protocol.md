@@ -1,7 +1,8 @@
 # Feedback Protocol — Unified Work Reviews
 
 > **Purpose**: Every agent emits a work review at the end of its session/dispatch.
-> **Spec**: `docs/specs/086-unified-feedback-system/spec.md`
+> **Spec**: 086 — unified feedback system (a working document; it lives in the authoring
+> instance's private DATA tree, not in this distribution)
 > **Status**: v2 — single channel (supersedes spec 052 channel A + spec 077 channel B)
 
 ## When to emit

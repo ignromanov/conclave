@@ -111,11 +111,10 @@ CODE tree. Tracked as **#82**; relocation is spec 103 W3.
    set by CC → `CONCLAVE_AI_ROOT` resolves automatically.
 2. **`conclave-self`** (the engine's self-improvement instance) — DATA root is `<repo>/.conclave/`,
    exactly like a normal consumer; it is a nested **private git repo** (`conclave-ai`). Both resolvers
-   return it when `CLAUDE_PROJECT_DIR` is set. Env + hook live in `.claude/settings.json` (gitignored),
-   and CODE comes from the installed plugin — no CODE symlinks.
-   ⚠ `instances/conclave-self/` predates the convention and is a **fossil**, not the live root: its
-   `ops/feedback/_index/index.jsonl` last moved 2026-06-17, while `.conclave/`'s is live. Do not write
-   to it. Removal is spec 103 W3.
+   return it when `CLAUDE_PROJECT_DIR` is set. Env + hook live in `.claude/settings.json` (gitignored).
+   Its hired advisors live in `.conclave/.claude/`, and `.claude/{agents,skills}` in the CODE checkout
+   hold per-item symlinks back to them (spec 103 §3.2) — gitignored, so CODE tracks no instance data.
+   The `test_instance_data_not_tracked_in_code` gate enforces that.
 
 ## 7. Back-compat alias (deprecated)
 
