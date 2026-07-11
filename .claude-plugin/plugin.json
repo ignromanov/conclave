@@ -1,0 +1,21 @@
+{
+  "name": "conclave",
+  "version": "0.1.0",
+  "description": "Self-improving multi-agent advisory team OS — engine + lifecycle + memory, installable into any repo.",
+  "author": {
+    "name": "ignromanov",
+    "url": "https://github.com/ignromanov"
+  },
+  "dependencies": [
+    "agent-teams@claude-code-workflows"
+  ],
+  "userConfig": {
+    "GH_TOKEN": {
+      "type": "string",
+      "title": "GitHub Token",
+      "description": "GitHub token for issue/board sync (optional; falls back to gh CLI auth).",
+      "sensitive": true,
+      "required": false
+    }
+  }
+}

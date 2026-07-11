@@ -1,0 +1,204 @@
+"""gh-board-query.py — GitHub project board query helper (Phase 4, spec 085).
+
+Replaces two inline Python heredocs:
+  - team.start Step 3b  → --mode advisor-open --advisor <slug>
+  - github-issues-protocol.md L192-204 board-audit → --mode missing-fields
+
+Project board number + owner are read from roster.yaml (github.board_number,
+github.owner). Reads from `gh project item-list` stdout piped in via stdin, or
+calls gh directly when --fetch is passed.
+
+Modes:
+  advisor-open     Filter non-Done items for a given advisor.
+                   Prints: `{repo}#{num} [{status}] {title}` per match.
+  missing-fields   Audit items for missing advisor/priority/type/status fields.
+                   Prints: `{title:55} MISSING: {field ...}` per item with gaps.
+
+Exit codes:
+  0  = success (items printed or none found)
+  1  = error (bad args, JSON parse failure, gh call failed)
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from typing import Any
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
+import roster  # noqa: E402  (lib/ is not a package; path-inserted above)
+
+# Engine lifecycle/forge skills are CODE, not advisors — exclude them when deriving
+# the advisor set from the DATA-root team.* registry.
+_LIFECYCLE_SKILLS = {
+    "start", "processing", "done", "handoff",
+    "forge", "hire", "retro", "feedback", "feedback-triage",
+}
+
+
+def _data_root() -> str:
+    """DATA root (per-instance). Mirrors lib/roster._resolve: env override, else
+    engine-relative fallback for the colocated back-compat case."""
+    return (
+        os.environ.get("CONCLAVE_AI_ROOT")
+        or os.environ.get("VOIDPAY_AI_ROOT")
+        or os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    )
+
+
+def canonical_advisors() -> set[str]:
+    """Derive the advisor set from the on-disk registry (DATA-root .claude/skills/team.*),
+    minus engine lifecycle/forge skills. Empty when the registry is absent — callers
+    treat empty as 'no enforcement' (degrade to permissive, not reject-all)."""
+    skills_dir = os.path.join(_data_root(), ".claude", "skills")
+    advisors: set[str] = set()
+    if os.path.isdir(skills_dir):
+        for name in os.listdir(skills_dir):
+            if name.startswith("team.") and os.path.isdir(os.path.join(skills_dir, name)):
+                stem = name[len("team."):]
+                if stem not in _LIFECYCLE_SKILLS:
+                    advisors.add(stem)
+    return advisors
+
+# Board coordinates come from roster.yaml (per-instance config), not hardcoded.
+PROJECT_NUM = int(roster.get("github.board_number", "0") or 0)
+PROJECT_OWNER = roster.get("github.owner")
+
+
+def _fetch_items() -> list[dict[str, Any]]:
+    """Call `gh project item-list` and return the items list."""
+    result = subprocess.run(
+        [
+            "gh", "project", "item-list", str(PROJECT_NUM),
+            "--owner", PROJECT_OWNER,
+            "--format", "json",
+            "--limit", "100",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.strip()[:200]
+        raise RuntimeError(f"gh project item-list failed (exit {result.returncode}): {stderr}")
+    try:
+        return json.loads(result.stdout).get("items", [])
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"gh output is not valid JSON: {exc}") from exc
+
+
+def _load_items(fetch: bool) -> list[dict[str, Any]]:
+    if fetch:
+        return _fetch_items()
+    raw = sys.stdin.read()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"stdin is not valid JSON: {exc}") from exc
+    if isinstance(data, list):
+        return data
+    return data.get("items", [])
+
+
+def _advisor_label_stem(advisor: str) -> str:
+    """nexus-ceo → nexus, quorum → quorum."""
+    return advisor.split("-")[0]
+
+
+def mode_advisor_open(items: list[dict[str, Any]], advisor: str) -> int:
+    """Print non-Done items tagged for advisor. Returns item count printed."""
+    stem = _advisor_label_stem(advisor)
+    count = 0
+    for item in items:
+        if item.get("status") == "Done":
+            continue
+        advisor_field = str(item.get("advisor", "")).lower()
+        if stem not in advisor_field:
+            continue
+        content = item.get("content", {})
+        repo = content.get("repository", "")
+        num = content.get("number", "")
+        title = str(content.get("title", ""))[:60]
+        status = item.get("status", "")
+        print(f"{repo}#{num} [{status}] {title}")
+        count += 1
+    if count == 0:
+        print(f"(no open items for advisor:{stem})")
+    return count
+
+
+def mode_missing_fields(items: list[dict[str, Any]]) -> int:
+    """Print items missing required fields. Returns count of items with gaps."""
+    count = 0
+    for item in items:
+        missing: list[str] = []
+        if not item.get("advisor"):
+            missing.append("advisor")
+        if not item.get("priority"):
+            missing.append("priority")
+        if not item.get("type"):
+            missing.append("type")
+        if not item.get("status"):
+            missing.append("status")
+        if missing:
+            title = str(item.get("title", ""))[:55]
+            print(f"{title:55} MISSING: {' '.join(missing)}")
+            count += 1
+    if count == 0:
+        print("(all items have required fields)")
+    return count
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="gh-board-query",
+        description="Query the GitHub project board (roster: github.board_number/owner).",
+    )
+    parser.add_argument(
+        "--mode",
+        required=True,
+        choices=["advisor-open", "missing-fields"],
+        help="Query mode",
+    )
+    parser.add_argument(
+        "--advisor",
+        help="Canonical advisor slug — required for advisor-open mode",
+    )
+    parser.add_argument(
+        "--fetch",
+        action="store_true",
+        default=False,
+        help="Call gh directly instead of reading from stdin",
+    )
+    args = parser.parse_args(argv)
+
+    if args.mode == "advisor-open" and not args.advisor:
+        print("gh-board-query: --advisor required for advisor-open mode", file=sys.stderr)
+        return 1
+
+    canonical = canonical_advisors()
+    if args.advisor and canonical and args.advisor not in canonical:
+        known = ", ".join(sorted(canonical))
+        print(
+            f"gh-board-query: advisor '{args.advisor}' is not in the instance registry.\nKnown: {known}",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        items = _load_items(args.fetch)
+    except RuntimeError as exc:
+        print(f"gh-board-query: {exc}", file=sys.stderr)
+        return 1
+
+    if args.mode == "advisor-open":
+        mode_advisor_open(items, args.advisor)
+    else:
+        mode_missing_fields(items)
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

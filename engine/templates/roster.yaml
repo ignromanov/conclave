@@ -1,0 +1,15 @@
+# roster.yaml — one per instance (DATA root). 096 B-W3 dummy: placeholder values only.
+# A real deployment (097) overwrites this with its own project/github/knowledge identity.
+project:
+  name: DummyCo
+  context_path: project-context.md
+  language: "English"
+  stack_profile: none
+github:
+  owner: example
+  ai_repo: example-ai
+  main_repo: example
+  board_number: null
+  sticky_labels: []   # labels whose CLOSED issues stay visible in briefings, e.g. [grant] (#7)
+knowledge:
+  wiki_path: ""

@@ -1,0 +1,37 @@
+node_modules/
+.DS_Store
+*.log
+.env*
+
+# python build artifacts (engine subprojects) — must never enter the plugin tree
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# machine-local wiring: resolved absolute paths, regenerated per-machine by /conclave:init
+.claude/settings.json
+.claude/settings.local.json
+
+# transient agent run-state
+**/agent-memory/gh-cache/
+**/agent-memory/git-cache/
+**/agent-memory/run-log/
+
+# test pollution: env-less feedback tests resolve repo_root() to the repo root
+# (which now has ops/ via ops/SCHEMA.md, 098 D-5) and write here. Real feedback data
+# lives under instances/<project>/ops/feedback/, not the repo root.
+/ops/feedback/
+
+# Obsidian live UI state (rewritten by the app; not source)
+.obsidian/workspace.json
+
+# Transient per-instance agent scratch (subagent reports, working notes)
+instances/*/ops/scratch/
+
+# feature worktrees + SDD progress ledger/scratch
+worktrees/
+.superpowers/
+
+# Conclave Self instance-state — tracked in its own git tree at .conclave/.git
+.conclave/

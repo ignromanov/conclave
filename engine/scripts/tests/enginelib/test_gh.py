@@ -1,0 +1,77 @@
+import pathlib
+
+from enginelib import gh
+
+FIXTURES = pathlib.Path(__file__).parent.parent / "fixtures"
+REPO = "ignromanov/voidpay-ai"
+
+
+def _fixture_json() -> str:
+    return (FIXTURES / "gh_issue_list.json").read_text()
+
+
+def _empty_json() -> str:
+    return "[]"
+
+
+# Case 1 (bats): gh_advisor_issues returns rows containing #37 and "grant"
+def test_gh_advisor_issues_nexus(monkeypatch):
+    monkeypatch.setattr(gh, "_run_gh", lambda _args: _fixture_json())
+    rows = gh.gh_advisor_issues("nexus", REPO)
+    combined = "\n".join(rows)
+    assert "#37" in combined
+    assert "grant" in combined
+
+
+# Case 2 (bats): gh_advisor_issues empty result returns []
+def test_gh_advisor_issues_empty(monkeypatch):
+    monkeypatch.setattr(gh, "_run_gh", lambda _args: _empty_json())
+    rows = gh.gh_advisor_issues("ghost", REPO)
+    assert rows == []
+
+
+# Case 3 (bats): gh_global_p0 returns rows containing #58 and #37
+def test_gh_global_p0_returns_rows(monkeypatch):
+    monkeypatch.setattr(gh, "_run_gh", lambda _args: _fixture_json())
+    rows = gh.gh_global_p0(REPO)
+    combined = "\n".join(rows)
+    assert "#58" in combined
+    assert "#37" in combined
+
+
+# Case 4 (bats): gh_global_p0 empty result returns []
+def test_gh_global_p0_empty(monkeypatch):
+    monkeypatch.setattr(gh, "_run_gh", lambda _args: _empty_json())
+    rows = gh.gh_global_p0(REPO)
+    assert rows == []
+
+
+# R-F2 lock: exact byte-identical row for issue #37
+def test_r_f2_exact_row_format(monkeypatch):
+    monkeypatch.setattr(gh, "_run_gh", lambda _args: _fixture_json())
+    rows = gh.gh_advisor_issues("nexus", REPO)
+    row_37 = next(r for r in rows if r.startswith("#37"))
+    assert row_37 == "#37 | [grant] OTF | grant p1 advisor:nexus"
+
+
+# #50 privacy: search_issues scopes by --repo per slug, never account-wide (--owner).
+def test_search_issues_scopes_by_repo_not_owner(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(gh, "_run_gh", lambda args: captured.setdefault("args", args) or "[]")
+    gh.search_issues("kai", ["acme/conclave", "acme/product"])
+    args = captured["args"]
+    assert "--owner" not in args
+    assert args.count("--repo") == 2
+    assert "acme/conclave" in args
+    assert "acme/product" in args
+    assert "advisor:kai" in args
+
+
+# #50 privacy: empty repo list is fail-closed — refuse rather than search account-wide.
+def test_search_issues_refuses_empty_repos(monkeypatch):
+    called = []
+    monkeypatch.setattr(gh, "_run_gh", lambda args: called.append(args) or "[]")
+    import pytest
+    with pytest.raises(ValueError):
+        gh.search_issues("kai", [])
+    assert called == [], "gh must not be invoked without a repo scope"

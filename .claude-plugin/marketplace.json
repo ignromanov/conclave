@@ -1,0 +1,14 @@
+{
+  "name": "conclave-marketplace",
+  "owner": {
+    "name": "ignromanov",
+    "url": "https://github.com/ignromanov"
+  },
+  "plugins": [
+    {
+      "name": "conclave",
+      "source": "./",
+      "description": "Conclave agent-team OS plugin (git/local marketplace)."
+    }
+  ]
+}

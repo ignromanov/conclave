@@ -1,0 +1,5 @@
+[
+  {"number":42,"title":"Upgrade Next.js to v16","labels":[{"name":"p1"},{"name":"advisor:kai-cto"}],"state":"OPEN"},
+  {"number":38,"title":"Implement run-log JSONL","labels":[{"name":"p0"},{"name":"advisor:kai-cto"}],"state":"OPEN"},
+  {"number":31,"title":"Rust/WASM codec prototype","labels":[{"name":"p2"},{"name":"advisor:kai-cto"}],"state":"OPEN"}
+]

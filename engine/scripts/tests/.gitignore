@@ -1,0 +1,5 @@
+# Python test artifacts
+__pycache__/
+*.pyc
+.coverage
+.pytest_cache/

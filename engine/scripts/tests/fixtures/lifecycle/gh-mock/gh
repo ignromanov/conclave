@@ -1,0 +1,45 @@
+#!/bin/sh
+# gh mock — returns canned JSON based on --label advisor:<id> arg.
+# Writes a sentinel line to /tmp/gh-mock-called.<ppid> for invocation counting.
+# Used by gh-fetch.bats via PATH override.
+
+# Sentinel: record each invocation (parent PID from env set by bats)
+SENTINEL_PID="${GH_MOCK_SENTINEL_PID:-$$}"
+printf '%s\n' "called:$$" >> "/tmp/gh-mock-called.${SENTINEL_PID}"
+
+# Parse --label argument to extract advisor id.
+advisor=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --label)
+      label="$2"
+      shift 2
+      ;;
+    --label=*)
+      label="${1#--label=}"
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+# Extract advisor id from label like "advisor:kai-cto".
+case "${label:-}" in
+  advisor:*)
+    advisor="${label#advisor:}"
+    ;;
+esac
+
+CANNED_DIR="$(dirname "$0")/canned-responses"
+fixture="${CANNED_DIR}/${advisor}.json"
+
+if [ -n "$advisor" ] && [ -f "$fixture" ]; then
+  cat "$fixture"
+  exit 0
+fi
+
+# Fallback: empty array for unknown advisors.
+printf '[]\n'
+exit 0

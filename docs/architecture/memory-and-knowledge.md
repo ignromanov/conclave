@@ -1,0 +1,195 @@
+# Memory and Knowledge
+
+> **Scope**: The two-layer persistent state model — memory (what happened) and knowledge
+> (why it works) — their boundaries, layouts, and write rules.
+> **Depends on**: [`engine-modules.md`](engine-modules.md) (C-002 Briefings, C-005 Memory)
+> **Source material**: spec 051 invariants, `migration-bootstrap.md` R4,
+> VoidPay `agent-memory/advisors/README.md`, `team.quorum/SKILL.md` §Memory Architecture
+
+---
+
+## The boundary rule
+
+> **Memory** records *what happened*: append-only, script-written, session-scoped.
+> **Knowledge** explains *why it works*: durable, wiki-agent-written, concept-scoped.
+
+These are physically separate and governed by different write rules. Conflating them —
+putting durable concepts into the memory tree, or putting session records into the wiki —
+is an anti-pattern that corrupts both.
+
+| Dimension | Memory | Knowledge |
+|-----------|--------|-----------|
+| Content | Sessions, decisions, mentions, briefings | Concepts, patterns, architectural decisions |
+| Written by | Scripts (`close-session.sh`, `file-decision.sh`, `briefing-build`) | Wiki agent (`/knowledge:capture`) |
+| Scope | Per-advisor, per-session, per-decision | Cross-advisor, cross-project, durable |
+| Mutability | Append-only (source); regenerable (cache) | Cumulative (wiki pages are updated) |
+| Location | `agent-memory/` | `knowledge/` (top-level, beside `engine/`) |
+| Lifespan | Current instance | Survives project transitions |
+
+---
+
+## Memory architecture
+
+### Source of truth — the append-only layer
+
+The source of truth is a set of append-only records that scripts write and that are never
+edited by hand. When a cache (briefing) and the source conflict, **truth wins and the cache
+rebuilds**.
+
+| Record type | Path pattern | Written by | Content |
+|-------------|-------------|------------|---------|
+| Sessions | `agent-memory/advisors/sessions/YYYY-MM-DD-<id>-<slug>.md` | `close-session.sh` (via `/team.done`) | Work done, decisions, open items |
+| Decisions | `agent-memory/advisors/decisions/YYYY-MM-DD-<slug>.md` | `file-decision.sh` | Cross-cutting Y-statement decisions |
+| Mentions | `agent-memory/advisors/mentions/<recipient>/open/<id>.md` | `mention.sh` | Unresolved cross-advisor references |
+| Mention archive | `agent-memory/advisors/mentions/<recipient>/archive/<id>.md` | `resolve-mention.sh` | Resolved mentions |
+| Feedback | `ops/feedback/<YYYY-MM-DD>/<slug>.md` | `feedback_emit.py` (via `/team.feedback`) | Structured feedback items (JSONL index) |
+
+GH Issues on the project repository are the **work inbox** (`gh issue list --label
+"advisor:<name>"`). They are truth for outstanding work — not a filesystem file. The
+briefing reflects the GH state at last `/team.start`, not live.
+
+### Briefings — the cache layer
+
+Briefings are **auto-generated per-advisor summaries** produced by `briefing-build` (Python,
+spec 084). They are the mechanism by which advisors resume with full context without reading
+the entire session history.
+
+Properties:
+- Generated at every `/team.start` from the append-only layer + GH Issues state
+- Eager slot: ≤500 words of the most recent and relevant items loaded unconditionally
+- Archival slot: older material available on demand but not injected by default
+- Token cap: advisory at 6,000 tokens per briefing (spec 084 decision `briefing-token-cap-advisory`)
+- `_team.md`: cross-advisor digest (~500 tokens total) for Forge's facilitation mode — avoids
+  loading all 5 individual briefings when a team meeting starts
+
+**Invariant**: editing a briefing directly is always wrong. The next `/team.start` overwrites
+it. All durable writes must go through the source-of-truth scripts.
+
+### hot.md — live cross-agent memory
+
+`agent-memory/hot.md` is a single shared file (≤500 words) containing the most urgent
+cross-advisor live state: active P0s, in-flight decisions awaiting approval, blocking items.
+It is updated by scripts, de-duped at briefing-build time, and loaded early in every session.
+It is **not** a substitute for GH Issues — items graduate from `hot.md` to GH once they have
+an owner and a label.
+
+### Per-executor memory
+
+Executors (Atlas, Iris, Scout, …) carry a much lighter memory: a single `MEMORY.md` (≤50
+lines) per executor type under `agent-memory/executors/<executor>/MEMORY.md`. This records
+executor-specific invariants and known edge cases, not session history.
+
+### Full layout (VoidPay reference, maps to Conclave `agent-memory/`)
+
+```
+agent-memory/
+├── advisors/
+│   ├── briefings/
+│   │   ├── <advisor-id>.md       ← auto-generated; regenerated at /team.start
+│   │   └── _team.md              ← cross-advisor digest (Forge facilitation)
+│   ├── sessions/
+│   │   └── YYYY-MM-DD-<id>-<slug>.md
+│   ├── decisions/
+│   │   └── YYYY-MM-DD-<slug>.md
+│   ├── mentions/
+│   │   └── <recipient>/{open,archive}/<id>.md
+│   ├── feedback/                  ← (legacy path; current: ops/feedback/)
+│   └── INDEX.md                   ← auto-regenerated by memory-index.sh
+├── executors/
+│   └── <executor-id>/MEMORY.md
+├── hot.md                         ← ≤500 words, live cross-agent state
+├── run-log/                       ← per-session execution logs (JSONL)
+└── gh-cache/                      ← snapshot of GH issues/PRs (gh-fetch.sh)
+```
+
+The `gh-cache/` snapshot is written by `gh-fetch.sh` (a dedicated snapshot writer) so that
+`briefing-build` has zero live `gh` calls. This is the file-as-message-bus principle
+(constitution §I) applied to the GH integration layer.
+
+### Write invariants
+
+1. Nothing in `agent-memory/advisors/**` is edited by hand. All writes go through scripts
+   in `engine/skills/team.forge/scripts/`.
+2. Briefings (`briefings/<id>.md`) are regenerable — never source of truth.
+3. Sessions and decisions are append-only — no retroactive edits.
+4. One commit per `/team.done` session aggregates all shared-memory writes.
+5. The `gh-cache/` is the only place live `gh` calls land; all other scripts read from it.
+
+---
+
+## Knowledge architecture
+
+### Portability and placement
+
+The knowledge layer uses the `llm-obsidian-wiki` plugin, which is **vault-agnostic** and
+portable. It requires no VoidPay-specific configuration; the vault path is a config knob.
+
+In Conclave's directory layout, the wiki lands at **top-level `knowledge/`** — beside
+`engine/`, not inside it:
+
+```
+conclave/
+├── engine/          ← runtime machinery (skills, scripts, contracts)
+├── knowledge/       ← distilled understanding (concepts, patterns, decisions)
+├── agent-memory/    ← what happened (per-advisor, per-session)
+├── ops/             ← operational artifacts (specs, meetings, decisions)
+└── instances/       ← per-project knowledge seeds
+    └── voidpay/
+        └── knowledge-seed/   ← the 25 VoidPay concept pages (migrated)
+```
+
+The separation is intentional and load-bearing: `engine/` is machinery — it can be
+upgraded, extracted, and versioned independently. `knowledge/` is accumulated understanding
+— it grows with the team, never resets, and is the record of what the team learned and why.
+
+### Two wikis in the VoidPay origin
+
+VoidPay maintained two distinct wikis (R4 finding):
+- `~/code/vl/wiki/` — product domain knowledge (VoidPay-specific, stays with VoidPay)
+- `~/code/vl/team-wiki/` — advisor meta-system knowledge (portable, integrates into Conclave)
+
+Only the team-wiki migrates. The 25 concept pages from the team-wiki carry as
+`instances/voidpay/knowledge-seed/`, not as Conclave engine content. New Conclave instances
+start with an empty `knowledge/` and accumulate their own.
+
+### Mandatory capture upgrade
+
+VoidPay's lifecycle made wiki capture **conditional** at `/team.done` — advisors could skip
+it under time pressure. The failure mode is documented: critical concepts get lost when
+sessions end hurriedly.
+
+Conclave upgrades this to **mandatory for spec and research sessions**:
+
+| Session type | Wiki capture requirement |
+|--------------|------------------------|
+| Spec/research sessions | Mandatory — at least one capture before `/team.done` completes |
+| Advisory sessions | Strongly recommended; skippable with explicit note in session record |
+| Executor task sessions | Not applicable (executors don't write to knowledge layer) |
+
+The capture enforces the memory/knowledge boundary: the session record (memory) captures what
+happened; the wiki page (knowledge) captures the durable insight that should outlive the
+session.
+
+### Knowledge write rules
+
+1. Knowledge pages are **wiki-agent-written** (via `/knowledge:capture` or equivalent) — not
+   hand-edited by advisors during regular sessions.
+2. Wiki pages are **concept-scoped**, not session-scoped. A page covers a pattern or
+   principle, not "what Kai said on 2026-06-11".
+3. Memory records *point to* knowledge pages by concept name; they do not embed the concept
+   body.
+4. VoidPay instance content (`instances/voidpay/knowledge-seed/`) is read-only for Conclave
+   engine development — it illustrates patterns but does not govern them.
+
+---
+
+## Decision reference
+
+| Design decision | Choice | Rationale |
+|----------------|--------|-----------|
+| Knowledge location | Top-level `knowledge/` (not inside `engine/`) | Separation of machinery from accumulated understanding |
+| Wiki plugin | `llm-obsidian-wiki` (vault-agnostic) | Portable; no VoidPay-specific deps |
+| VoidPay concepts | `instances/voidpay/knowledge-seed/` | Not engine content; instance-specific seed |
+| Capture policy | Mandatory for spec/research sessions | Prevents knowledge loss under time pressure |
+| Briefings | Regenerable cache, never source of truth | Prevents stale-cache-as-authoritative anti-pattern |
+| GH Issues | Work inbox truth, not a filesystem file | Script integration via `gh-cache/` snapshot pattern |

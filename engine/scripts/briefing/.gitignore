@@ -1,0 +1,10 @@
+# Python build artifacts — managed by uv (pyproject.toml)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.coverage
+.pytest_cache/
+htmlcov/
+dist/
+*.egg-info/

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# hooks/post-commit — documented shim (spec 099 In-scope #6); delegates to the engine CLI.
+set -euo pipefail
+SCRIPTS="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+exec uv run --project "${SCRIPTS}" python -m engine post-commit

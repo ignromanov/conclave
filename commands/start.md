@@ -1,0 +1,270 @@
+---
+description: |
+  MANDATORY session initialization for ALL advisors (with or without Quorum).
+  Loads context, checks resume state, detects task tier, routes to required skills.
+  Every advisor session MUST begin with this skill. No exceptions.
+---
+
+!`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/agent-data-policy.md`
+!`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/github-issues-protocol.md`
+!`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/session-lifecycle.md`
+!`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/first-launch-protocol.md`
+!`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/decision-framework.md`
+!`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/quality-loop.md`
+!`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/advisor-anti-patterns.md`
+!`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/feedback-protocol.md`
+!`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/output-formatting.md`
+!`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/question-shape.md`
+
+# /conclave:start — Session Initialization
+
+> **MANDATORY** for every advisor session. Works independently — no Quorum required.
+>
+> **Cardinal Rule**: GitHub Issues = source of truth for tasks. The auto-generated briefing is a dashboard cache that references issues (AI#N, GH#N). When they conflict, GH wins.
+
+## Question shape
+
+Every user choice in this skill follows the **prose-context + condensed-Ask** pattern —
+see `question-shape.md` (auto-imported). Applies here to: resume-vs-fresh (Step 1b),
+tier override + skill-chain pick (Step 7), briefing-conflict resolution (Step 3c).
+
+## Process
+
+### 0. Self-heal SessionStart hook
+
+!`python3 "${CLAUDE_PLUGIN_ROOT}/engine/scripts/init/reconcile_hook.py" 2>&1 || true`
+
+Best-effort repair of the SessionStart hook's command path + `CONCLAVE_ENGINE_ROOT` in
+`.claude/settings.json`, in case they still point at a plugin cache dir removed by a prior
+`/plugin update` (099 followups B1). Runs before session-init below, which needs a valid
+engine root.
+
+### 0b. Provision engine deps
+
+!`python3 "${CLAUDE_PLUGIN_ROOT}/engine/scripts/init/provision_deps.py" 2>&1 || true`
+
+Best-effort install of the engine's third-party deps (PyYAML/pydantic/python-frontmatter/
+ruamel.yaml) into `${CLAUDE_PLUGIN_DATA}/venv`, so `python -m engine <cmd>` (used throughout
+this skill and others) has its deps available on a fresh consumer or right after a
+`/plugin update` wiped the in-tree `.venv` (099 followups B4). Idempotent; never blocks
+session start.
+
+### 1. Load briefing
+
+1. Detect the advisor from the `/conclave-<id>` router invocation (the router binds
+   `advisor=<id>` and passes it to session-init). For `forge`, this is `/conclave-forge`.
+2. Run session-init (Steps 1/1b/1c + Overlay in one call):
+   ```bash
+   python3 engine/scripts/lifecycle/session_init.py --advisor <advisor>
+   ```
+   Exit codes: 0 = cache-hit / briefing fresh, 2 = briefing regenerated, 3 = stale-fail, 1 = error.
+   The script handles: gh-fetch (TTL=900s), briefing mtime-guard (>24h), briefing-build if stale,
+   resume-scan (ops/specs/*/resume-prompt.md + ops/handoffs/*-<advisor>-*.md),
+   reflexion extract (last-3 sessions), overlay scan, and feedback cadence check.
+   If a line starting with `  feedback:` appears in the output, triage is due — include it in
+   the session-start summary and suggest running `/conclave:triage` this session.
+3. Read `.conclave/agent-memory/advisors/briefings/<advisor>.md` into context.
+4. Load `hot.md` **once** separately (AC8 — no longer embedded in briefings):
+   ```bash
+   cat .conclave/agent-memory/hot.md
+   ```
+   Read the Now / Recent decisions / Watch sections for live cross-agent state.
+5. The briefing and hot.md are auto-generated; do not edit either directly.
+
+### 1b. Resume Check
+
+The session-init script (Step 1) prints resume findings prefixed `resume:`. Read its output:
+
+- Lines starting `  spec-resume:` — interrupted spec worktree; path + age in hours shown.
+- Lines starting `  handoff:` — filed handoff for this advisor; filename + age shown.
+
+If found → apply **Question shape** (above):
+
+1. **Prose first** — describe each found item: title, path, last-update mtime, what was in progress (one-line from resume-prompt header), and what "resume" vs "start new" means (resume = load original skill chain + reuse session id; start new = current request takes over, old resume-prompt stays unconsumed on disk for later).
+2. **`AskUserQuestion`** — `label`s: "Resume" / "Start new" / "Skip" (≤ 5 words each); `description`s ≤ 1 sentence each.
+
+If user picks Resume → read resume-prompt, load required skills from it, skip to Step 5.
+If Start new → leave the file in place; mention in `/conclave:done` Lifecycle Retrospective if it's been stale > 3 days.
+
+### 1c. Reflexion Context
+
+The session-init script (Step 1) prints reflexion findings prefixed `reflexion:`. Read its output:
+
+- Lines starting `  - [<session-file>]` — non-empty reflexion value from that session.
+- If `reflexion: none` → skip silently (no signal, no noise).
+
+If any reflexions were surfaced, apply them as priors for this session:
+
+> "Recent reflexions for ${ADVISOR}:
+> - {reflexion-1}
+> - {reflexion-2}
+> Apply these as priors for this session."
+
+### 2. Tier Detection
+
+> **Forge (meta-advisor) carve-out:** if the advisor is `forge`, skip domain
+> tier-detection and the GitHub issue-board step — forge has no domain board and
+> follows the `forge-operations` flow, not domain tiers. Run only the lifecycle
+> steps session-init performs for meta-advisors (briefing / resume / reflexion /
+> overlays); see the spec §3.3 step matrix.
+
+Classify user request by scale:
+
+| Signal | Tier | Ceremony |
+|--------|------|----------|
+| Quick question, opinion, <30 min | **Quick** | Minimal GH check (Step 3a), skip steps 4-5 |
+| Feature work, 1-4 hours, clear scope | **Feature** | Full init (Steps 3b-6) |
+| Multi-session, worktree, epic scope | **Epic** | Full init + checkpoint plan |
+
+### 3. GH Issue Check (MANDATORY — all tiers)
+
+> **GH Issues = source of truth.** Always check before working.
+> The instance's repos feed into its configured **roadmap project board** (owner/repos/board from `roster.yaml`).
+
+#### 3a. Quick Tier (minimal)
+
+```bash
+# Count open issues across both repos for this advisor (owner/repos from roster.yaml)
+OWNER=$(python3 engine/scripts/lib/roster.py github.owner)
+gh issue list -R "$OWNER/$(python3 engine/scripts/lib/roster.py github.ai_repo)"   --label advisor:$(ADVISOR_NAME) --state open --json number,title --jq 'length' &
+gh issue list -R "$OWNER/$(python3 engine/scripts/lib/roster.py github.main_repo)" --label advisor:$(ADVISOR_NAME) --state open --json number,title --jq 'length' &
+wait
+```
+
+Show: "You have N open issues (AI: X, Code: Y). P0 blockers: [list or none]."
+If user's question relates to an open issue — mention it. Then answer directly.
+
+#### 3b. Feature/Epic Tier (full)
+
+```bash
+# Full list from both repos (owner/repos from roster.yaml)
+OWNER=$(python3 engine/scripts/lib/roster.py github.owner); MAIN=$(python3 engine/scripts/lib/roster.py github.main_repo)
+gh issue list -R "$OWNER/$(python3 engine/scripts/lib/roster.py github.ai_repo)" --label advisor:$(ADVISOR_NAME) --state open &
+gh issue list -R "$OWNER/$MAIN" --label advisor:$(ADVISOR_NAME) --state open &
+# Also check P0 blockers not assigned to this advisor
+gh issue list -R "$OWNER/$MAIN" --label p0 --state open &
+wait
+```
+
+Present open items in a compact table with source repo prefix (AI#N / GH#N).
+**Match user's request to an existing issue.** If matched → reference it throughout the session.
+
+**Alternative** — single Project Board query (shows both repos + all custom fields):
+```bash
+gh project item-list "$(python3 engine/scripts/lib/roster.py github.board_number)" --owner "$(python3 engine/scripts/lib/roster.py github.owner)" --format json --limit 100 | \
+  python3 engine/scripts/lifecycle/gh_board_query.py \
+    --mode advisor-open --advisor <advisor>
+```
+
+#### 3c. BRIEFING ↔ GH Reconciliation (Feature/Epic)
+
+Compare briefing Action Items (from the regenerated `.conclave/agent-memory/advisors/briefings/<advisor>.md`) with `gh issue list` results from **both repos**:
+
+| Mismatch | Action |
+|----------|--------|
+| Briefing has AI#N / GH#N but issue is closed | Flag: "AI#N closed in GH but still in briefing — will clean up in /conclave:done" |
+| GH has open issue for this advisor not in briefing | Flag: "AI#N / GH#N exists in GH but missing from briefing" |
+| Briefing status differs from Project Board status | Flag drift, use GH as truth |
+
+Present mismatches (if any) before proceeding. Don't fix now — `/conclave:done` handles cleanup.
+
+### 4. Startup Audit (Feature/Epic only)
+
+```bash
+gh pr list --state open &
+git branch --no-merged develop &
+ls worktrees/ 2>/dev/null &
+(cd .conclave && git status --short) &
+wait
+```
+
+Show results as a compact table. Flag mismatches (worktrees without PRs, branches without worktrees). Skip the table if everything is clean.
+
+### 4.5. Wiki Domain Context (Feature/Epic only)
+
+Load domain context from wiki for richer advisory:
+
+| Advisor | Command |
+|---------|---------|
+| Kai | `/wiki:browse architecture` |
+| Shade | `/wiki:browse architecture` + `/wiki:browse concepts` |
+| Nexus | `/wiki:browse strategy` |
+| Spark | `/wiki:browse strategy` + `/wiki:browse comparisons` + `/wiki:browse orgs` |
+| Dev | skip (architecture loaded via @import) |
+| Quorum | skip (all BRIEFINGs loaded via @import) |
+
+Optional: `/wiki:query "topic"` for task-specific context.
+
+### 5. Skill Routing
+
+Detect task type → load required skill chain:
+
+| Task Type | Skill Chain |
+|-----------|-------------|
+| New feature | brainstorming → writing-plans → workflow.dev-lifecycle |
+| Bug fix | systematic-debugging → workflow.dev-lifecycle |
+| Content | product-marketing-context → copywriting → copy-editing |
+| Grant | grant-proposal-assistant → doc-coauthoring |
+| Code review | workflow.pr-review |
+| Security | senior-security |
+| Meeting | team.quorum |
+| Plan execution | subagent-driven-development |
+
+If no matching skill exists:
+1. Search with `find-skills`
+2. If found installed → invoke
+3. If found remote → recommend install to user
+4. If not found → work best-effort, log gap in /conclave:done
+
+### 6. Create Session Tasks (Feature/Epic only)
+
+**MANDATORY**: Create tasks via TaskCreate for the current work session. Always include `/conclave:done` as the final task so it is never forgotten.
+
+Example:
+```
+TaskCreate: "Load context and check resume state"       → in_progress
+TaskCreate: "[Main work description from user request]" → pending
+TaskCreate: "Run /conclave:done completion checklist"       → pending
+```
+
+The `/conclave:done` task MUST be the last task. It ensures: commits, GH issues sync, BRIEFING update, wiki capture, and handoff if incomplete.
+
+### 7. Present & Confirm (Feature/Epic only)
+
+Render the start-summary using the ▍-framed format (per `output-formatting.md` Per-skill instantiation table):
+
+▍ **{persona-emoji} {advisor} · session-start · {date}**
+▍
+▍ **focus**       {current focus from briefing}
+▍ **queue**       {N} open issues ({AI: x, GH: y}) · {P0_count} P0
+▍ **briefing**    `agent-memory/advisors/briefings/{advisor}.md` ({last_regen})
+▍ ⚠ **interrupted** {title} ({path})              ← OMIT if none
+▍ **tier**        {Quick | Feature | Epic}
+▍ **skills**      {chain → e.g. brainstorming → writing-plans → workflow.dev-lifecycle}
+▍
+▍ **next →** {first concrete action from the chain}
+
+Then apply **Question shape** (above) to the approval gate:
+
+1. **Prose first** — name the tier you picked (Quick / Feature / Epic) and *why* (which signal from §2 fired), the skill chain you're about to load and what each skill in it costs (rough context budget / time-on-task), and the first concrete action you'd take. State explicit alternatives if the tier-pick was borderline ("could also run as Feature if you want spec.md upfront").
+2. **`AskUserQuestion`** — labels: "Proceed" / "Switch tier" / "Different skill chain" / "Abort" (≤ 5 words). Descriptions ≤ 1 sentence.
+
+For Quick tier — render a 3-line minimal version (just `focus`, `queue`, `next →` inside the same ▍-block) and skip the Ask gate unless the request is ambiguous; default to proceed.
+
+## Overlay loading
+
+After loading base contracts, session-init (Step 1) prints overlay findings prefixed `overlays:`.
+Read its output:
+
+- Lines starting `  overlay:` — path to an advisor-specific contract override.
+- If `overlays: none` → no overrides; base contracts apply as-is.
+
+Apply each listed overlay. Overlay semantics (`constraint` / `extension` / `replacement`) per
+`${CLAUDE_PLUGIN_ROOT}/skills/forge-operations/references/aspects/contract-overlays.md`.
+
+To run overlay scan in isolation:
+```bash
+python3 engine/scripts/lifecycle/session_init.py --advisor <advisor>
+```
+
+> Vault setup: see `${CLAUDE_PLUGIN_ROOT}/skills/forge-operations/references/obsidian-vault-setup.md`
