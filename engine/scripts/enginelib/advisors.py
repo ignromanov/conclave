@@ -53,10 +53,13 @@ def canonical_advisors() -> list[str]:
         if not _is_lifecycle(bare):
             names.add(bare)
     names |= _agent_ids(plugin_agents_dir())
-    # Project hired agent-defs: only when CLAUDE_PROJECT_DIR is set explicitly.
-    # In dev/test the repo_root() ops+.claude heuristic can escape a worktree
-    # into a sibling checkout; skip rather than risk unioning unrelated agents.
-    if os.environ.get("CLAUDE_PROJECT_DIR"):
+    # Project hired agent-defs: only when an explicit anchor env var is set —
+    # CLAUDE_PROJECT_DIR, or CONCLAVE_AI_ROOT (exported by the SessionStart
+    # hook in real sessions; see #24). With neither set, the repo_root()
+    # ops+.claude ancestor-walk from cwd is untrusted: in dev/test it can
+    # escape a worktree into a sibling checkout, so skip rather than risk
+    # unioning unrelated agents.
+    if os.environ.get("CLAUDE_PROJECT_DIR") or os.environ.get("CONCLAVE_AI_ROOT"):
         names |= _agent_ids(project_agents_dir())
     return sorted(names)
 
