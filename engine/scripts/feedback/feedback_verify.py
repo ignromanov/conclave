@@ -22,21 +22,52 @@ def _resolve(root: Path, rel: str) -> Path:
     return p if p.is_absolute() else root / rel
 
 
-def evaluate_predicate(pred: Predicate, root: Path) -> bool:
-    """True => the item is resolved. Conservative: any ambiguity => False."""
-    if pred.kind == "file-absent":
-        return not _resolve(root, pred.path).exists()
+def _contained(root: Path, target: Path) -> bool:
+    """True iff `target` resolves to a path inside `root` (threat T6). Blocks absolute
+    paths outside the project and `../` traversal — no filesystem-wide read oracle and no
+    external-file oracle laundering."""
+    try:
+        target.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
 
-    target = _resolve(root, pred.file)
+
+def classify_predicate(pred: Predicate, root: Path) -> str:
+    """Tri-state resolution check: 'pass' | 'fail' | 'broken'.
+
+    - pass:   the predicate confirms the item is resolved.
+    - fail:   the predicate can be evaluated and the fix is not done yet.
+    - broken: the predicate cannot be trusted — its target file has vanished (a
+      grep/contains oracle with nothing to READ) or its path escapes the project root
+      (containment refusal, T6). A `broken` predicate is NEVER a pass and NEVER a plain
+      fail: it is surfaced to the operator, because "cannot confirm" and "not done yet"
+      are different facts (spec 105 §1 correction — the 2 predicates the 103 move rotted).
+    """
+    rel = pred.path if pred.kind == "file-absent" else pred.file
+    target = _resolve(root, rel)
+    if not _contained(root, target):
+        return "broken"  # escapes project root — refuse, never evaluate (T6)
+
+    if pred.kind == "file-absent":
+        # a missing target IS the success condition here — never broken
+        return "pass" if not target.exists() else "fail"
+
     if not target.is_file():
-        return False  # cannot confirm resolution without the file
+        return "broken"  # oracle file gone — cannot confirm; distinct from "not done"
     text = target.read_text(errors="replace")
     present = re.search(pred.pattern, text) is not None
     if pred.kind == "grep-absent":
-        return not present
+        return "pass" if not present else "fail"
     if pred.kind == "file-contains":
-        return present
-    return False
+        return "pass" if present else "fail"
+    return "fail"
+
+
+def evaluate_predicate(pred: Predicate, root: Path) -> bool:
+    """True => the item is resolved. Backward-compatible bool view of classify_predicate:
+    both 'fail' and 'broken' fold to False (a broken predicate never auto-closes)."""
+    return classify_predicate(pred, root) == "pass"
 
 
 @dataclass
@@ -44,6 +75,10 @@ class SweepResult:
     auto_close: list[tuple[str, str]] = field(default_factory=list)
     llm_candidates: list[tuple[str, str]] = field(default_factory=list)
     nominations: list[dict] = field(default_factory=list)
+    # (feedback_id, item_id, reason) for predicates whose target rotted or escaped the
+    # project root — never auto-closed, never counted as "still needs a predicate",
+    # surfaced to the operator (spec 105 §1 / threat T6).
+    broken: list[tuple[str, str, str]] = field(default_factory=list)
 
 
 def _derive_hit_counts(rows: list[dict], archive_rows: list[dict]) -> dict[str, int]:
@@ -123,9 +158,14 @@ def sweep(rows: list[dict], root: Path, limit: int = 40) -> SweepResult:
         vraw = row.get("verify")
         if vraw:
             # cheap + deterministic → never capped
-            if evaluate_predicate(Predicate(**vraw), root):
+            verdict = classify_predicate(Predicate(**vraw), root)
+            if verdict == "pass":
                 res.auto_close.append(key)
-            # predicate present but failing => genuinely not done => leave accepted
+            elif verdict == "broken":
+                # rotted target / escaping path — surface, never close, never re-queue
+                rel = vraw.get("path") if vraw.get("kind") == "file-absent" else vraw.get("file")
+                res.broken.append((*key, str(rel)))
+            # verdict == "fail" => predicate present but failing => not done => leave accepted
         elif candidates_seen < limit:
             # only the expensive LLM-judge tail is bounded
             candidates_seen += 1
@@ -240,7 +280,10 @@ def main(argv=None) -> int:
             write_nominations(res.nominations, fb_root / "nominations")
 
         print(f"auto-close={len(res.auto_close)} candidates={len(res.llm_candidates)} "
-              f"nominations={len(res.nominations)}")
+              f"nominations={len(res.nominations)} broken={len(res.broken)}")
+        for fid, iid, rel in res.broken:
+            print(f"  BROKEN {fid}/{iid}: predicate target unreadable/escaping -> {rel} "
+                  f"(operator: fix the path or re-author)", file=sys.stderr)
         if args.apply:
             marker = last_triage_marker()
             for fid, iid in res.auto_close:

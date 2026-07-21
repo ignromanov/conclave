@@ -213,11 +213,14 @@ def _valid_review_meta() -> dict:
 
 
 def run_finalize(file_path: Path) -> subprocess.CompletedProcess:
+    # CONCLAVE_AI_ROOT pins repo_root() to the test dir — without it the test
+    # only passes when an ambient .conclave instance root exists above cwd.
     return subprocess.run(
         [sys.executable, str(SCRIPTS_DIR / "feedback" / "feedback_emit.py"),
          "--finalize", str(file_path)],
         capture_output=True, text=True,
-        env={"PYTHONPATH": str(SCRIPTS_DIR), "PATH": "/usr/bin:/bin"},
+        env={"PYTHONPATH": str(SCRIPTS_DIR), "PATH": "/usr/bin:/bin",
+             "CONCLAVE_AI_ROOT": str(file_path.parent.resolve())},
     )
 
 

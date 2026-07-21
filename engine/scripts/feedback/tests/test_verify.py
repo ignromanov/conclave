@@ -272,3 +272,91 @@ def test_apply_closes_all_items_and_reconciles_index(tmp_path):
     idx_status = {r["item_id"]: r["status"] for r in rows}
     assert idx_status == {"i1": "resolved", "i2": "resolved", "i3": "resolved"}, \
         f"index not reconciled after batch (phantom rows): {idx_status}"
+
+
+# --- Task A (105 killgate): a rotted / escaping predicate is `broken`, not False ---
+
+from feedback_verify import classify_predicate
+
+
+def test_classify_pass_fail_broken_for_grep_absent(tmp_path):
+    f = tmp_path / "gh.sh"
+    f.write_text("gh issue list --state all\n")
+    # pattern gone => resolved
+    assert classify_predicate(
+        Predicate(kind="grep-absent", file=str(f), pattern="--state open"), tmp_path) == "pass"
+    # pattern still present => not done yet
+    assert classify_predicate(
+        Predicate(kind="grep-absent", file=str(f), pattern="--state all"), tmp_path) == "fail"
+
+
+def test_classify_broken_when_target_file_missing(tmp_path):
+    """A grep-absent/file-contains predicate whose target file does not exist is BROKEN
+    (cannot READ the oracle) — distinct from `fail` (fix not done). This is the 2 rotted
+    predicates whose 103-moved target vanished; they must not read as permanent backlog."""
+    assert classify_predicate(
+        Predicate(kind="grep-absent", file="gone.md", pattern="x"), tmp_path) == "broken"
+    assert classify_predicate(
+        Predicate(kind="file-contains", file="gone.py", pattern="x"), tmp_path) == "broken"
+
+
+def test_classify_file_absent_missing_path_is_pass_not_broken(tmp_path):
+    """file-absent: a missing target is the SUCCESS condition, never broken."""
+    assert classify_predicate(
+        Predicate(kind="file-absent", path="ghost.sh"), tmp_path) == "pass"
+    (tmp_path / "real.sh").write_text("x")
+    assert classify_predicate(
+        Predicate(kind="file-absent", path="real.sh"), tmp_path) == "fail"
+
+
+def test_classify_broken_on_absolute_path_escape(tmp_path):
+    """Containment (T6): an absolute path OUTSIDE the project root is refused as broken,
+    never read — no filesystem-wide read oracle."""
+    outside = tmp_path.parent / "outside-secret.txt"
+    outside.write_text("SECRET\n")
+    try:
+        assert classify_predicate(
+            Predicate(kind="file-contains", file=str(outside), pattern="SECRET"),
+            root=tmp_path / "proj") == "broken"
+    finally:
+        outside.unlink(missing_ok=True)
+
+
+def test_classify_broken_on_dotdot_traversal(tmp_path):
+    """Containment (T6): a `../../..` traversal escaping the project root is refused."""
+    root = tmp_path / "proj"
+    root.mkdir()
+    (tmp_path / "sibling.txt").write_text("PWNED\n")
+    assert classify_predicate(
+        Predicate(kind="file-contains", file="../sibling.txt", pattern="PWNED"),
+        root=root) == "broken"
+    # file-absent must also refuse a traversal (no external oracle laundering)
+    assert classify_predicate(
+        Predicate(kind="file-absent", path="../../etc/nonexistent-xyz"),
+        root=root) == "broken"
+
+
+def test_evaluate_predicate_bool_folds_broken_to_false(tmp_path):
+    """The bool wrapper is preserved for existing callers: broken folds to False (a
+    broken predicate never auto-closes an item)."""
+    assert evaluate_predicate(
+        Predicate(kind="grep-absent", file="gone.md", pattern="x"), tmp_path) is False
+
+
+def test_sweep_routes_broken_predicate_distinctly(tmp_path):
+    """A broken predicate is surfaced in SweepResult.broken — never auto-closed, and NOT
+    routed to llm_candidates (it already has a predicate; it just rotted)."""
+    rows = [_row(verify={"kind": "grep-absent", "file": "vanished.md", "pattern": "x"})]
+    res = sweep(rows, root=tmp_path)
+    assert res.auto_close == []
+    assert ("fb-1", "it-1") not in res.llm_candidates
+    assert any((fid, iid) == ("fb-1", "it-1") for fid, iid, _rel in res.broken), res.broken
+
+
+def test_sweep_escaping_predicate_is_broken_not_closed(tmp_path):
+    """A file-absent predicate pointing outside the root would pass VACUOUSLY (the path is
+    absent inside the tree) — containment routes it to broken instead of a false close."""
+    rows = [_row(verify={"kind": "file-absent", "path": "/nonexistent/abs/ghost.sh"})]
+    res = sweep(rows, root=tmp_path)
+    assert res.auto_close == [], "escaping file-absent must NOT auto-close vacuously"
+    assert any((fid, iid) == ("fb-1", "it-1") for fid, iid, _rel in res.broken), res.broken

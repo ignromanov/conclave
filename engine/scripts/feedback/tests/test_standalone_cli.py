@@ -22,12 +22,18 @@ _CLEAN_ENV: dict[str, str] = {
 }
 
 
-def _run(script: str, args: list[str]) -> subprocess.CompletedProcess[str]:
+def _run(script: str, args: list[str],
+         ai_root: Path | None = None) -> subprocess.CompletedProcess[str]:
+    env = dict(_CLEAN_ENV)
+    if ai_root is not None:
+        # Pin repo_root() to a hermetic dir — --check scripts otherwise depend
+        # on an ambient .conclave instance root above cwd (absent in a clone).
+        env["CONCLAVE_AI_ROOT"] = str(ai_root.resolve())
     return subprocess.run(
         [sys.executable, str(FEEDBACK_PKG / script), *args],
         capture_output=True,
         text=True,
-        env=_CLEAN_ENV,
+        env=env,
     )
 
 
@@ -35,14 +41,16 @@ def _run(script: str, args: list[str]) -> subprocess.CompletedProcess[str]:
 # One test per script
 # ---------------------------------------------------------------------------
 
-def test_feedback_triage_standalone() -> None:
-    result = _run("feedback_triage.py", ["--check"])
+def test_feedback_triage_standalone(tmp_path: Path) -> None:
+    (tmp_path / "ops" / "feedback").mkdir(parents=True)
+    result = _run("feedback_triage.py", ["--check"], ai_root=tmp_path)
     assert "ModuleNotFoundError" not in result.stderr, result.stderr
     assert result.returncode == 0, result.stderr
 
 
-def test_feedback_index_standalone() -> None:
-    result = _run("feedback_index.py", ["--check"])
+def test_feedback_index_standalone(tmp_path: Path) -> None:
+    (tmp_path / "ops" / "feedback").mkdir(parents=True)
+    result = _run("feedback_index.py", ["--check"], ai_root=tmp_path)
     assert "ModuleNotFoundError" not in result.stderr, result.stderr
     assert result.returncode == 0, result.stderr
 

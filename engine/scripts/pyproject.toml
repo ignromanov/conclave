@@ -27,14 +27,9 @@ build-backend = "hatchling.build"
 # Only ship the dispatcher + core lib; briefing/feedback stay path-accessible via PYTHONPATH.
 packages = ["engine", "enginelib"]
 
-[tool.pytest.ini_options]
-# tests/ covers briefing (tests/briefing/) and enginelib (tests/enginelib/) suites.
-# feedback/tests/ covers the feedback-specific suite.
-# pythonpath includes "feedback" so test_verify.py can do `from feedback_verify import …`
-# (feedback_verify.py lives inside engine/scripts/feedback/, not at scripts root).
-testpaths = ["tests", "feedback/tests"]
-pythonpath = [".", "lifecycle", "feedback"]
-addopts = "--tb=short -q"
+# pytest config lives at the repo-root pytest.ini (GH#99): a config nested here is only
+# found when pytest's rootdir walk happens to pass through engine/scripts/, which made the
+# suite set depend on the invocation. Keep exactly one config.
 
 [tool.ruff]
 line-length = 99

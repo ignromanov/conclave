@@ -15,6 +15,7 @@ stdout/argparse/sys.exit and are out of scope for this gate.
 from __future__ import annotations
 
 import ast
+import configparser
 import pathlib
 import re
 import shutil
@@ -267,6 +268,58 @@ def test_instance_data_not_tracked_in_code():
         "instance-data gate FAIL — DATA is tracked in the CODE repo:\n  "
         + "\n  ".join(tracked)
         + "\nHired advisors live in .conclave/.claude/; .claude/{agents,skills} hold symlinks."
+    )
+
+
+# ---------------------------------------------------------------------------
+# 1e. Suite-coverage gate (GH#99) — no test file may be orphaned from the suite.
+# ---------------------------------------------------------------------------
+# 124 feedback tests sat green-but-unreachable for weeks: `pytest engine/scripts/tests`
+# (explicit arg) overrides `testpaths`, and the bare root run had no config at all, so
+# neither invocation ever collected engine/scripts/feedback/tests. The fix is a single
+# repo-root pytest.ini whose `testpaths` names every suite; this gate makes the failure
+# mode structural — a test_*.py outside the declared testpaths fails the suite instead
+# of silently never running.
+_PRUNE_DIR_NAMES = {
+    ".venv", "venv", "node_modules", "__pycache__", "worktrees", "build", "dist",
+}
+
+
+def _repo_test_files():
+    def walk(base: pathlib.Path):
+        for entry in sorted(base.iterdir()):
+            name = entry.name
+            if entry.is_dir():
+                if name.startswith(".") or name in _PRUNE_DIR_NAMES:
+                    continue
+                yield from walk(entry)
+            elif entry.is_file() and name.startswith("test_") and name.endswith(".py"):
+                yield entry
+
+    yield from walk(REPO_ROOT)
+
+
+def test_all_test_files_inside_declared_testpaths():
+    ini = REPO_ROOT / "pytest.ini"
+    assert ini.is_file(), (
+        "suite-coverage gate FAIL — repo-root pytest.ini missing; without it the bare "
+        "`pytest` run has no testpaths/pythonpath and the suite fractures (GH#99)"
+    )
+    parser = configparser.ConfigParser()
+    parser.read(ini, encoding="utf-8")
+    declared = parser.get("pytest", "testpaths", fallback="").split()
+    assert declared, "suite-coverage gate FAIL — pytest.ini declares no testpaths"
+    roots = [REPO_ROOT / p for p in declared]
+    orphans = [
+        str(f.relative_to(REPO_ROOT))
+        for f in _repo_test_files()
+        if not any(f.is_relative_to(r) for r in roots)
+    ]
+    assert not orphans, (
+        "suite-coverage gate FAIL — test files outside declared testpaths "
+        "(they run in NO suite):\n  "
+        + "\n  ".join(orphans)
+        + "\nAdd their suite dir to pytest.ini testpaths."
     )
 
 
