@@ -189,6 +189,29 @@ def test_discovery_skips_project_agents_without_claude_project_dir(tmp_path, mon
 
 
 # ---------------------------------------------------------------------------
+# #24: real sessions export CONCLAVE_AI_ROOT (SessionStart hook), not
+# CLAUDE_PROJECT_DIR. canonical_advisors() must trust that anchor too, or a
+# hired advisor's session close ("is not canonical") rejects a real def.
+# ---------------------------------------------------------------------------
+
+def test_conclave_ai_root_unions_project_agents_without_claude_project_dir(tmp_path, monkeypatch):
+    """#24: real sessions export CONCLAVE_AI_ROOT, not CLAUDE_PROJECT_DIR."""
+    engine = tmp_path / "engine"
+    (engine / "skills").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(engine))
+
+    proj = tmp_path / "project"
+    pa = proj / ".claude" / "agents"
+    pa.mkdir(parents=True, exist_ok=True)
+    (pa / "sage-cto.md").write_text("---\nname: x\n---\n")
+
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    monkeypatch.setenv("CONCLAVE_AI_ROOT", str(proj))
+
+    assert "sage-cto" in canonical_advisors()
+
+
+# ---------------------------------------------------------------------------
 # ER1 AC1: create -> discover round-trip. A freshly `advisor.create`-d flat
 # advisor must be immediately recognized by is_canonical_advisor.
 # ---------------------------------------------------------------------------
