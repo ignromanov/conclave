@@ -332,6 +332,99 @@ def _patch_engine_run(monkeypatch, *, gh_code=0, briefing_code=0):
     monkeypatch.setattr(session_init.subprocess, "run", _mock_run)
 
 
+def _record_engine_run(monkeypatch):
+    """Like _patch_engine_run, but hands back the kwargs each engine subprocess was given."""
+    _real_run = subprocess.run
+    calls: dict[str, dict] = {}
+
+    def _mock_run(cmd, **kwargs):
+        if isinstance(cmd, list):
+            if cmd[1:5] == ["-m", "engine", "lifecycle", "gh-fetch"]:
+                calls["gh-fetch"] = kwargs
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+            if cmd[1:5] == ["-m", "engine", "lifecycle", "git-fetch"]:
+                calls["git-fetch"] = kwargs
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+            if cmd[1:4] == ["-m", "engine", "briefing"]:
+                calls["briefing"] = kwargs
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+        return _real_run(cmd, **kwargs)
+
+    monkeypatch.setattr(session_init.subprocess, "run", _mock_run)
+    return calls
+
+
+class TestGhFetchRemoteCwd:
+    """H6 — gh-fetch must never fall back to the ENGINE's own git origin.
+
+    `gh_fetch.resolve_repos()` layers roster → local git remote → refuse. The middle layer runs
+    `git remote get-url origin` in `CONCLAVE_GIT_REMOTE_CWD`, defaulting to the child's cwd. That
+    cwd was `engine/scripts`, so an instance with a null roster resolved the engine's own repo and
+    fetched a stranger's issue board into the advisor briefing. Pin it to the consumer project.
+    """
+
+    def _briefing(self, root: Path) -> None:
+        path = root / "agent-memory" / "advisors" / "briefings" / "kai-cto.md"
+        path.write_text("# briefing\n", encoding="utf-8")
+
+    def test_pins_remote_cwd_to_claude_project_dir(self, tmp_path, monkeypatch):
+        root = _make_root(tmp_path / "data")
+        project = tmp_path / "project"
+        project.mkdir()
+        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project))
+        self._briefing(root)
+
+        calls = _record_engine_run(monkeypatch)
+        session_init._step1_load_briefing("kai-cto", root)
+
+        env = calls["gh-fetch"].get("env")
+        assert env is not None, "gh-fetch spawned with inherited env — remote cwd left unpinned"
+        assert env.get("CONCLAVE_GIT_REMOTE_CWD") == str(project)
+
+    def test_falls_back_to_data_root_parent(self, tmp_path, monkeypatch):
+        """No CLAUDE_PROJECT_DIR: a `.conclave` DATA root's project is its parent."""
+        project = tmp_path / "project"
+        root = _make_root(project / ".conclave")
+        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+        self._briefing(root)
+
+        calls = _record_engine_run(monkeypatch)
+        session_init._step1_load_briefing("kai-cto", root)
+
+        assert calls["gh-fetch"]["env"].get("CONCLAVE_GIT_REMOTE_CWD") == str(project)
+
+    def test_never_points_at_the_engine_checkout(self, tmp_path, monkeypatch):
+        """The regression itself: the pinned dir must not be the engine's own tree."""
+        root = _make_root(tmp_path / "data")
+        project = tmp_path / "project"
+        project.mkdir()
+        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project))
+        self._briefing(root)
+
+        calls = _record_engine_run(monkeypatch)
+        session_init._step1_load_briefing("kai-cto", root)
+
+        pinned = calls["gh-fetch"]["env"]["CONCLAVE_GIT_REMOTE_CWD"]
+        assert pinned != calls["gh-fetch"].get("cwd")
+        assert "engine/scripts" not in pinned
+
+    def test_caller_supplied_value_is_not_overridden(self, tmp_path, monkeypatch):
+        """The env var is an existing test/ops seam — pinning must not clobber a deliberate one."""
+        root = _make_root(tmp_path / "data")
+        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path / "project"))
+        monkeypatch.setenv("CONCLAVE_GIT_REMOTE_CWD", str(tmp_path / "explicit"))
+        self._briefing(root)
+
+        calls = _record_engine_run(monkeypatch)
+        session_init._step1_load_briefing("kai-cto", root)
+
+        assert calls["gh-fetch"]["env"]["CONCLAVE_GIT_REMOTE_CWD"] == str(tmp_path / "explicit")
+
+
 class TestStep1LoadBriefing:
     def test_cache_hit_fresh_briefing(self, tmp_path, monkeypatch):
         root = _make_root(tmp_path)

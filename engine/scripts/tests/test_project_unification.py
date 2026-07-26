@@ -20,7 +20,9 @@ def test_root_deps_absorb_subprojects():
     deps = " ".join(data["project"]["dependencies"])
     for pkg in ("python-frontmatter", "pydantic", "ruamel.yaml", "PyYAML"):
         assert pkg.lower() in deps.lower()
-    assert data["project"]["requires-python"] == ">=3.13"
+    # requires-python is asserted by tests/test_python_floor.py, which ties it to the guards that
+    # actually enforce it. A second hardcoded literal here is how the floor drifted out of step
+    # with the code in the first place — this test owns dependency absorption, not the floor.
 
 
 def test_engine_module_runs():
