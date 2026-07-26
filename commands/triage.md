@@ -1,6 +1,6 @@
 ---
 description: |
-  Weekly cadence triage pipeline for Quorum + Forge. Five-step pipeline: dedup digest,
+  Weekly cadence triage pipeline for the facilitator role + Forge. Five-step pipeline: dedup digest,
   classify clusters, write status/owner back to review files, open GH Issues for
   accepted items, archive resolved reviews. Run when /conclave:start signals "Triage due".
   Monthly: zombie pass for items open > 90 days.
@@ -10,7 +10,7 @@ description: |
 
 # /conclave:triage — Cadence Triage Pipeline
 
-> **Run by Quorum + Forge.** Triggered when `/conclave:start` surfaces:
+> **Run by the facilitator role + Forge.** Triggered when `/conclave:start` surfaces:
 > `"Triage due: N reviews pending, last triage X days ago"`.
 > Pure cadence (weekly) — no mid-week escalation carve-outs.
 
