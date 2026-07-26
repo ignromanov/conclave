@@ -14,14 +14,18 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from tests.cmd.helpers import run_engine
+from tests.cmd.helpers import non_repo_dir, run_engine
 
 
 def _roster(tmp: Path, body: str) -> dict:
     (tmp / "roster.yaml").write_text(textwrap.dedent(body), encoding="utf-8")
-    no_repo = tmp / "not-a-repo"
-    no_repo.mkdir(exist_ok=True)
-    return {"CONCLAVE_AI_ROOT": str(tmp), "CONCLAVE_GIT_REMOTE_CWD": str(no_repo)}
+    # non_repo_dir asserts the premise instead of inheriting it from wherever tmp_path
+    # happens to sit — a basetemp inside a checkout would let git walk up and the pin
+    # would silently stop being one.
+    return {
+        "CONCLAVE_AI_ROOT": str(tmp),
+        "CONCLAVE_GIT_REMOTE_CWD": str(non_repo_dir(tmp)),
+    }
 
 
 def test_both_repos_are_owner_qualified(tmp_path):
@@ -77,7 +81,15 @@ def test_null_owner_refuses_instead_of_emitting_a_leading_slash(tmp_path):
     result = run_engine("lifecycle", "gh-repos", env=env)
     assert result.returncode == 1
     assert result.stdout.strip() == ""
-    assert "no repo scope" in result.stderr
+    assert "no usable repo scope" in result.stderr
+    # This roster DECLARED main_repo, so the refusal must name the typo, not imply a null
+    # roster — the operator has to know which key to fix.
+    assert "github.main_repo" in result.stderr, result.stderr
+    assert "'/app'" in result.stderr, result.stderr
+    # Positive control for the negative assertion in the declared-nothing test below: that one
+    # proves no `roster:`-prefixed line is emitted, which is only meaningful if such a line is
+    # emitted HERE. Asserting both directions keeps either from passing vacuously.
+    assert [ln for ln in result.stderr.splitlines() if ln.startswith("roster:")], result.stderr
 
 
 def test_no_scope_refuses_rather_than_printing_nothing(tmp_path):
@@ -92,4 +104,10 @@ def test_no_scope_refuses_rather_than_printing_nothing(tmp_path):
     result = run_engine("lifecycle", "gh-repos", env=env)
     assert result.returncode == 1
     assert result.stdout.strip() == ""
-    assert "no repo scope" in result.stderr
+    assert "no usable repo scope" in result.stderr
+    # Declared nothing: there is no typo to report, so no per-key diagnostic either.
+    # Match the diagnostic's SHAPE — a line that STARTS `roster:`, as the emitter writes it.
+    # A bare `"roster:" not in stderr` collides with the generic refusal, which quotes the
+    # word while pointing the operator at the diagnostic, and so cannot tell "none emitted"
+    # from "mentioned in passing".
+    assert not [ln for ln in result.stderr.splitlines() if ln.startswith("roster:")], result.stderr

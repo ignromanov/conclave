@@ -12,7 +12,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from tests.cmd.helpers import run_engine
+from tests.cmd.helpers import make_git_repo, non_repo_dir, run_engine
 
 # helpers.py lives at engine/scripts/tests/cmd/helpers.py
 # parents[0]=cmd  parents[1]=tests  parents[2]=scripts
@@ -247,9 +247,10 @@ def test_search_scoped_by_repo_not_account_wide(tmp_path):
 def test_unscoped_refuses_account_wide_search(tmp_path):
     _setup_mock_gh(tmp_path)
     sentinel = tmp_path / "gh-called.log"
-    # No roster.yaml seeded; run from a non-repo cwd so git remote yields nothing.
-    non_repo = tmp_path / "elsewhere"
-    non_repo.mkdir()
+    # No roster.yaml seeded; pin git at a directory PROVEN to be outside any repository, so
+    # the remote fallback yields nothing. Asserted rather than inherited from tmp_path's
+    # location — see non_repo_dir.
+    non_repo = non_repo_dir(tmp_path, "elsewhere")
 
     r = run_engine(
         "lifecycle", "gh-fetch", "--advisor", "kai-cto",
@@ -309,7 +310,11 @@ def test_resolve_repos_empty_when_no_roster_no_remote(tmp_path, monkeypatch):
 
 def test_resolve_repos_drops_the_slug_a_null_owner_leaves_malformed(tmp_path, monkeypatch):
     """`owner: null` + a bare repo name built "/app" — a target gh accepts and no caller
-    could tell apart from a real slug. It must not survive resolution."""
+    could tell apart from a real slug. It must not survive resolution.
+
+    NOT coverage for the layer-1 refusal below: layer 2 is stubbed empty here, so this
+    assertion passes whether layer 1 refuses or falls through to a dead end.
+    """
     from enginelib.lifecycle import gh_fetch
     _write_roster(
         tmp_path,
@@ -318,6 +323,59 @@ def test_resolve_repos_drops_the_slug_a_null_owner_leaves_malformed(tmp_path, mo
     )
     monkeypatch.setattr(gh_fetch, "_git_remote_slug", lambda: "")
     assert gh_fetch.resolve_repos("") == []
+
+
+# ---------------------------------------------------------------------------
+# 10b. Declared-nothing vs declared-and-unusable. An emptied layer 1 used to fall through
+#      to the git remote, making an operator typo indistinguishable from a roster that
+#      declared nothing — and hiding it behind a scope that happens to resolve.
+#
+#      Both tests below give layer 2 a WORKING remote. With a dead layer 2 neither can
+#      tell refusal from fall-through, which is exactly how the existing malformed-case
+#      test above passes against both behaviours.
+# ---------------------------------------------------------------------------
+def test_malformed_layer_1_refuses_even_when_the_git_remote_would_resolve(
+    tmp_path, monkeypatch, capfd
+):
+    from enginelib.lifecycle import gh_fetch
+    _write_roster(
+        tmp_path,
+        "github:\n  owner: null\n  ai_repo: null\n  main_repo: app\n",
+        monkeypatch,
+    )
+    # Layer 2 is live and would yield a perfectly usable slug.
+    consumer = make_git_repo(
+        tmp_path / "consumer", origin="git@github.com:real-owner/real-repo.git"
+    )
+    monkeypatch.setenv("CONCLAVE_GIT_REMOTE_CWD", str(consumer))
+    assert gh_fetch._git_remote_slug() == "real-owner/real-repo", (
+        "layer 2 is not reachable, so this test cannot distinguish the two behaviours"
+    )
+
+    assert gh_fetch.resolve_repos("") == [], "fell through to the git remote"
+
+    err = capfd.readouterr().err
+    assert "github.main_repo" in err, f"diagnostic names no roster key:\n{err}"
+    assert "'app'" in err, f"diagnostic does not quote the declared value:\n{err}"
+    assert "'/app'" in err, f"diagnostic does not show what the value produced:\n{err}"
+    assert "github.owner" in err, f"diagnostic omits the key actually at fault:\n{err}"
+
+
+def test_declared_nothing_still_falls_through_to_the_git_remote(tmp_path, monkeypatch, capfd):
+    """The other half of the ruling: a roster that names no repo keys is not a typo."""
+    from enginelib.lifecycle import gh_fetch
+    _write_roster(
+        tmp_path,
+        "github:\n  owner: acme\n  ai_repo: null\n  main_repo: null\n",
+        monkeypatch,
+    )
+    consumer = make_git_repo(
+        tmp_path / "consumer", origin="git@github.com:real-owner/real-repo.git"
+    )
+    monkeypatch.setenv("CONCLAVE_GIT_REMOTE_CWD", str(consumer))
+
+    assert gh_fetch.resolve_repos("acme") == ["real-owner/real-repo"]
+    assert capfd.readouterr().err == "", "a roster that declared nothing must not be scolded"
 
 
 def test_run_refuses_unscoped_rather_than_searching_a_null_owner_slug(tmp_path, monkeypatch):
