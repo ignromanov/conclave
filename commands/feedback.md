@@ -12,7 +12,7 @@ description: |
 # /conclave:feedback — Universal Work Review Emission
 
 > **MANDATORY** at the end of every session or dispatch. Works independently — no
-> A facilitator role is required. Replaces the old `emit.sh` path entirely.
+> facilitator role required. Replaces the old `emit.sh` path entirely.
 
 ## Data classification
 
