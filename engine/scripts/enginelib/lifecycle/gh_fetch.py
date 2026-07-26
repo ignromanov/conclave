@@ -1,7 +1,9 @@
 """enginelib.lifecycle.gh_fetch — TTL-cached GH issue snapshot writer.
 
-Contract: no stdout, no argparse, no sys.exit.
-Subprocess (via enginelib.gh) + clock + file I/O are allowed.
+Contract: no stdout, no argparse, no sys.exit. Subprocess (via enginelib.gh) + clock +
+file I/O are allowed, as is a stderr diagnostic — `resolve_repos()` refuses a malformed
+roster scope, and the *reason* is the whole point of refusing rather than falling through,
+so it cannot wait for a caller to reconstruct it from an empty list.
 Port of lifecycle/gh-fetch.sh.
 
 run(advisor, no_cache=False) -> "hit" | "refreshed" | "lock-error" | "gh-error" | "unscoped"
@@ -9,7 +11,8 @@ run(advisor, no_cache=False) -> "hit" | "refreshed" | "lock-error" | "gh-error" 
   "refreshed"  — snapshot written (or force-rewritten with no_cache=True).
   "lock-error" — could not acquire mkdir-lock within 10s timeout.
   "gh-error"   — gh search failed or returned empty; cache left stale.
-  "unscoped"   — no repo scope resolvable (roster null + no git remote); refused
+  "unscoped"   — no usable repo scope (roster declared none and no git remote, or
+                 roster declared one that resolve_repos refused as malformed); refused
                  rather than search account-wide; cache left stale (#50 privacy).
 """
 from __future__ import annotations
@@ -18,6 +21,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -70,23 +74,46 @@ def resolve_repos(owner: str) -> list[str]:
 
     Layer 1: github.ai_repo / github.main_repo from roster.yaml (bare names get
              owner-prefixed; already-qualified 'owner/repo' slugs pass through).
-    Layer 2: the local origin remote's 'owner/repo'.
+    Layer 2: the local origin remote's 'owner/repo' — consulted ONLY when layer 1
+             declared nothing at all.
     Layer 3: empty — caller must refuse (fail-closed), never account-wide (#50).
 
     Every slug is shape-checked before it leaves: a null `github.owner` prefixes a bare
     repo name into "/app", which is not a repo and must not reach gh. Dropping it here
-    rather than at a caller keeps both consumers — `run()` and `gh-repos` — on one rule,
-    and an emptied layer 1 falls through to the same fail-closed path as a null roster.
+    rather than at a caller keeps both consumers — `run()` and `gh-repos` — on one rule.
+
+    **Declared-nothing and declared-and-unusable are different facts.** A roster naming no
+    repo keys falls through to the git remote. A roster that names one and yields no usable
+    slug is an operator TYPO, and substituting the git remote would hide it behind a scope
+    that happens to work — so refuse at layer 1 and name the key and the value that did it.
+    Fail-closed held either way; the diagnostic is what the distinction buys, so it is the
+    deliverable here, not the empty list.
     """
     owner = owner.strip()
-    repos: list[str] = []
+    declared: list[tuple[str, str, str]] = []  # (roster key, raw value, built slug)
     for key in ("github.ai_repo", "github.main_repo"):
         value = roster.roster_get(key).strip()
         if value:
-            repos.append(value if "/" in value else f"{owner}/{value}")
-    repos = [slug for slug in repos if _SLUG_RE.match(slug)]
-    if repos:
-        return repos
+            declared.append((key, value, value if "/" in value else f"{owner}/{value}"))
+
+    usable = [slug for _, _, slug in declared if _SLUG_RE.match(slug)]
+    if usable:
+        return usable
+
+    if declared:
+        for key, value, slug in declared:
+            # A bare name depends on github.owner, so say what owner was when it failed —
+            # that is the actual typo in the common case, and it is not in `key`.
+            detail = "" if "/" in value else (
+                f" with github.owner {'unset' if not owner else repr(owner)}"
+            )
+            sys.stderr.write(
+                f"roster: {key}: {value!r}{detail} yields {slug!r}, which is not a repo — "
+                f"refusing the declared scope rather than substituting your git remote, "
+                f"which would hide the typo. Fix roster.yaml.\n"
+            )
+        return []
+
     slug = _git_remote_slug()
     return [slug] if _SLUG_RE.match(slug) else []
 

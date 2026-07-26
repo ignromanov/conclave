@@ -94,9 +94,9 @@ def _gh_fetch(args) -> int:
         return 1
     if status == "unscoped":
         print(
-            "gh-fetch: no repo scope configured (github.ai_repo/main_repo null and no "
-            "git remote) — refusing account-wide search to avoid cross-project leak; "
-            "cache left stale",
+            "gh-fetch: no usable repo scope (roster declared none, or declared one that "
+            "resolve_repos refused — see any `roster:` line above) — refusing account-wide "
+            "search to avoid cross-project leak; cache left stale",
             file=sys.stderr,
         )
         return 1
@@ -120,8 +120,9 @@ def _gh_repos(args) -> int:
     args._runlog_args = f"owner={owner},repos={len(repos)}"
     if not repos:
         print(
-            "gh-repos: no repo scope configured (github.ai_repo/main_repo null and no "
-            "git remote) — refusing to emit an unscoped list",
+            "gh-repos: no usable repo scope (roster declared none, or declared one that "
+            "resolve_repos refused — see any `roster:` line above) — refusing to emit an "
+            "unscoped list",
             file=sys.stderr,
         )
         return 1
