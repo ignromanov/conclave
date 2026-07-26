@@ -18,6 +18,11 @@ __pycache__/
 **/agent-memory/git-cache/
 **/agent-memory/run-log/
 
+# advisor memory is DATA (spec 103): briefings/hot.md/sessions belong in .conclave/,
+# never in CODE. Ignoring the whole tree, not just the caches above — the repo is
+# public, so a stray `git add -A` must not be able to stage it.
+**/agent-memory/
+
 # test pollution: env-less feedback tests resolve repo_root() to the repo root and
 # write here. Real feedback data lives in DATA, at .conclave/ops/feedback/.
 /ops/feedback/
