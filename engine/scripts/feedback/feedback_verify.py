@@ -6,11 +6,25 @@ Resolves the path against `root`; an absolute path in the predicate is used as-i
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
-from datetime import UTC
-from pathlib import Path
+import sys
 
-from feedback.schema import Predicate
+# Interpreter floor, enforced before the first thing that can fail below it — here,
+# `from datetime import UTC` below (UTC was added in 3.11), which is the very measurement the
+# floor comes from. /conclave:triage Step 3.5 launches this file directly.
+# Measured, not declared; see engine/__main__.py for the full note.
+if sys.version_info < (3, 11):  # noqa: UP036 — see engine/__main__.py
+    sys.stderr.write(
+        f"Conclave requires Python 3.11 or newer.\n"
+        f"This is Python {sys.version.split()[0]} at {sys.executable}.\n"
+        f"Install a newer interpreter (e.g. `uv python install 3.13`) and re-run.\n"
+    )
+    sys.exit(1)
+
+from dataclasses import dataclass, field  # noqa: E402 — must follow the floor guard above
+from datetime import UTC  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from feedback.schema import Predicate  # noqa: E402
 
 NOMINATE_MIN_HITS = 3
 NOMINATE_FREQ = "every-dispatch"
@@ -297,5 +311,4 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    import sys
-    sys.exit(main())
+    sys.exit(main())  # `sys` is imported at module level for the floor guard above

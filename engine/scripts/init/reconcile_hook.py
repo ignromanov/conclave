@@ -13,12 +13,26 @@ resolved absolute paths by conclave_init.register_hook) can be repaired after th
 plugin cache dir has been removed.
 
 Best-effort: always exits 0 so a missing/unreadable settings file, or a missing
-CLAUDE_PLUGIN_ROOT, never blocks a session start.
+CLAUDE_PLUGIN_ROOT, never blocks a session start. The interpreter-floor guard below is the
+one exception — a sub-floor interpreter is not a repairable condition, and Step 1 of
+/conclave:start refuses on it moments later regardless.
 """
 import json
 import os
 import sys
 from pathlib import Path
+
+# Interpreter floor, enforced before the first thing that can fail below it — here, the
+# `enginelib` imports below. /conclave:start Step 0 launches this file directly, *before* the
+# guarded session_init.py at Step 1, so it cannot inherit anyone else's refusal.
+# Measured, not declared; see engine/__main__.py for the full note.
+if sys.version_info < (3, 11):  # noqa: UP036 — see engine/__main__.py
+    sys.stderr.write(
+        f"Conclave requires Python 3.11 or newer.\n"
+        f"This is Python {sys.version.split()[0]} at {sys.executable}.\n"
+        f"Install a newer interpreter (e.g. `uv python install 3.13`) and re-run.\n"
+    )
+    sys.exit(1)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # engine/scripts
 from enginelib.init import reconcile_hook  # noqa: E402

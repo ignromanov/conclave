@@ -27,6 +27,20 @@ import subprocess
 import sys
 from typing import Any
 
+# Interpreter floor, enforced before the first thing that can fail below it — here, `roster`,
+# which reaches `enginelib.roster` and its `ruamel` dependency. Without this a sub-floor user
+# gets `ModuleNotFoundError: ruamel` — a dep error naming neither Python nor a version — because
+# the venv that would carry the dep was never built for this interpreter. /conclave:start and
+# github-issues-protocol.md launch this file directly.
+# Measured, not declared; see engine/__main__.py for the full note.
+if sys.version_info < (3, 11):  # noqa: UP036 — see engine/__main__.py
+    sys.stderr.write(
+        f"Conclave requires Python 3.11 or newer.\n"
+        f"This is Python {sys.version.split()[0]} at {sys.executable}.\n"
+        f"Install a newer interpreter (e.g. `uv python install 3.13`) and re-run.\n"
+    )
+    sys.exit(1)
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
 import roster  # noqa: E402  (lib/ is not a package; path-inserted above)
 
