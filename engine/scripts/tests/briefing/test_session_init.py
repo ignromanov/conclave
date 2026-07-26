@@ -372,6 +372,10 @@ class TestGhFetchRemoteCwd:
         assert env is not None, "gh-fetch spawned with inherited env — remote cwd left unpinned"
         assert env.get("CONCLAVE_GIT_REMOTE_CWD") == str(project)
 
+        git_env = calls["git-fetch"].get("env")
+        assert git_env is not None, "git-fetch spawned with inherited env — remote cwd left unpinned"
+        assert git_env.get("CONCLAVE_GIT_REMOTE_CWD") == str(project)
+
     def test_falls_back_to_data_root_parent(self, tmp_path, monkeypatch):
         """No CLAUDE_PROJECT_DIR: a `.conclave` DATA root's project is its parent."""
         project = tmp_path / "project"
@@ -385,6 +389,7 @@ class TestGhFetchRemoteCwd:
         session_init._step1_load_briefing("kai-cto", root)
 
         assert calls["gh-fetch"]["env"].get("CONCLAVE_GIT_REMOTE_CWD") == str(project)
+        assert calls["git-fetch"]["env"].get("CONCLAVE_GIT_REMOTE_CWD") == str(project)
 
     def test_never_points_at_the_engine_checkout(self, tmp_path, monkeypatch):
         """The regression itself: the pinned dir must not be the engine's own tree."""
@@ -402,6 +407,9 @@ class TestGhFetchRemoteCwd:
         pinned = calls["gh-fetch"]["env"]["CONCLAVE_GIT_REMOTE_CWD"]
         assert pinned != calls["gh-fetch"].get("cwd")
 
+        git_pinned = calls["git-fetch"]["env"]["CONCLAVE_GIT_REMOTE_CWD"]
+        assert git_pinned != calls["git-fetch"].get("cwd")
+
     def test_caller_supplied_value_is_not_overridden(self, tmp_path, monkeypatch):
         """The env var is an existing test/ops seam — pinning must not clobber a deliberate one."""
         root = _make_root(tmp_path / "data")
@@ -415,6 +423,7 @@ class TestGhFetchRemoteCwd:
         session_init._step1_load_briefing("kai-cto", root)
 
         assert calls["gh-fetch"]["env"]["CONCLAVE_GIT_REMOTE_CWD"] == str(tmp_path / "explicit")
+        assert calls["git-fetch"]["env"]["CONCLAVE_GIT_REMOTE_CWD"] == str(tmp_path / "explicit")
 
     def test_empty_value_is_treated_as_unset(self, tmp_path, monkeypatch):
         """`setdefault` kept an empty string, and `_git_remote_slug` reads empty as unset —
@@ -432,6 +441,7 @@ class TestGhFetchRemoteCwd:
         session_init._step1_load_briefing("kai-cto", root)
 
         assert calls["gh-fetch"]["env"]["CONCLAVE_GIT_REMOTE_CWD"] == str(project)
+        assert calls["git-fetch"]["env"]["CONCLAVE_GIT_REMOTE_CWD"] == str(project)
 
     def test_relative_project_dir_is_resolved_before_the_child_changes_cwd(
         self, tmp_path, monkeypatch
@@ -452,6 +462,7 @@ class TestGhFetchRemoteCwd:
         session_init._step1_load_briefing("kai-cto", root)
 
         assert calls["gh-fetch"]["env"]["CONCLAVE_GIT_REMOTE_CWD"] == str(project)
+        assert calls["git-fetch"]["env"]["CONCLAVE_GIT_REMOTE_CWD"] == str(project)
 
 
 class TestStep1LoadBriefing:
