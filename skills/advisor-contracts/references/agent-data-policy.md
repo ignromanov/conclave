@@ -74,8 +74,8 @@ Every top-level `.ai/` directory has an `INDEX.md`:
 
 ## KB Updates routing (post-meeting)
 
-After writing meeting minutes, Quorum appends a `## KB Updates Required` section
-tagging the responsible advisor:
+After writing meeting minutes, the facilitator role appends a `## KB Updates Required`
+section tagging the responsible advisor:
 
 ```markdown
 ## KB Updates Required
