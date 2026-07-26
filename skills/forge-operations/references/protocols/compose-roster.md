@@ -110,8 +110,10 @@ operator does **not** write the roles, anchors, or rationale. That distinction p
 ## Phase 4 — Hand off to hire + verify
 
 1. **Per approved role**, run `hire.md` Phase 3 onward:
-   `create-advisor.sh` → `register-advisor.sh` → `python3 -m briefing --advisor <id>`
-   (the canonical briefing command). Point the roster/`CONCLAVE_AI_ROOT` at the instance.
+   `engine advisor create` → `engine register advisor` → `python -m engine briefing build <id>`.
+   Point the roster/`CONCLAVE_AI_ROOT` at the instance. Note that `hire.md` Phase 3 defers the
+   briefing build until after the advisor's First Launch — building it earlier overwrites the
+   `AWAITING_FIRST_LAUNCH` sentinel and silently skips First Launch entirely.
 2. **Zero-bleed check** — each advisor's first-session opening is judged on-domain with **zero
    foreign-instance bleed** by `exec.themis-judge` (judge ≠ producer — a different run than whatever
    generated the openings).
