@@ -2,14 +2,24 @@
 
 Why this file exists: on an interpreter below the floor the engine used to die with a raw
 `TypeError: unsupported operand type(s) for |` from PEP 604 annotations, naming neither Python
-nor a version. Worse, the three entrypoints failed in three different ways — `python -m engine`
-tripped on its own signature, `session_init.py` on an `enginelib` import, and `conclave_init.py`
-not at all until after the user had answered the whole interactive interview.
+nor a version. Worse, the entrypoints failed in several different ways — `python -m engine`
+tripped on its own signature, `session_init.py` on an `enginelib` import, the `feedback/*`
+scripts on `from datetime import UTC`, `lib/roster.py` on a `ModuleNotFoundError: ruamel` that
+mentions neither Python nor a version, and `conclave_init.py` not at all until after the user
+had answered the whole interactive interview.
 
 The floor is measured, not declared: an import sweep of all 125 runtime modules is clean on 3.11
 and 3.13 and fails on 3.10 solely on `from datetime import UTC` (added in 3.11).
 
-Two layers of assertion:
+**The entrypoint set is derived, not listed.** A hand-written tuple of three was what let five
+prose-launched scripts ship unguarded: the enumeration and the shipped prose drifted apart with
+nothing comparing them. So `_prose_entrypoints()` scans the prose that actually launches the
+engine (`commands/*.md`, `skills/advisor-contracts/references/*.md`) for `python …/<script>.py`
+invocations and resolves each to a file. Three assertions stop a broken scan passing vacuously:
+the derived set must be non-empty, must contain the entrypoints known to be prose-launched, and
+every matched path must resolve to a real file.
+
+Two layers of assertion per entrypoint:
   * structural — the guard exists, and sits before anything that can fail below the floor. Runs
     everywhere, needs no old interpreter.
   * behavioural — an actual sub-floor interpreter gets the friendly message and no traceback.
@@ -28,15 +38,96 @@ import sys
 import pytest
 
 SCRIPTS_ROOT = pathlib.Path(__file__).resolve().parents[1]
+REPO_ROOT = SCRIPTS_ROOT.parents[1]  # engine/scripts -> engine -> repo root
 
 # The single source of truth for the floor, asserted against pyproject and the guards below.
 FLOOR = (3, 11)
 
-ENTRYPOINTS = (
-    "engine/__main__.py",
-    "lifecycle/session_init.py",
-    "init/conclave_init.py",
-)
+# The shipped prose that launches the engine on a consumer machine.
+PROSE_GLOBS = ("commands/*.md", "skills/advisor-contracts/references/*.md")
+
+# `python3 <path>.py` / `python <path>.py`, optional flags and quoting between the two. Matches
+# the `uv run --project … python …/x.py` form as well: uv only enforces `requires-python` when the
+# project it is pointed at declares one, so that form is not a substitute for an in-file guard.
+_INVOCATION = re.compile(r"""\bpython3?\b\s+(?:-\S+\s+)*["']?([^\s"'|;&()]+\.py)""")
+
+# Every engine script lives under this prefix, whatever precedes it in the prose
+# (`engine/scripts/…`, `${CLAUDE_PLUGIN_ROOT}/engine/scripts/…`, an absolute path).
+_SCRIPTS_MARKER = "engine/scripts/"
+
+# Launched as a module (`python -m engine`), so no file-path invocation appears in the prose and
+# the scan cannot find it. Declared here — with the same guard requirement as the derived set.
+MODULE_ENTRYPOINTS = ("engine/__main__.py",)
+
+# Known to be prose-launched by file path. The scan must find at least these, or `_INVOCATION`
+# has regressed and the derived set is quietly shrinking again.
+_EXPECTED_IN_PROSE = ("init/conclave_init.py", "lifecycle/session_init.py")
+
+
+def _prose_entrypoints() -> tuple[dict[str, set[str]], list[str], int]:
+    """Scripts the shipped prose launches by file path.
+
+    Returns `(rel -> {docs that launch it}, unresolvable raw paths, docs scanned)`. The last two
+    are what the anti-vacuity assertions read: a scan that resolves nothing, or silently drops a
+    match it could not resolve, is the failure this derivation exists to prevent.
+    """
+    found: dict[str, set[str]] = {}
+    unresolved: list[str] = []
+    scanned = 0
+    for glob in PROSE_GLOBS:
+        for doc in sorted(REPO_ROOT.glob(glob)):
+            scanned += 1
+            # Fold shell line-continuations so a wrapped `uv run … \\\n  python …/x.py` matches.
+            text = re.sub(r"\\\s*\n\s*", " ", doc.read_text(encoding="utf-8"))
+            for match in _INVOCATION.finditer(text):
+                raw = match.group(1)
+                where = str(doc.relative_to(REPO_ROOT))
+                if _SCRIPTS_MARKER not in raw:
+                    unresolved.append(f"{where}: {raw}")
+                    continue
+                rel = raw.split(_SCRIPTS_MARKER)[-1]
+                if not (SCRIPTS_ROOT / rel).is_file():
+                    unresolved.append(f"{where}: {raw}")
+                    continue
+                found.setdefault(rel, set()).add(where)
+    return found, unresolved, scanned
+
+
+PROSE_ENTRYPOINTS, _UNRESOLVED, _DOCS_SCANNED = _prose_entrypoints()
+
+# What every guard assertion below is parametrized over.
+ENTRYPOINTS = tuple(sorted(set(PROSE_ENTRYPOINTS) | set(MODULE_ENTRYPOINTS)))
+
+
+def test_prose_scan_is_not_vacuous() -> None:
+    """A scan that finds nothing would make every guard assertion below pass by not running."""
+    assert _DOCS_SCANNED > 0, f"no prose matched {PROSE_GLOBS} under {REPO_ROOT}"
+    assert PROSE_ENTRYPOINTS, (
+        f"scanned {_DOCS_SCANNED} prose files and found no `python …/<script>.py` invocation; "
+        f"`_INVOCATION` no longer matches the shipped form"
+    )
+
+
+def test_prose_scan_finds_the_known_file_path_entrypoints() -> None:
+    """A regex regression that halves the derived set must fail here, not ship silently."""
+    missing = [rel for rel in _EXPECTED_IN_PROSE if rel not in PROSE_ENTRYPOINTS]
+    assert not missing, (
+        f"the prose scan missed known prose-launched entrypoints {missing}; found "
+        f"{sorted(PROSE_ENTRYPOINTS)}"
+    )
+
+
+def test_every_prose_invocation_resolves_to_a_file() -> None:
+    """An unresolvable match is a hole in the derivation, so it fails loudly rather than drops.
+
+    Either the prose names a path that does not exist (a broken instruction on a consumer
+    machine), or it launches a script outside `engine/scripts/` that this scan cannot check.
+    Both need a human; neither may be silently skipped.
+    """
+    assert not _UNRESOLVED, (
+        "prose launches `.py` paths this scan could not resolve to a file under "
+        f"{SCRIPTS_ROOT}:\n  " + "\n  ".join(_UNRESOLVED)
+    )
 
 
 def _module(path: pathlib.Path) -> ast.Module:
