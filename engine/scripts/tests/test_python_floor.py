@@ -46,37 +46,62 @@ def _is_stdlib(name: str) -> bool:
     return name.split(".")[0] in sys.stdlib_module_names
 
 
-def _guard_line(tree: ast.Module) -> int | None:
-    """Line of the module-level `if sys.version_info < (...)` guard, if present."""
+def _int_tuple(node: ast.expr) -> tuple[int, ...] | None:
+    if not isinstance(node, ast.Tuple):
+        return None
+    if not all(isinstance(e, ast.Constant) and isinstance(e.value, int) for e in node.elts):
+        return None
+    return tuple(e.value for e in node.elts)  # type: ignore[attr-defined]
+
+
+def _body_refuses(node: ast.If) -> bool:
+    """The body exits the process. A version test that falls through refuses nothing."""
+    return any(
+        isinstance(sub, ast.Raise)
+        or (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute) and sub.func.attr == "exit")
+        for stmt in node.body
+        for sub in ast.walk(stmt)
+    )
+
+
+def _guard_node(tree: ast.Module) -> ast.If | None:
+    """The module-level version guard, selected **once** for every assertion below.
+
+    Line number and floor must come from the same node, or a weakened guard can hide behind an
+    unrelated version test: two helpers walking `tree.body` independently will happily bind to
+    two different `if` statements. Matching on `version_info` alone is not enough either — an
+    earlier feature-detect or `== (3, 11)` compatibility branch would shadow the real guard and
+    the floor would be read off it. So the criterion is the whole refusal shape:
+    `sys.version_info < <int tuple>` over a body that exits.
+    """
     for node in tree.body:
         if not isinstance(node, ast.If):
             continue
-        if any(
-            isinstance(sub, ast.Attribute) and sub.attr == "version_info"
-            for sub in ast.walk(node.test)
-        ):
-            return node.lineno
-    return None
-
-
-def _guard_floor(tree: ast.Module) -> tuple[int, ...] | None:
-    """The version tuple the guard compares against."""
-    for node in tree.body:
-        if not isinstance(node, ast.If):
+        test = node.test
+        if not isinstance(test, ast.Compare) or len(test.ops) != 1:
             continue
-        for sub in ast.walk(node.test):
-            if isinstance(sub, ast.Tuple) and all(
-                isinstance(e, ast.Constant) and isinstance(e.value, int) for e in sub.elts
-            ):
-                return tuple(e.value for e in sub.elts)  # type: ignore[attr-defined]
+        if not isinstance(test.ops[0], ast.Lt):
+            continue
+        if not (isinstance(test.left, ast.Attribute) and test.left.attr == "version_info"):
+            continue
+        if _int_tuple(test.comparators[0]) is None or not _body_refuses(node):
+            continue
+        return node
     return None
+
+
+def _guard_floor(node: ast.If) -> tuple[int, ...] | None:
+    """The version tuple the selected guard compares against."""
+    test = node.test
+    assert isinstance(test, ast.Compare)  # guaranteed by _guard_node
+    return _int_tuple(test.comparators[0])
 
 
 @pytest.mark.parametrize("rel", ENTRYPOINTS)
 def test_entrypoint_has_version_guard(rel: str) -> None:
     """Every entrypoint refuses a sub-floor interpreter itself — no reliance on the caller."""
     tree = _module(SCRIPTS_ROOT / rel)
-    assert _guard_line(tree) is not None, (
+    assert _guard_node(tree) is not None, (
         f"{rel} has no module-level `sys.version_info` guard; a sub-floor interpreter will "
         f"reach PEP 604 annotations or an interactive prompt before failing"
     )
@@ -84,7 +109,9 @@ def test_entrypoint_has_version_guard(rel: str) -> None:
 
 @pytest.mark.parametrize("rel", ENTRYPOINTS)
 def test_guard_floor_matches_declared_floor(rel: str) -> None:
-    assert _guard_floor(_module(SCRIPTS_ROOT / rel)) == FLOOR
+    node = _guard_node(_module(SCRIPTS_ROOT / rel))
+    assert node is not None, f"{rel}: no guard (see test_entrypoint_has_version_guard)"
+    assert _guard_floor(node) == FLOOR
 
 
 @pytest.mark.parametrize("rel", ENTRYPOINTS)
@@ -95,8 +122,9 @@ def test_guard_precedes_anything_that_can_fail(rel: str) -> None:
     at module level, and a `def` whose signature is evaluated at definition time does too.
     """
     tree = _module(SCRIPTS_ROOT / rel)
-    guard = _guard_line(tree)
-    assert guard is not None, f"{rel}: no guard (see test_entrypoint_has_version_guard)"
+    guard_node = _guard_node(tree)
+    assert guard_node is not None, f"{rel}: no guard (see test_entrypoint_has_version_guard)"
+    guard = guard_node.lineno
 
     risky: list[tuple[int, str]] = []
     for node in tree.body:
@@ -115,6 +143,29 @@ def test_guard_precedes_anything_that_can_fail(rel: str) -> None:
     assert guard < first_line, (
         f"{rel}: guard at line {guard} runs after {first_what!r} at line {first_line}"
     )
+
+
+# Mutation M11's shape: the real guard weakened to 3.8, with an earlier version test that reads
+# like the floor but refuses nothing. Under the old two-independent-walks helpers the assertions
+# bound to the decoy and the suite stayed green while the engine accepted Python 3.8.
+_DECOYED_ENTRYPOINT = """\
+import sys
+
+if sys.version_info[:2] == (3, 11):
+    pass
+
+if sys.version_info < (3, 8):
+    sys.stderr.write("too old\\n")
+    sys.exit(1)
+"""
+
+
+def test_decoy_version_test_cannot_shadow_the_guard() -> None:
+    """Both readings must come off the refusing guard, never off an earlier version test."""
+    node = _guard_node(ast.parse(_DECOYED_ENTRYPOINT))
+    assert node is not None
+    assert _guard_floor(node) == (3, 8), "floor was read off the decoy, not the real guard"
+    assert node.lineno == 6, "line was read off the decoy (line 3), not the real guard (line 6)"
 
 
 def test_pyproject_floor_matches_guards() -> None:
