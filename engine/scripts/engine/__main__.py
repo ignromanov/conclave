@@ -12,7 +12,7 @@ from pathlib import Path
 # verbatim in the other entrypoints; a shared helper would have to be imported, and imports are
 # precisely what breaks below the floor.
 #
-# noqa on the guard: UP036 calls it dead code because `requires-python` already promises 3.11.
+# The `noqa` on the guard below: UP036 calls it dead code because `requires-python` promises 3.11.
 # That promise is only kept by pip/uv at install time, and these entrypoints are launched as bare
 # scripts by the SessionStart hook — a path where nothing reads pyproject.toml at all.
 if sys.version_info < (3, 11):  # noqa: UP036
