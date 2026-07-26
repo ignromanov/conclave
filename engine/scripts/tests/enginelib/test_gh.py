@@ -75,3 +75,62 @@ def test_search_issues_refuses_empty_repos(monkeypatch):
     with pytest.raises(ValueError):
         gh.search_issues("kai", [])
     assert called == [], "gh must not be invoked without a repo scope"
+
+
+# ---------------------------------------------------------------------------
+# H5 — the manifest's userConfig.GH_TOKEN must actually reach gh
+# ---------------------------------------------------------------------------
+
+class _Recorder:
+    """Stand-in for subprocess.run that captures the kwargs _run_gh passes."""
+
+    def __init__(self):
+        self.kwargs = None
+
+    def __call__(self, cmd, **kwargs):
+        import subprocess
+
+        self.kwargs = kwargs
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="[]", stderr="")
+
+
+def _record(monkeypatch) -> _Recorder:
+    rec = _Recorder()
+    monkeypatch.setattr(gh.subprocess, "run", rec)
+    return rec
+
+
+def test_plugin_option_token_is_promoted_to_gh_token(monkeypatch):
+    """plugin.json declares userConfig.GH_TOKEN and commands/init.md promises it reaches engine
+    subprocesses — but gh only honours GH_TOKEN/GITHUB_TOKEN, and nothing bridged the two."""
+    monkeypatch.setenv("CLAUDE_PLUGIN_OPTION_GH_TOKEN", "tok-from-plugin-config")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    rec = _record(monkeypatch)
+    gh._run_gh(["issue", "list"])
+
+    assert rec.kwargs.get("env") is not None, "gh inherited the ambient env — token not bridged"
+    assert rec.kwargs["env"]["GH_TOKEN"] == "tok-from-plugin-config"
+
+
+def test_explicit_gh_token_is_never_overridden(monkeypatch):
+    monkeypatch.setenv("CLAUDE_PLUGIN_OPTION_GH_TOKEN", "tok-from-plugin-config")
+    monkeypatch.setenv("GH_TOKEN", "tok-the-user-set")
+
+    rec = _record(monkeypatch)
+    gh._run_gh(["issue", "list"])
+
+    env = rec.kwargs.get("env")
+    assert env is None or env["GH_TOKEN"] == "tok-the-user-set"
+
+
+def test_no_plugin_token_leaves_gh_auth_alone(monkeypatch):
+    """With nothing configured, gh must fall through to the user's own `gh auth` session."""
+    monkeypatch.delenv("CLAUDE_PLUGIN_OPTION_GH_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+
+    rec = _record(monkeypatch)
+    gh._run_gh(["issue", "list"])
+
+    assert rec.kwargs.get("env") is None

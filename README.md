@@ -18,11 +18,25 @@ into durable edits to the agents' own skills.
 > **What it touches (local-only).** `/conclave:init` runs `python3` engine scripts that create a
 > `.conclave/` data tree in your repo, write `.conclave/roster.yaml`, mint an advisor into
 > `.claude/agents/`, and register a **SessionStart hook** in your project's `.claude/settings.json`.
-> No telemetry. The only outbound network call is **optional** GitHub issue/board sync, which you opt
-> into by setting `GH_TOKEN` (falls back to your `gh` CLI auth).
+> No telemetry. There is one outbound network call: a GitHub issue/board sync that runs
+> **automatically at the start of every advisor session** — it is not opt-in. It shells out to the
+> `gh` CLI, using the plugin's `GH_TOKEN` setting if you configured one and your own `gh auth`
+> session otherwise. The sync happens only when a repo scope resolves: `github.ai_repo` /
+> `github.main_repo` in `.conclave/roster.yaml`, falling back to your project's `origin` remote.
+> With neither, it refuses and makes no call rather than searching your account. There is currently
+> no switch to disable it while a scope is resolvable.
 >
 > **Reversibility.** Remove the SessionStart hook from `.claude/settings.json`, delete `.conclave/` and
 > the minted `.claude/agents/*.md`, then `/plugin uninstall conclave`. Nothing persists outside your repo.
+
+## Prerequisites
+
+| Requirement | Why |
+|---|---|
+| **Python 3.11+** | The engine's runtime. The floor is enforced at every entrypoint, which refuses older interpreters with a plain message rather than a traceback. macOS ships 3.9 as `/usr/bin/python3`, so a system-Python run will hit this. |
+| **[`uv`](https://docs.astral.sh/uv/)** | Provisions the engine's dependencies into a plugin-local venv on first run. Without it, install those four packages yourself: `PyYAML`, `python-frontmatter`, `pydantic`, `ruamel.yaml`. |
+| **[`gh`](https://cli.github.com/), authenticated** | The GitHub issue/board sync shells out to it. Run `gh auth status` to confirm. On failure, session-init exits 3 (stale-fail) and reports the error in the session-start block; the cached snapshot is left untouched rather than overwritten. |
+| **git** | Session state and the repo-scope fallback both read your project's git metadata. |
 
 ## Install
 
