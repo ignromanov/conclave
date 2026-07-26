@@ -129,13 +129,30 @@ def _step1_load_briefing(advisor: str, root: Path) -> tuple[int, list[str]]:
     scripts = _scripts_dir()
     lines: list[str] = []
 
+    # Pin every git-reading child to the CONSUMER project. Both verbs below run with
+    # cwd=engine/scripts, and both shell out to git: gh-fetch for the repo-scope fallback
+    # (`git remote get-url origin`), git-fetch for the session snapshot (status / worktree
+    # list / symbolic-ref). Unpinned they read the ENGINE checkout — which on a dev machine
+    # is a real repo, so a consumer's DATA tree got the engine's branch, a stranger's issue
+    # board, and the maintainer's absolute worktree paths.
+    #
+    # Overwrite only a falsy value: the var is an existing test/ops seam and a deliberate
+    # one must survive, but `setdefault` also preserved an EMPTY one — and the resolver
+    # reads empty as unset, so `export CONCLAVE_GIT_REMOTE_CWD=` silently restored the
+    # pre-fix behaviour. Resolve before handing it over: the child runs in engine/scripts,
+    # so a relative CLAUDE_PROJECT_DIR (`.`) would re-open the same leak from the other end.
+    git_env = os.environ.copy()
+    if not git_env.get("CONCLAVE_GIT_REMOTE_CWD"):
+        git_env["CONCLAVE_GIT_REMOTE_CWD"] = str(_project_dir(root).resolve())
+
     # git-fetch (non-blocking — writes git-cache/state.md for briefing-build consumers)
     t0 = time.monotonic()
     git_result = subprocess.run(
         [sys.executable, "-m", "engine", "lifecycle", "git-fetch"],
         capture_output=True,
         text=True,
-        cwd=str(_scripts_dir()),
+        cwd=str(scripts),
+        env=git_env,
     )
     git_ms = int((time.monotonic() - t0) * 1000)
     git_code = git_result.returncode
@@ -153,26 +170,16 @@ def _step1_load_briefing(advisor: str, root: Path) -> tuple[int, list[str]]:
     if advisor in META_ADVISORS:
         lines.append("  gh-fetch: skipped (meta-advisor)")
     else:
-        # Pin the git-remote fallback to the CONSUMER project. resolve_repos() layers
-        # roster → local git remote → refuse; the middle layer runs `git remote get-url origin`
-        # in CONCLAVE_GIT_REMOTE_CWD, which defaults to this child's cwd — engine/scripts. On a
-        # dev checkout that is a real repo, so a null-roster instance would silently resolve the
-        # ENGINE's own origin and pull a stranger's issue board into the briefing. Overwrite only
-        # a falsy value: the var is an existing test/ops seam and a deliberate one must survive,
-        # but `setdefault` also preserved an EMPTY one — and `_git_remote_slug` reads empty as
-        # unset, so `export CONCLAVE_GIT_REMOTE_CWD=` silently restored the pre-fix behaviour.
-        # Resolve before handing it over: the child runs in engine/scripts, so a relative
-        # CLAUDE_PROJECT_DIR (`.`) would re-open the same leak from the other end.
-        gh_env = os.environ.copy()
-        if not gh_env.get("CONCLAVE_GIT_REMOTE_CWD"):
-            gh_env["CONCLAVE_GIT_REMOTE_CWD"] = str(_project_dir(root).resolve())
+        # Same pin as git-fetch above (see the note there): resolve_repos() layers
+        # roster → local git remote → refuse, and the middle layer must read the CONSUMER's
+        # origin or a null-roster instance pulls a stranger's issue board into the briefing.
         t0 = time.monotonic()
         result = subprocess.run(
             [sys.executable, "-m", "engine", "lifecycle", "gh-fetch", "--advisor", advisor],
             capture_output=True,
             text=True,
             cwd=str(scripts),
-            env=gh_env,
+            env=git_env,
         )
         gh_ms = int((time.monotonic() - t0) * 1000)
         gh_code = result.returncode

@@ -17,15 +17,22 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from enginelib import snapshot
-from enginelib.paths import ensure_dir, git_cache_dir
+from enginelib.paths import consumer_git_cwd, ensure_dir, git_cache_dir
 
 
 def run(no_cache: bool = False) -> str:
     """Snapshot git state to a TTL-cached state.md under git_cache_dir().
 
     Returns a status string: "hit", "refreshed", or "lock-error".
+
+    Every `git` call below runs in `consumer_git_cwd()`, never the inherited process cwd.
+    This snapshot is written into the CONSUMER's DATA tree, so it must describe the
+    consumer's repository: session_init launches this verb with cwd=engine/scripts, and
+    unpinned that made the cache report the ENGINE's branch and the maintainer's absolute
+    worktree paths to every consumer. Same resolver as `gh-fetch`'s repo-scope fallback.
     """
     ttl = int(os.environ.get("SNAPSHOT_GIT_TTL", "60"))
+    git_cwd = consumer_git_cwd()
     cache_path = git_cache_dir() / "state.md"
     ensure_dir(cache_path.parent)
 
@@ -49,6 +56,7 @@ def run(no_cache: bool = False) -> str:
                 ["git", "status", "--porcelain"],
                 capture_output=True,
                 text=True,
+                cwd=git_cwd,
             )
             uncommitted = len(res.stdout.splitlines()) if res.returncode == 0 else 0
         except Exception:
@@ -60,6 +68,7 @@ def run(no_cache: bool = False) -> str:
                 ["git", "worktree", "list"],
                 capture_output=True,
                 text=True,
+                cwd=git_cwd,
             )
             worktree_list = res.stdout.rstrip("\n") if res.returncode == 0 else "unavailable"
         except Exception:
@@ -71,6 +80,7 @@ def run(no_cache: bool = False) -> str:
                 ["git", "symbolic-ref", "--short", "HEAD"],
                 capture_output=True,
                 text=True,
+                cwd=git_cwd,
             )
             branch = res.stdout.strip() if res.returncode == 0 else "detached"
         except Exception:

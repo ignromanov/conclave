@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from enginelib import gh, roster, snapshot
-from enginelib.paths import ensure_dir, snapshot_path_for_advisor
+from enginelib.paths import consumer_git_cwd, ensure_dir, snapshot_path_for_advisor
 
 # owner/repo out of an ssh (git@host:owner/repo.git) or https URL, .git optional.
 _REMOTE_SLUG_RE = re.compile(r"[:/]([^/:]+/[^/:]+?)(?:\.git)?/?$")
@@ -47,15 +47,12 @@ def _git_remote_slug() -> str:
 
     The default is CLAUDE_PROJECT_DIR, not the process cwd: this fallback layer must
     read the CONSUMER project's origin, and a caller inheriting an arbitrary shell cwd
-    would read whatever checkout the operator happened to stand in. Defaulting here
-    rather than at a call site covers every caller by construction — `engine lifecycle
-    gh-repos` is invoked straight from advisor command prose and pins nothing itself.
+    would read whatever checkout the operator happened to stand in. Defaulting inside
+    `consumer_git_cwd()` rather than at a call site covers every caller by construction —
+    `engine lifecycle gh-repos` is invoked straight from advisor command prose and pins
+    nothing itself. `git-fetch` reads the same resolver, so the two cannot drift.
     """
-    cwd = (
-        os.environ.get("CONCLAVE_GIT_REMOTE_CWD")
-        or os.environ.get("CLAUDE_PROJECT_DIR")
-        or None
-    )
+    cwd = consumer_git_cwd()
     try:
         result = subprocess.run(
             ["git", "remote", "get-url", "origin"],
