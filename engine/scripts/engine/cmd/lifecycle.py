@@ -103,6 +103,33 @@ def _gh_fetch(args) -> int:
     return 0 if status == "hit" else 2   # refreshed
 
 
+def _gh_repos(args) -> int:
+    """Print the resolved GH repo scope, one owner-qualified slug per line.
+
+    Exists so advisor-facing command prose can iterate a resolved list instead of interpolating
+    roster keys by hand: `-R "$OWNER/$(roster.py github.ai_repo)"` collapses to the malformed
+    `owner/` on a single-repo instance. Same layering and same fail-closed refusal as gh-fetch —
+    one resolution path, two callers.
+    """
+    from enginelib import roster
+    from enginelib.lifecycle import gh_fetch
+
+    args._runlog_verb = "gh-repos"
+    owner = roster.roster_get("github.owner").strip()
+    repos = gh_fetch.resolve_repos(owner)
+    args._runlog_args = f"owner={owner},repos={len(repos)}"
+    if not repos:
+        print(
+            "gh-repos: no repo scope configured (github.ai_repo/main_repo null and no "
+            "git remote) — refusing to emit an unscoped list",
+            file=sys.stderr,
+        )
+        return 1
+    for repo in repos:
+        print(repo)
+    return 0
+
+
 def _migrate_add_type(args) -> int:
     from enginelib.lifecycle import migrate_add_type
     from enginelib.paths import agent_memory_dir
@@ -203,6 +230,9 @@ def register(sub) -> None:
     gh.add_argument("--advisor", default=None, help="Advisor id (e.g. kai-cto).")
     gh.add_argument("--no-cache", action="store_true", help="Force re-fetch, ignoring cache.")
     gh.set_defaults(func=_gh_fetch)
+
+    gr = vsub.add_parser("gh-repos", help="Print the resolved GH repo scope, one slug per line.")
+    gr.set_defaults(func=_gh_repos)
 
     mt = vsub.add_parser("migrate-add-type", help="Inject type: frontmatter by path mapping.")
     mt.add_argument("--root", default=None, help="Root dir (default: agent-memory).")

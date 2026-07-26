@@ -124,10 +124,16 @@ Classify user request by scale:
 #### 3a. Quick Tier (minimal)
 
 ```bash
-# Count open issues across both repos for this advisor (owner/repos from roster.yaml)
-OWNER=$(python3 engine/scripts/lib/roster.py github.owner)
-gh issue list -R "$OWNER/$(python3 engine/scripts/lib/roster.py github.ai_repo)"   --label advisor:$(ADVISOR_NAME) --state open --json number,title --jq 'length' &
-gh issue list -R "$OWNER/$(python3 engine/scripts/lib/roster.py github.main_repo)" --label advisor:$(ADVISOR_NAME) --state open --json number,title --jq 'length' &
+# Repo scope comes from the resolver, never from raw roster keys: an instance with a single repo
+# has ai_repo null, and `-R "$OWNER/$(roster.py github.ai_repo)"` builds the malformed slug
+# `owner/`. `gh-repos` applies the same roster → git-remote → refuse layering gh-fetch uses, and
+# exits 1 rather than printing an empty list.
+ROOT="${CLAUDE_PLUGIN_ROOT:-.}"
+ADVISOR=<advisor>   # the slug this session is bound to
+for REPO in $(PYTHONPATH="$ROOT/engine/scripts" python3 -m engine lifecycle gh-repos); do
+  gh issue list -R "$REPO" --label "advisor:$ADVISOR" --state open \
+    --json number,title --jq 'length' &
+done
 wait
 ```
 
@@ -137,12 +143,15 @@ If user's question relates to an open issue — mention it. Then answer directly
 #### 3b. Feature/Epic Tier (full)
 
 ```bash
-# Full list from both repos (owner/repos from roster.yaml)
-OWNER=$(python3 engine/scripts/lib/roster.py github.owner); MAIN=$(python3 engine/scripts/lib/roster.py github.main_repo)
-gh issue list -R "$OWNER/$(python3 engine/scripts/lib/roster.py github.ai_repo)" --label advisor:$(ADVISOR_NAME) --state open &
-gh issue list -R "$OWNER/$MAIN" --label advisor:$(ADVISOR_NAME) --state open &
-# Also check P0 blockers not assigned to this advisor
-gh issue list -R "$OWNER/$MAIN" --label p0 --state open &
+# Same resolver as 3a — one repo or two, the loop adapts; an unscoped instance exits 1 here
+# instead of silently iterating nothing.
+ROOT="${CLAUDE_PLUGIN_ROOT:-.}"
+ADVISOR=<advisor>
+for REPO in $(PYTHONPATH="$ROOT/engine/scripts" python3 -m engine lifecycle gh-repos); do
+  gh issue list -R "$REPO" --label "advisor:$ADVISOR" --state open &
+  # P0 blockers, including ones assigned to other advisors
+  gh issue list -R "$REPO" --label p0 --state open &
+done
 wait
 ```
 
