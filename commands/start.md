@@ -191,16 +191,20 @@ Show results as a compact table. Flag mismatches (worktrees without PRs, branche
 
 ### 4.5. Wiki Domain Context (Feature/Epic only)
 
-Load domain context from wiki for richer advisory:
+Load domain context from the wiki for richer advisory. Which areas to load is **derived, not
+tabulated** — the roster is instance data and so are the vault's areas:
 
-| Advisor | Command |
-|---------|---------|
-| Kai | `/wiki:browse architecture` |
-| Shade | `/wiki:browse architecture` + `/wiki:browse concepts` |
-| Nexus | `/wiki:browse strategy` |
-| Spark | `/wiki:browse strategy` + `/wiki:browse comparisons` + `/wiki:browse orgs` |
-| Dev | skip (architecture loaded via @import) |
-| Quorum | skip (all BRIEFINGs loaded via @import) |
+1. Take the bound advisor's domain from its responsibilities (its agent-def frontmatter, or
+   `roster.yaml`) — the same `<advisor>` Step 1 bound this session to.
+2. List the vault's areas — the top-level folders under the wiki path:
+   ```bash
+   ls "$(python3 engine/scripts/lib/roster.py knowledge.wiki_path)"
+   ```
+3. `/wiki:browse <area>` the one or two whose names match that domain. Two is the ceiling —
+   this is context loading, not research.
+
+Skip the step (and say so) when no area matches the advisor's domain, or when the context it
+would load is already in the session via `@import`.
 
 Optional: `/wiki:query "topic"` for task-specific context.
 
