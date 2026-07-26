@@ -416,6 +416,43 @@ class TestGhFetchRemoteCwd:
 
         assert calls["gh-fetch"]["env"]["CONCLAVE_GIT_REMOTE_CWD"] == str(tmp_path / "explicit")
 
+    def test_empty_value_is_treated_as_unset(self, tmp_path, monkeypatch):
+        """`setdefault` kept an empty string, and `_git_remote_slug` reads empty as unset —
+        so `export CONCLAVE_GIT_REMOTE_CWD=` silently restored the leak this pin closes."""
+        root = _make_root(tmp_path / "data")
+        project = tmp_path / "project"
+        project.mkdir()
+        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project))
+        monkeypatch.setenv("CONCLAVE_GIT_REMOTE_CWD", "")
+        self._briefing(root)
+
+        calls: dict[str, dict] = {}
+        _patch_engine_run(monkeypatch, calls=calls)
+        session_init._step1_load_briefing("kai-cto", root)
+
+        assert calls["gh-fetch"]["env"]["CONCLAVE_GIT_REMOTE_CWD"] == str(project)
+
+    def test_relative_project_dir_is_resolved_before_the_child_changes_cwd(
+        self, tmp_path, monkeypatch
+    ):
+        """The child runs in engine/scripts, so a relative CLAUDE_PROJECT_DIR must be made
+        absolute here — `.` handed over verbatim resolves to the engine checkout."""
+        root = _make_root(tmp_path / "data")
+        project = tmp_path / "project"
+        project.mkdir()
+        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("CLAUDE_PROJECT_DIR", ".")
+        monkeypatch.delenv("CONCLAVE_GIT_REMOTE_CWD", raising=False)
+        self._briefing(root)
+
+        calls: dict[str, dict] = {}
+        _patch_engine_run(monkeypatch, calls=calls)
+        session_init._step1_load_briefing("kai-cto", root)
+
+        assert calls["gh-fetch"]["env"]["CONCLAVE_GIT_REMOTE_CWD"] == str(project)
+
 
 class TestStep1LoadBriefing:
     def test_cache_hit_fresh_briefing(self, tmp_path, monkeypatch):

@@ -157,10 +157,15 @@ def _step1_load_briefing(advisor: str, root: Path) -> tuple[int, list[str]]:
         # roster → local git remote → refuse; the middle layer runs `git remote get-url origin`
         # in CONCLAVE_GIT_REMOTE_CWD, which defaults to this child's cwd — engine/scripts. On a
         # dev checkout that is a real repo, so a null-roster instance would silently resolve the
-        # ENGINE's own origin and pull a stranger's issue board into the briefing. setdefault, not
-        # assignment: the var is an existing test/ops seam and a deliberate one must survive.
+        # ENGINE's own origin and pull a stranger's issue board into the briefing. Overwrite only
+        # a falsy value: the var is an existing test/ops seam and a deliberate one must survive,
+        # but `setdefault` also preserved an EMPTY one — and `_git_remote_slug` reads empty as
+        # unset, so `export CONCLAVE_GIT_REMOTE_CWD=` silently restored the pre-fix behaviour.
+        # Resolve before handing it over: the child runs in engine/scripts, so a relative
+        # CLAUDE_PROJECT_DIR (`.`) would re-open the same leak from the other end.
         gh_env = os.environ.copy()
-        gh_env.setdefault("CONCLAVE_GIT_REMOTE_CWD", str(_project_dir(root)))
+        if not gh_env.get("CONCLAVE_GIT_REMOTE_CWD"):
+            gh_env["CONCLAVE_GIT_REMOTE_CWD"] = str(_project_dir(root).resolve())
         t0 = time.monotonic()
         result = subprocess.run(
             [sys.executable, "-m", "engine", "lifecycle", "gh-fetch", "--advisor", advisor],
