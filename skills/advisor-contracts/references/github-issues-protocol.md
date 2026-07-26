@@ -61,7 +61,7 @@ Pick the target repo from the **type label** *before* running `gh issue create`:
 |------------|------|-----|
 | `bug` · `feature` · `task` · `tech-debt` · `refactor` | `${OWNER}/${MAIN_REPO}` | Code reality — useful to outside contributors |
 | `security:hardening` · `security:audit` (high-level only) | `${OWNER}/${MAIN_REPO}` | Public hardening (CSP, rate-limit policy). PoC/exploit details → GHSA |
-| `area:*` (codec, payment, rpc, ui, landing, deploy) | `${OWNER}/${MAIN_REPO}` | Always paired with code-side type label |
+| `area:*` — the instance's own subsystems, see §Area | `${OWNER}/${MAIN_REPO}` | Always paired with code-side type label |
 | `strategy` · `content` · `grant` · `research` · `ops` · `agent-infra` · `meeting-action` | `${OWNER}/${AI_REPO}` | Strategic / competitor-sensitive / internal process |
 | `documentation` (advisor-private docs, BRIEFINGs, topic-READMEs) | `${OWNER}/${AI_REPO}` | Internal authoring — public docs land in repo via PR commits, not issues |
 

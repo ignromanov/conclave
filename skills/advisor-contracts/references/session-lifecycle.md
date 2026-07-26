@@ -43,8 +43,8 @@ Per-advisor overlays live at `skills/team.<id>/contracts/session-lifecycle.md`.
 ## Overlay hooks
 
 Overlays may:
-- **constrain** a stage ("Kai never edits code")
-- **extend** a stage ("Nexus also scans cross-advisor issues")
+- **constrain** a stage ("this advisor never edits code")
+- **extend** a stage ("this advisor also scans cross-advisor issues")
 - **replace** a stage (rare; marked `type: replacement`)
 
 See `skills/forge-operations/references/aspects/contract-overlays.md` for mechanics.
