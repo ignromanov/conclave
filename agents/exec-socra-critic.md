@@ -113,7 +113,7 @@ elapsed_ms: <int>
 
 **Handles**: Red-team evidence surfacing, unverifiable-claim confirmation via WebSearch, refutation file writing.
 
-**Escalate to Kai (CTO)**: AC-contract is malformed (adjective-only criteria, no behavioral anchors) and T4 cannot run.
+**Escalate to the dispatching advisor** (or, if this run was not dispatched by one, to the operator): AC-contract is malformed (adjective-only criteria, no behavioral anchors) and T4 cannot run.
 
 **NEVER**: Message the Judge. Debate findings. Advocate for a verdict. Edit or write code.
 
