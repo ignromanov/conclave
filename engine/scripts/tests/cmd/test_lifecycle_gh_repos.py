@@ -64,6 +64,22 @@ def test_qualified_slug_passes_through(tmp_path):
     assert result.stdout.split() == ["someone-else/ops", "acme/app"]
 
 
+def test_null_owner_refuses_instead_of_emitting_a_leading_slash(tmp_path):
+    """The verb's own version of the defect it was built to close: with `owner: null`,
+    `f"{owner}/{repo}"` emitted `/app` and exited 0, so the prose ran `gh -R "/app"`."""
+    env = _roster(tmp_path, """
+        name: Null Owner Instance
+        github:
+          owner: null
+          ai_repo: null
+          main_repo: app
+        """)
+    result = run_engine("lifecycle", "gh-repos", env=env)
+    assert result.returncode == 1
+    assert result.stdout.strip() == ""
+    assert "no repo scope" in result.stderr
+
+
 def test_no_scope_refuses_rather_than_printing_nothing(tmp_path):
     """An empty list must not read as success — a `for` loop over it is a silent no-op."""
     env = _roster(tmp_path, """

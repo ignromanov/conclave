@@ -307,12 +307,79 @@ def test_resolve_repos_empty_when_no_roster_no_remote(tmp_path, monkeypatch):
     assert gh_fetch.resolve_repos("acme") == []
 
 
+def test_resolve_repos_drops_the_slug_a_null_owner_leaves_malformed(tmp_path, monkeypatch):
+    """`owner: null` + a bare repo name built "/app" — a target gh accepts and no caller
+    could tell apart from a real slug. It must not survive resolution."""
+    from enginelib.lifecycle import gh_fetch
+    _write_roster(
+        tmp_path,
+        "github:\n  owner: null\n  ai_repo: null\n  main_repo: app\n",
+        monkeypatch,
+    )
+    monkeypatch.setattr(gh_fetch, "_git_remote_slug", lambda: "")
+    assert gh_fetch.resolve_repos("") == []
+
+
+def test_run_refuses_unscoped_rather_than_searching_a_null_owner_slug(tmp_path, monkeypatch):
+    """The privacy contract holds on the malformed-slug path too: refuse, never search."""
+    from enginelib import gh
+    from enginelib.lifecycle import gh_fetch
+    _write_roster(
+        tmp_path,
+        "github:\n  owner: null\n  ai_repo: null\n  main_repo: app\n",
+        monkeypatch,
+    )
+    monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
+    monkeypatch.setattr(gh_fetch, "_git_remote_slug", lambda: "")
+    searched: list[list[str]] = []
+    monkeypatch.setattr(gh, "search_issues", lambda stem, repos: searched.append(repos) or "[]")
+
+    assert gh_fetch.run("kai-cto", no_cache=True) == "unscoped"
+    assert searched == [], f"gh was handed a malformed scope: {searched}"
+
+
 def test_git_remote_slug_parses_ssh_and_https(monkeypatch):
     from enginelib.lifecycle import gh_fetch
     assert gh_fetch._parse_remote_slug("git@github.com:acme/conclave.git") == "acme/conclave"
     assert gh_fetch._parse_remote_slug("https://github.com/acme/conclave.git") == "acme/conclave"
     assert gh_fetch._parse_remote_slug("https://github.com/acme/conclave") == "acme/conclave"
     assert gh_fetch._parse_remote_slug("") == ""
+
+
+def _capture_git_cwd(monkeypatch) -> dict:
+    """Stub `git remote get-url origin` and record the cwd it was asked to run in."""
+    from enginelib.lifecycle import gh_fetch
+    seen: dict = {}
+
+    def fake_run(cmd, **kwargs):
+        seen.update(kwargs)
+        return subprocess.CompletedProcess(cmd, 0, "git@github.com:acme/project.git\n", "")
+
+    monkeypatch.setattr(gh_fetch.subprocess, "run", fake_run)
+    return seen
+
+
+def test_git_remote_slug_defaults_to_the_project_dir_not_the_process_cwd(tmp_path, monkeypatch):
+    """Unpinned, the fallback layer read whatever checkout the shell stood in. `gh-repos` is
+    invoked straight from advisor command prose and pins nothing, so the default belongs here."""
+    from enginelib.lifecycle import gh_fetch
+    project = tmp_path / "project"
+    monkeypatch.delenv("CONCLAVE_GIT_REMOTE_CWD", raising=False)
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project))
+    seen = _capture_git_cwd(monkeypatch)
+
+    assert gh_fetch._git_remote_slug() == "acme/project"
+    assert seen["cwd"] == str(project), "git ran in the process cwd, not the consumer project"
+
+
+def test_git_remote_slug_explicit_seam_still_wins_over_the_project_dir(tmp_path, monkeypatch):
+    from enginelib.lifecycle import gh_fetch
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path / "project"))
+    monkeypatch.setenv("CONCLAVE_GIT_REMOTE_CWD", str(tmp_path / "explicit"))
+    seen = _capture_git_cwd(monkeypatch)
+
+    gh_fetch._git_remote_slug()
+    assert seen["cwd"] == str(tmp_path / "explicit")
 
 
 # ---------------------------------------------------------------------------

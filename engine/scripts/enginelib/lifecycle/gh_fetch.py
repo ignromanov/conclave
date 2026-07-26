@@ -27,6 +27,11 @@ from enginelib.paths import ensure_dir, snapshot_path_for_advisor
 # owner/repo out of an ssh (git@host:owner/repo.git) or https URL, .git optional.
 _REMOTE_SLUG_RE = re.compile(r"[:/]([^/:]+/[^/:]+?)(?:\.git)?/?$")
 
+# A usable GH scope: exactly two non-empty, slash-free halves. Guards the half the
+# verb did not cover — a null `github.owner` made `f"{owner}/{repo}"` yield "/app",
+# which gh accepts as a search target and no caller could tell apart from a real slug.
+_SLUG_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
+
 
 def _parse_remote_slug(url: str) -> str:
     """Extract 'owner/repo' from a git remote URL, or '' if it doesn't match."""
@@ -39,8 +44,18 @@ def _git_remote_slug() -> str:
 
     Offline and deterministic (no network, unlike `gh repo view`). The cwd seam
     keeps the refuse-path test hermetic without shelling out to a real repo.
+
+    The default is CLAUDE_PROJECT_DIR, not the process cwd: this fallback layer must
+    read the CONSUMER project's origin, and a caller inheriting an arbitrary shell cwd
+    would read whatever checkout the operator happened to stand in. Defaulting here
+    rather than at a call site covers every caller by construction — `engine lifecycle
+    gh-repos` is invoked straight from advisor command prose and pins nothing itself.
     """
-    cwd = os.environ.get("CONCLAVE_GIT_REMOTE_CWD") or None
+    cwd = (
+        os.environ.get("CONCLAVE_GIT_REMOTE_CWD")
+        or os.environ.get("CLAUDE_PROJECT_DIR")
+        or None
+    )
     try:
         result = subprocess.run(
             ["git", "remote", "get-url", "origin"],
@@ -60,16 +75,23 @@ def resolve_repos(owner: str) -> list[str]:
              owner-prefixed; already-qualified 'owner/repo' slugs pass through).
     Layer 2: the local origin remote's 'owner/repo'.
     Layer 3: empty — caller must refuse (fail-closed), never account-wide (#50).
+
+    Every slug is shape-checked before it leaves: a null `github.owner` prefixes a bare
+    repo name into "/app", which is not a repo and must not reach gh. Dropping it here
+    rather than at a caller keeps both consumers — `run()` and `gh-repos` — on one rule,
+    and an emptied layer 1 falls through to the same fail-closed path as a null roster.
     """
+    owner = owner.strip()
     repos: list[str] = []
     for key in ("github.ai_repo", "github.main_repo"):
         value = roster.roster_get(key).strip()
         if value:
             repos.append(value if "/" in value else f"{owner}/{value}")
+    repos = [slug for slug in repos if _SLUG_RE.match(slug)]
     if repos:
         return repos
     slug = _git_remote_slug()
-    return [slug] if slug else []
+    return [slug] if _SLUG_RE.match(slug) else []
 
 
 def _merge_issue_json(open_json: str, closed_json: str) -> str:
