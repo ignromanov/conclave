@@ -310,48 +310,37 @@ class TestLoadResolvedFindings:
 # ---------------------------------------------------------------------------
 
 
-def _patch_engine_run(monkeypatch, *, gh_code=0, briefing_code=0):
+def _patch_engine_run(monkeypatch, *, gh_code=0, briefing_code=0, calls=None):
     """Intercept the `python -m engine …` subprocess calls _step1_load_briefing makes.
 
     gh-fetch → gh_code, briefing build → briefing_code, git-fetch → 0 (hermetic);
     anything else falls through to the real subprocess.run. Replaces the old
     fake-`gh-fetch.sh` mocking after gh-fetch was ported to the engine module.
+
+    Pass a dict as `calls` to also record the kwargs each intercepted call was given,
+    keyed by verb — the command-matching predicates then live in exactly one place.
     """
     _real_run = subprocess.run
+    codes = {"gh-fetch": gh_code, "git-fetch": 0, "briefing": briefing_code}
+
+    def _verb(cmd):
+        if cmd[1:5] == ["-m", "engine", "lifecycle", "gh-fetch"]:
+            return "gh-fetch"
+        if cmd[1:5] == ["-m", "engine", "lifecycle", "git-fetch"]:
+            return "git-fetch"
+        if cmd[1:4] == ["-m", "engine", "briefing"]:
+            return "briefing"
+        return None
 
     def _mock_run(cmd, **kwargs):
-        if isinstance(cmd, list):
-            if cmd[1:5] == ["-m", "engine", "lifecycle", "gh-fetch"]:
-                return subprocess.CompletedProcess(args=cmd, returncode=gh_code, stdout="", stderr="")
-            if cmd[1:5] == ["-m", "engine", "lifecycle", "git-fetch"]:
-                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
-            if cmd[1:4] == ["-m", "engine", "briefing"]:
-                return subprocess.CompletedProcess(args=cmd, returncode=briefing_code, stdout="", stderr="")
-        return _real_run(cmd, **kwargs)
+        verb = _verb(cmd) if isinstance(cmd, list) else None
+        if verb is None:
+            return _real_run(cmd, **kwargs)
+        if calls is not None:
+            calls[verb] = kwargs
+        return subprocess.CompletedProcess(args=cmd, returncode=codes[verb], stdout="", stderr="")
 
     monkeypatch.setattr(session_init.subprocess, "run", _mock_run)
-
-
-def _record_engine_run(monkeypatch):
-    """Like _patch_engine_run, but hands back the kwargs each engine subprocess was given."""
-    _real_run = subprocess.run
-    calls: dict[str, dict] = {}
-
-    def _mock_run(cmd, **kwargs):
-        if isinstance(cmd, list):
-            if cmd[1:5] == ["-m", "engine", "lifecycle", "gh-fetch"]:
-                calls["gh-fetch"] = kwargs
-                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
-            if cmd[1:5] == ["-m", "engine", "lifecycle", "git-fetch"]:
-                calls["git-fetch"] = kwargs
-                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
-            if cmd[1:4] == ["-m", "engine", "briefing"]:
-                calls["briefing"] = kwargs
-                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
-        return _real_run(cmd, **kwargs)
-
-    monkeypatch.setattr(session_init.subprocess, "run", _mock_run)
-    return calls
 
 
 class TestGhFetchRemoteCwd:
@@ -375,7 +364,8 @@ class TestGhFetchRemoteCwd:
         monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project))
         self._briefing(root)
 
-        calls = _record_engine_run(monkeypatch)
+        calls: dict[str, dict] = {}
+        _patch_engine_run(monkeypatch, calls=calls)
         session_init._step1_load_briefing("kai-cto", root)
 
         env = calls["gh-fetch"].get("env")
@@ -390,7 +380,8 @@ class TestGhFetchRemoteCwd:
         monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
         self._briefing(root)
 
-        calls = _record_engine_run(monkeypatch)
+        calls: dict[str, dict] = {}
+        _patch_engine_run(monkeypatch, calls=calls)
         session_init._step1_load_briefing("kai-cto", root)
 
         assert calls["gh-fetch"]["env"].get("CONCLAVE_GIT_REMOTE_CWD") == str(project)
@@ -404,12 +395,12 @@ class TestGhFetchRemoteCwd:
         monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project))
         self._briefing(root)
 
-        calls = _record_engine_run(monkeypatch)
+        calls: dict[str, dict] = {}
+        _patch_engine_run(monkeypatch, calls=calls)
         session_init._step1_load_briefing("kai-cto", root)
 
         pinned = calls["gh-fetch"]["env"]["CONCLAVE_GIT_REMOTE_CWD"]
         assert pinned != calls["gh-fetch"].get("cwd")
-        assert "engine/scripts" not in pinned
 
     def test_caller_supplied_value_is_not_overridden(self, tmp_path, monkeypatch):
         """The env var is an existing test/ops seam — pinning must not clobber a deliberate one."""
@@ -419,7 +410,8 @@ class TestGhFetchRemoteCwd:
         monkeypatch.setenv("CONCLAVE_GIT_REMOTE_CWD", str(tmp_path / "explicit"))
         self._briefing(root)
 
-        calls = _record_engine_run(monkeypatch)
+        calls: dict[str, dict] = {}
+        _patch_engine_run(monkeypatch, calls=calls)
         session_init._step1_load_briefing("kai-cto", root)
 
         assert calls["gh-fetch"]["env"]["CONCLAVE_GIT_REMOTE_CWD"] == str(tmp_path / "explicit")

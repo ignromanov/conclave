@@ -49,7 +49,6 @@ def test_null_ai_repo_yields_only_the_real_repo(tmp_path):
     result = run_engine("lifecycle", "gh-repos", env=env)
     assert result.returncode == 0, result.stderr
     assert result.stdout.split() == ["acme/app"]
-    assert "acme/" not in result.stdout.replace("acme/app", "")
 
 
 def test_qualified_slug_passes_through(tmp_path):

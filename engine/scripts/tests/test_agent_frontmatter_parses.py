@@ -22,7 +22,10 @@ def _agent_files() -> list[Path]:
 def _frontmatter(path: Path) -> str:
     text = path.read_text(encoding="utf-8")
     assert text.startswith("---\n"), f"{path.name}: no frontmatter block"
-    _, block, _ = text.split("---", 2)
+    # Split on the closing delimiter line, not on a bare `---`: a `---` inside a quoted YAML
+    # value would truncate the block and make the parse below test a fragment.
+    block, closed, _ = text[len("---\n") :].partition("\n---\n")
+    assert closed, f"{path.name}: frontmatter block is never closed"
     return block
 
 
