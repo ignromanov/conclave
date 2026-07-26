@@ -12,7 +12,7 @@ description: |
 # /conclave:feedback — Universal Work Review Emission
 
 > **MANDATORY** at the end of every session or dispatch. Works independently — no
-> Quorum required. Replaces the old `emit.sh` path entirely.
+> A facilitator role is required. Replaces the old `emit.sh` path entirely.
 
 ## Data classification
 
@@ -35,8 +35,8 @@ The emitted file also carries a machine-readable DATA CLASSIFICATION WARNING HTM
 
 ## Multi-advisor meetings
 
-In a Quorum-facilitated multi-advisor meeting, each participating advisor emits their own
-review covering their own friction and ideas. Quorum additionally emits a meeting-level
+In a facilitated multi-advisor meeting, each participating advisor emits their own
+review covering their own friction and ideas. The facilitator additionally emits a meeting-level
 review covering workflow/process observations. Overlapping fingerprints across the
 per-advisor reviews are expected and resolved by dedup (`hit_count`).
 
@@ -44,7 +44,7 @@ per-advisor reviews are expected and resolved by dedup (`hit_count`).
 
 | Value | Who |
 |-------|-----|
-| `advisor` | Any `team.*` agent: nexus-ceo, kai-cto, shade-ciso, spark-cmo, quorum, forge, retro, start, processing, done, handoff |
+| `advisor` | Any `team.*` agent — the instance's hired advisor slugs, plus the engine's own `forge`, `retro`, `start`, `processing`, `done`, `handoff` |
 | `executor` | Any `exec.*` agent: exec.atlas-dev, exec.iris-test |
 | `other` | Any other agent invoked via a team command that does not fit the above buckets |
 
@@ -54,8 +54,8 @@ per-advisor reviews are expected and resolved by dedup (`hit_count`).
 SKILL_VER="sha256:$(shasum -a 256 .claude/skills/<your-skill>/SKILL.md | cut -c1-12)"
 ```
 
-Replace `<your-skill>` with the primary skill you ran this session (e.g. `exec.atlas-dev`,
-`team.kai-cto`). For sessions spanning multiple skills, use the entry-point skill.
+Replace `<your-skill>` with the primary skill you ran this session (e.g. `exec.atlas-dev`, or
+`team.<advisor-id>`). For sessions spanning multiple skills, use the entry-point skill.
 
 ## Step 3 — Scaffold the review file
 
@@ -127,7 +127,7 @@ evidence: "file excerpt: .claude/skills/exec.atlas-dev/SKILL.md:L88 — emit.sh 
 ### Routing hint (informational — triage sets the final owner)
 
 `layer` → fix owner at triage time: `skill` / `contract` / `memory` / `infra` → Forge;
-`workflow` → Quorum; `category: idea` → both.
+`workflow` → the facilitator role; `category: idea` → both.
 
 ## Step 5 — Finalize (validates, then flips `_draft: false`)
 

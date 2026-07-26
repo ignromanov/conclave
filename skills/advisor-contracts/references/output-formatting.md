@@ -3,7 +3,7 @@ type: contract
 name: output-formatting
 schema_version: 3.4
 applies_to: [team.done, team.start, team.processing, team.handoff, team.retro, team.forge, all advisor SKILL.md]
-supersedes: schema_version 1 (Render-B table + 27-glyph palette, 2026-05-18 5e63a34), schema_version 3 (bare-text minimalism — sections блекли), schema_version 3.1 (persona emoji вместе с decorative были излишне удалены), schema_version 3.2 (не покрывал fan-out / batch lists — Nexus fan-out скатился к box-drawing)
+supersedes: schema_version 1 (Render-B table + 27-glyph palette, 2026-05-18 5e63a34), schema_version 3 (bare-text minimalism — sections блекли), schema_version 3.1 (persona emoji вместе с decorative были излишне удалены), schema_version 3.2 (не покрывал fan-out / batch lists — advisor fan-out скатился к box-drawing)
 ---
 
 # Output Formatting Contract — Session Summary (▍-framed minimalism)
@@ -12,7 +12,7 @@ supersedes: schema_version 1 (Render-B table + 27-glyph palette, 2026-05-18 5e63
 > this heading or in prose, so consumers cannot cite a stale number.
 
 > **Purpose**: single canonical spec for the Session Summary render produced by `/conclave:done`.
-> v3 supersedes v1 (Render-B table + advisor-overlay palette) after Ignat's `слишком пестро`
+> v3 supersedes v1 (Render-B table + advisor-overlay palette) after the operator's `слишком пестро`
 > feedback. v3.1 fixes v3's "all blends into prose" problem by wrapping the whole Summary in
 > the `▍` emphasis gutter and **bold**-ing keys — re-introducing structure-cues without
 > re-introducing emoji inflation.
@@ -78,27 +78,28 @@ This kills the v1 "everything-green" vanity grid and the false-✅ risk simultan
 
 **Persona emoji** (identity-anchors — one per agent, same across all sessions, allowed):
 
+The *mapping* is **instance data**, not engine canon: each agent's emoji is set at hire time in its
+agent-def frontmatter (`emoji:`) and is whatever that instance's roster chose. Read it from the
+agent-def; never assume a name-to-emoji table. The engine ships exactly one fixed entry, because
+Forge is the one agent present in every instance:
+
 | Agent | Emoji | Type |
 |---|---|---|
-| Quorum | ⚖️ | advisor |
-| Kai | 🔷 | advisor |
-| Shade | 🛡️ | advisor |
-| Nexus | 🔮 | advisor |
-| Spark | ⚡ | advisor |
-| Atlas | 🛠️ | executor |
-| Iris | 🌈 | executor |
 | Forge | 🔨 | lifecycle-with-persona |
 
+The binding rules are engine canon and apply to every instance regardless of the mapping:
+one emoji per agent, stable across all its sessions, and used only in the two positions below.
+
 Persona emoji is allowed in TWO places only:
-1. **Header line** — speaker's own emoji: `▍ **⚖️ quorum · session-end · {date}**`
+1. **Header line** — speaker's own emoji: `▍ **🔨 forge · session-end · {date}**`
 2. **Cross-reference value cells** — when the row's value points to another agent
-   (`**mention →** 🔷 kai`, `**dispatched** 🛠️ atlas T3-T7`, `**filed** 🛡️ shade decisions/...`)
+   (`**mention →** 🔷 architect`, `**dispatched** 🛠️ builder T3-T7`, `**filed** 🛡️ security decisions/...`)
 
 Forbidden (still rules from v3):
 - Decorative semantic glyphs in data rows (📦 commit, 💬 mention, 📜 decision) — they belong in
   commit messages and prose, not summaries
 - Advisor specialty overlay (🛡️🐛, 🏗️📜) — two-glyph stacks read as two signals
-- Persona emoji as decoration on every row (e.g., `🔷 **committed** ...` when speaker IS Kai —
+- Persona emoji as decoration on every row (e.g., `🔷 **committed** ...` when the speaker IS 🔷 —
   Header already establishes identity, repetition is noise)
 
 ### 3. ▍-gutter + bold keys, not table syntax
@@ -152,36 +153,39 @@ Rules:
 
 ## Example: clean session
 
-▍ **⚖️ quorum · session-end · 2026-05-18**
+> The roster in these examples is **illustrative**. Your instance's advisor ids and emoji come from
+> its own agent-defs; only 🔨 forge is the same everywhere.
+
+▍ **🔨 forge · session-end · 2026-05-18**
 ▍
-▍ **committed**  `.ai 5e63a34` feat + `9ef7aa9` session
+▍ **committed**  `.conclave 5e63a34` feat + `9ef7aa9` session
 ▍ **filed**      `decisions/output-formatting-contract-v3.2.md`
 ▍ **updated**    hot.md (recent-decisions)
 ▍ **changed**    2 files
-▍ **recorded**   `sessions/quorum-summary-v3.2.md` ~25m
-▍ **reflexion**  "v1 контракт устарел в день ship'а — research до canonization сэкономил бы commit."
+▍ **recorded**   `sessions/forge-summary-v3.2.md` ~25m
+▍ **reflexion**  "The v1 contract was stale the day it shipped — research before canonizing would have saved a commit."
 ▍
-▍ **next →** wire run-log EXIT trap into file-decision.sh · add bats for --reflexion
+▍ **next →** wire the run-log EXIT trap into `engine file decision` · add a test for --reflexion
 ▍
-▍ **Concepts**: advisor:quorum, process, output-formatting, lifecycle
+▍ **Concepts**: advisor:forge, process, output-formatting, lifecycle
 
 ## Example: session with exceptions + cross-agent refs
 
-▍ **🛡️ shade-ciso · session-end · 2026-05-18**
+▍ **🛡️ security-ciso · session-end · 2026-05-18**
 ▍
-▍ **committed**  `.ai f3a8e21`
-▍ **filed**      `mentions/kai-ciso-gh-fetch-fix.md`
-▍ **mention →**  🔷 kai (gh-fetch.sh:89 advisor label query)
-▍ **dispatched** 🛠️ atlas (T3-T7 implementation, completed)
+▍ **committed**  `.conclave f3a8e21`
+▍ **filed**      `mentions/architect-gh-fetch-fix.md`
+▍ **mention →**  🔷 architect (gh_fetch.py:89 advisor label query)
+▍ **dispatched** 🛠️ builder (T3-T7 implementation, completed)
 ▍ **updated**    hot.md (open-threads)
-▍ **recorded**   `sessions/shade-mention-sweep.md` ~45m
+▍ **recorded**   `sessions/security-mention-sweep.md` ~45m
 ▍ ⚠ **study**    link:violations 3 open · capture:0
-▍ ⚠ **infra**    1 script · gh-fetch.sh exit=2
-▍ **reflexion**  "Deserialiser bias confirmed — add error-channel before next || fallback."
+▍ ⚠ **infra**    1 script · gh-fetch exit=2
+▍ **reflexion**  "Deserialiser bias confirmed — add an error channel before the next `||` fallback."
 ▍
-▍ **next →** triage gh-fetch.sh:89 advisor label query · file low/test-gap
+▍ **next →** triage gh_fetch.py:89 advisor label query · file low/test-gap
 ▍
-▍ **Concepts**: advisor:shade-ciso, security, audit, infrastructure
+▍ **Concepts**: advisor:security-ciso, security, audit, infrastructure
 
 Reader instantly sees: 🛡️ as speaker in header, 🔷 and 🛠️ as referenced agents in body, 2 warnings
 stand out from ▍-wrapped frame. Identity continuity preserved without per-row decoration noise.
@@ -244,18 +248,18 @@ rejected in v3 for the same reasons (alignment fragility, ASCII-art noise).
 One row per category, leading count, em-dash, then inline detail separated by `·`.
 
 ```
-▍ **filed**       1 — solana-defer-beyond-v2 (active, kill-criteria inline)
-▍ **mention →**   2 — 🔷 kai (P1, codec) · ⚖️ quorum (P2, Giveth)
-▍ **resolved**    4 — 🔷 kai ×3 (v1-2-codec P1, spec-054, sync FYI) · ⚡ spark (Giveth-correction P2)
-▍ **defect**      1 — mention.sh:164 (low) → fb-1779083181
+▍ **filed**       1 — defer-backend-rewrite (active, kill-criteria inline)
+▍ **mention →**   2 — 🔷 architect (P1, api) · ⚖️ chair (P2, funding)
+▍ **resolved**    4 — 🔷 architect ×3 (api-v2 P1, spec-054, sync FYI) · ⚡ growth (copy-correction P2)
+▍ **defect**      1 — mention.py:164 (low) → fb-1779083181
 ```
 
 Rules:
 - Count is the leading number for grep-ability
 - Em-dash (`—`) separates count from items
 - `·` (middle dot) separates items within a category
-- Same-recipient grouping: `🔷 kai ×3 (item1, item2, item3)` — count + recipient + parenthesized items
-- Persona emoji + name for cross-references (`🔷 kai`, `⚖️ quorum`)
+- Same-recipient grouping: `🔷 architect ×3 (item1, item2, item3)` — count + recipient + parenthesized items
+- Persona emoji + name for cross-references (`🔷 architect`, `⚖️ chair`)
 - Priority/severity inline in parentheses where relevant
 
 ### Pattern C (fallback) — chevron detail when row would overflow
@@ -268,14 +272,14 @@ Switch to two-level chevron rendering when ANY of:
 
 ```
 ▍ **resolved**    8 cleared
-▍                 › 🔷 kai · v1-2-codec (P1, refs decision)
-▍                 › 🔷 kai · spec-054 FYI (out-of-scope deferred)
-▍                 › ⚖️ quorum · sync-cadence FYI
-▍                 › ⚖️ quorum · Giveth-admin (P2, awaits external reply)
-▍                 › ⚡ spark · Giveth-correction (P2, copy-only)
-▍                 › ⚡ spark · launch-window-shift (P1, founder-input pending)
-▍                 › 🛡️ shade · audit-gh-fetch (low, fixed in this session)
-▍                 › 🛠️ atlas · T7-bats-fixture-mismatch (P3, deferred)
+▍                 › 🔷 architect · api-v2 (P1, refs decision)
+▍                 › 🔷 architect · spec-054 FYI (out-of-scope deferred)
+▍                 › ⚖️ chair · sync-cadence FYI
+▍                 › ⚖️ chair · funding-admin (P2, awaits external reply)
+▍                 › ⚡ growth · copy-correction (P2, copy-only)
+▍                 › ⚡ growth · launch-window-shift (P1, founder-input pending)
+▍                 › 🛡️ security · audit-gh-fetch (low, fixed in this session)
+▍                 › 🛠️ builder · T7-fixture-mismatch (P3, deferred)
 ```
 
 Rules:
@@ -291,10 +295,10 @@ pipeline steps). Otherwise use Pattern B or C.
 
 ```
 ▍ **ops** (8)
-▍   1  filed       solana-defer-beyond-v2 (active)
-▍   2  mention →   🔷 kai (P1, codec)
-▍   3  mention →   ⚖️ quorum (P2, Giveth)
-▍   4  resolved    🔷 kai · v1-2-codec (P1)
+▍   1  filed       defer-backend-rewrite (active)
+▍   2  mention →   🔷 architect (P1, api)
+▍   3  mention →   ⚖️ chair (P2, funding)
+▍   4  resolved    🔷 architect · api-v2 (P1)
 …
 ```
 
@@ -352,8 +356,8 @@ markdown headings as they always have; chat blocks use v3.2.
 ## Changelog
 
 - **v3.4** (2026-05-20) — forbid HTML entities (`&nbsp;`, `&mdash;`) for ▍-row column alignment after advisors' 2026-05-18 Session Summaries rendered literal `&nbsp;` strings in chat. Adds anti-pattern row + explicit ASCII-spaces-only rule to §3. Closes fb-1779131089-1c86b3.
-- **v3.3** (2026-05-18) — add List rendering section (Patterns A/B/C/D) after Nexus fan-out output reverted to box-drawing table for 8 ops. Pattern B (grouped count + inline detail) is default; C (chevron) is fallback for long lists; D (numbered) reserved for ordered pipelines. Box-drawing tables explicitly forbidden in anti-patterns. Per-skill table gains `fan-out` row for batch-op summaries.
-- **v3.2** (2026-05-18 a24ff9f) — restore persona emoji as identity-anchors after Ignat "эмоджи адвайзеров, исполнителей и других агентов системы мы можем показывать, потому что они как раз создают визуальную связь" feedback. Header now leads with speaker emoji; cross-references to other agents keep their emoji in value cells. Per-row decorative emoji still forbidden.
-- **v3.1** (2026-05-18 f497713) — wrap whole Summary in ▍ gutter + bold keys after Ignat "итог сливается с остальным выводом, секции и ключевые слова не выделяются" feedback.
-- **v3** (2026-05-18 ae66f5d) — full rewrite to Variant C minimalism after Ignat "слишком пестро" feedback + web research diagnosis. Removed 27-glyph palette, sidecar lane, table layout, box-frames. Exception-only severity.
+- **v3.3** (2026-05-18) — add List rendering section (Patterns A/B/C/D) after an advisor's fan-out output reverted to a box-drawing table for 8 ops. Pattern B (grouped count + inline detail) is default; C (chevron) is fallback for long lists; D (numbered) reserved for ordered pipelines. Box-drawing tables explicitly forbidden in anti-patterns. Per-skill table gains `fan-out` row for batch-op summaries.
+- **v3.2** (2026-05-18 a24ff9f) — restore persona emoji as identity-anchors after the operator's "эмоджи адвайзеров, исполнителей и других агентов системы мы можем показывать, потому что они как раз создают визуальную связь" feedback. Header now leads with speaker emoji; cross-references to other agents keep their emoji in value cells. Per-row decorative emoji still forbidden.
+- **v3.1** (2026-05-18 f497713) — wrap whole Summary in ▍ gutter + bold keys after the operator's "итог сливается с остальным выводом, секции и ключевые слова не выделяются" feedback.
+- **v3** (2026-05-18 ae66f5d) — full rewrite to Variant C minimalism after the operator's "слишком пестро" feedback + web research diagnosis. Removed 27-glyph palette, sidecar lane, table layout, box-frames. Exception-only severity.
 - **v1** (2026-05-18 5e63a34) — initial contract with Render-B table + advisor overlay. Outdated within the same day.

@@ -53,10 +53,10 @@ exit_code: 0
 payload:
   launch_date: "2026-06-15"
   confidence: "medium"
-  notes: "Depends on v1.2 codec landing by Jun 1"
-summary: "Spark confirms onboarding-kit target is 2026-06-15, medium confidence"
+  notes: "Depends on the v1.2 API landing by Jun 1"
+summary: "Advisor confirms onboarding-kit target is 2026-06-15, medium confidence"
 ---
 
-Spark has reviewed spec 039. The onboarding-kit launch is targeted for 2026-06-15,
-contingent on v1.2 @void-layer/codec landing by Jun 1 as planned.
+The advisor has reviewed spec 039. The onboarding-kit launch is targeted for 2026-06-15,
+contingent on the v1.2 API landing by Jun 1 as planned.
 ```
