@@ -89,7 +89,7 @@ promoted into edits to the agents' own skills and contracts.
 > /plugin marketplace add ignromanov/conclave
 ✓ marketplace 'conclave-marketplace' added
 > /plugin install conclave
-✓ conclave@0.1.0 installed   (agent-teams enabled via dependencies)
+✓ conclave@0.2.0 installed   (agent-teams enabled via dependencies)
 
 > /conclave:init
   project name? voidpay
@@ -207,5 +207,5 @@ businesses as a product.
 
 ## Status & License
 
-**Status**: packaged and installable (v0.1.0); design doc-set captured 2026-06-11.
+**Status**: packaged and installable (v0.2.0); design doc-set captured 2026-06-11.
 **License**: [MIT](LICENSE).
