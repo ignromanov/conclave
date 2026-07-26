@@ -21,6 +21,7 @@ from __future__ import annotations
 import ast
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 
@@ -177,8 +178,16 @@ def test_pyproject_floor_matches_guards() -> None:
 
 
 def _sub_floor_interpreter() -> str | None:
-    """An interpreter below FLOOR, if this machine has one."""
-    for candidate in ("/usr/bin/python3", "python3.9", "python3.10"):
+    """An interpreter below FLOOR, if this machine has one.
+
+    Resolved to an absolute path: candidates are found on the parent's PATH, but the behavioural
+    test below runs them under a minimal `PATH=/usr/bin:/bin`. A bare `python3.10` from Homebrew
+    would pass the probe here and then fail `execvpe` there, erroring instead of skipping.
+    """
+    for name in ("/usr/bin/python3", "python3.9", "python3.10"):
+        candidate = shutil.which(name)
+        if candidate is None:
+            continue
         try:
             out = subprocess.run(
                 [candidate, "-c", "import sys; print('%d.%d' % sys.version_info[:2])"],

@@ -129,6 +129,35 @@ def test_no_plugin_token_leaves_gh_auth_alone(monkeypatch):
     """With nothing configured, gh must fall through to the user's own `gh auth` session."""
     monkeypatch.delenv("CLAUDE_PLUGIN_OPTION_GH_TOKEN", raising=False)
     monkeypatch.delenv("GH_TOKEN", raising=False)
+    # GITHUB_TOKEN too: it is exported by GitHub Actions, devcontainers and direnv, and it
+    # short-circuits _gh_env() the same way GH_TOKEN does. Left set, this passes for the
+    # wrong reason on any such machine.
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    rec = _record(monkeypatch)
+    gh._run_gh(["issue", "list"])
+
+    assert rec.kwargs.get("env") is None
+
+
+def test_whitespace_only_plugin_token_is_not_bridged(monkeypatch):
+    """A settings field the user opened and left blank must not become an empty GH_TOKEN —
+    that would authenticate as nobody instead of falling through to `gh auth`."""
+    monkeypatch.setenv("CLAUDE_PLUGIN_OPTION_GH_TOKEN", "   \t ")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    rec = _record(monkeypatch)
+    gh._run_gh(["issue", "list"])
+
+    assert rec.kwargs.get("env") is None
+
+
+def test_ambient_github_token_alone_suppresses_the_bridge(monkeypatch):
+    """Documented precedence, pinned: GITHUB_TOKEN counts as explicit even with no GH_TOKEN."""
+    monkeypatch.setenv("CLAUDE_PLUGIN_OPTION_GH_TOKEN", "tok-from-plugin-config")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.setenv("GITHUB_TOKEN", "tok-from-the-ambient-environment")
 
     rec = _record(monkeypatch)
     gh._run_gh(["issue", "list"])
