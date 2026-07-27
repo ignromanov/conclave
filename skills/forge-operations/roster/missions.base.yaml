@@ -1,0 +1,6 @@
+# Universal missions — reusable goal bundles norms attach to (spec 091 §1).
+#
+# DOMAIN-AGNOSTIC ONLY. This file ships to every consumer; an instance's own missions live in its
+# DATA tree, not here. Gated by tests/test_gates.py::test_roster_base_is_domain_agnostic.
+version: 1
+missions: []

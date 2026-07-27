@@ -1,0 +1,9 @@
+# Universal norms on abstract roles (spec 091 §1/§2).
+#
+# A norm is the deontic tuple {type, role, mission, condition, priority}. Norms here attach only to
+# ABSTRACT roles — `all`, `kind:advisor`, `kind:executor` — and are inherited by every concrete role
+# holding them. A norm naming a concrete role belongs in that agent's own manifest, in DATA.
+#
+# DOMAIN-AGNOSTIC ONLY. Gated by tests/test_gates.py::test_roster_base_is_domain_agnostic.
+version: 1
+norms: []
