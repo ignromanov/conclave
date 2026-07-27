@@ -1,4 +1,4 @@
-"""enginelib.roster — the deontic duty registry (spec 091).
+"""enginelib.duties — the deontic duty registry (spec 091).
 
 Roles ⨉ missions ⨉ norms, composed from an engine-owned base plus each agent's self-written
 duties, projected into a compact COMPUTED-DUTIES.md list.

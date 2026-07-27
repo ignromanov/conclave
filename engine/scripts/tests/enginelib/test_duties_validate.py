@@ -7,8 +7,8 @@ Hermetic: model objects only, no disk.
 """
 from __future__ import annotations
 
-from enginelib.roster.model import Manifest, Mission, Norm, Role
-from enginelib.roster.validate import compose, validate
+from enginelib.duties.model import Manifest, Mission, Norm, Role
+from enginelib.duties.validate import compose, validate
 
 
 def _m(roles=(), missions=(), norms=()):

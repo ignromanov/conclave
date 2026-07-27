@@ -12,7 +12,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from enginelib.roster.model import Manifest, Mission, Norm, Role
+from enginelib.duties.model import Manifest, Mission, Norm, Role
 
 
 def _norm(**over):
@@ -125,7 +125,7 @@ def test_committed_json_schemas_match_regeneration():
     """The JSON-Schemas under roster/schema/ are GENERATED from these models. Two
     hand-maintained copies of one fact is the P3 single-owner violation acceptance §8
     names; this test is what keeps it one fact."""
-    from enginelib.roster.model import SCHEMA_FILES, schema_dir
+    from enginelib.duties.model import SCHEMA_FILES, schema_dir
 
     assert SCHEMA_FILES, "schema export list is empty — nothing would be checked"
     for name, model in SCHEMA_FILES.items():

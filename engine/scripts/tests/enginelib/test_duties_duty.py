@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from enginelib.roster.duty import DUTY_DESCRIPTION_MAX, load_duty, template_path
+from enginelib.duties.duty import DUTY_DESCRIPTION_MAX, load_duty, template_path
 
 VALID = """---
 id: d_close_session

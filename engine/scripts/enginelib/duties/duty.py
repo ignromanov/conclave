@@ -17,7 +17,7 @@ from pathlib import Path
 
 from briefing.frontmatter_io import read
 
-from enginelib.roster.validate import Finding
+from enginelib.duties.validate import Finding
 
 #: agentskills.io standard. Spec §3 targets 30-80 tokens; the hard cap is the standard's.
 DUTY_DESCRIPTION_MAX = 1024

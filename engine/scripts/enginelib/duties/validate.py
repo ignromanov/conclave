@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from enginelib.roster.model import ABSTRACT_ROLES, Manifest, Mission, Norm, Role
+from enginelib.duties.model import ABSTRACT_ROLES, Manifest, Mission, Norm, Role
 
 
 @dataclass(frozen=True)
