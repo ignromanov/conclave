@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -19,12 +20,31 @@ import pytest
 SCRIPTS_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _ruff_cmd() -> list[str] | None:
+    """Return the argv prefix that invokes ruff, or None if it is genuinely unavailable.
+
+    PATH alone is not enough. `<venv>/bin/python -m pytest` (an unactivated venv — how CI and
+    most tooling invoke the suite) leaves the venv's bin dir off PATH, so `shutil.which` misses
+    a ruff that is installed in the very interpreter running these tests, and the gate skips
+    itself while reporting green. Fall back to the module entry point before giving up.
+    """
+    exe = shutil.which("ruff")
+    if exe is not None:
+        return [exe]
+    probe = subprocess.run(
+        [sys.executable, "-m", "ruff", "--version"], capture_output=True, text=True
+    )
+    if probe.returncode == 0:
+        return [sys.executable, "-m", "ruff"]
+    return None
+
+
 def test_ruff_check_is_clean():
-    ruff = shutil.which("ruff")
+    ruff = _ruff_cmd()
     if ruff is None:
         pytest.skip("ruff not installed (dev dependency); gate is a no-op outside dev/CI")
     result = subprocess.run(
-        [ruff, "check", "--output-format=concise"],
+        [*ruff, "check", "--output-format=concise"],
         cwd=SCRIPTS_ROOT,
         capture_output=True,
         text=True,
