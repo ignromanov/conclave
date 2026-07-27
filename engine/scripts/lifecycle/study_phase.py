@@ -48,7 +48,9 @@ if sys.version_info < (3, 11):  # noqa: UP036 — see engine/__main__.py
 _SCRIPTS_DIR = str(Path(__file__).resolve().parent.parent)
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
-from enginelib.advisors import known_advisors  # noqa: E402 (follows the sys.path bootstrap above)
+from enginelib.advisors import (  # noqa: E402 (follows the sys.path bootstrap above)
+    lifecycle_advisors,
+)
 
 
 def _data_root() -> Path:
@@ -250,7 +252,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.advisor:
-        roster = known_advisors(_data_root())
+        roster = lifecycle_advisors(_data_root())
         # Validate only against a populated registry; an empty result means
         # discovery couldn't resolve the root, so skip rather than block the
         # study phase on a (merely informational) advisor arg.
