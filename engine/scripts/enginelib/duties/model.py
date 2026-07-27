@@ -19,6 +19,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from enginelib.paths import duty_schema_dir
+
 DeonticType = Literal["obligation", "permission", "advice"]
 AgentKind = Literal["advisor", "executor"]
 
@@ -85,14 +87,8 @@ SCHEMA_FILES: dict[str, type[BaseModel]] = {
 def schema_dir() -> Path:
     """The engine-owned schema dir: skills/forge-operations/roster/schema/.
 
-    Resolved from this file's location rather than from cwd or an env var — the tree ships
-    with the engine, so its position relative to the source is the only stable anchor.
+    Delegates to paths.duty_schema_dir() so CONCLAVE_ENGINE_ROOT is honoured — a
+    source-relative offset would resolve into this checkout even when CODE is a plugin
+    install somewhere else entirely.
     """
-    return (
-        # roster -> enginelib -> scripts -> engine -> repo root
-        Path(__file__).resolve().parents[4]
-        / "skills"
-        / "forge-operations"
-        / "roster"
-        / "schema"
-    )
+    return duty_schema_dir()

@@ -9,9 +9,22 @@ Hermetic: tmp_path only, except the one test that reads the shipped template.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from enginelib.duties.duty import DUTY_DESCRIPTION_MAX, load_duty, template_path
+from enginelib.duties.duty import DUTY_DESCRIPTION_MAX, load_duty
+
+# The shipped-asset tests below assert about THIS checkout, so they anchor source-relative
+# rather than calling duty.template_path(). Production code resolves through
+# CONCLAVE_ENGINE_ROOT by design — and conftest deliberately leaves that var set — which in
+# a git worktree points at the main checkout, i.e. a different tree than the one under test.
+# Same split conftest already makes with _REAL_ENGINE_ROOT.
+_CODE_ROOT = Path(__file__).resolve().parents[4]  # tests/enginelib -> tests -> scripts -> engine -> root
+
+
+def template_path() -> Path:
+    return _CODE_ROOT / "skills" / "forge-operations" / "roster" / "templates" / "DUTY.md"
 
 VALID = """---
 id: d_close_session

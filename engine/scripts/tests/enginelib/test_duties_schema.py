@@ -125,11 +125,19 @@ def test_committed_json_schemas_match_regeneration():
     """The JSON-Schemas under roster/schema/ are GENERATED from these models. Two
     hand-maintained copies of one fact is the P3 single-owner violation acceptance §8
     names; this test is what keeps it one fact."""
-    from enginelib.duties.model import SCHEMA_FILES, schema_dir
+    from pathlib import Path
+
+    from enginelib.duties.model import SCHEMA_FILES
+
+    # Source-relative, not schema_dir(): production resolves through CONCLAVE_ENGINE_ROOT
+    # (conftest leaves it set on purpose), which in a worktree names the main checkout —
+    # so schema_dir() would check a different tree's files than the models under test.
+    code_root = Path(__file__).resolve().parents[4]
+    schemas = code_root / "skills" / "forge-operations" / "roster" / "schema"
 
     assert SCHEMA_FILES, "schema export list is empty — nothing would be checked"
     for name, model in SCHEMA_FILES.items():
-        path = schema_dir() / f"{name}.schema.json"
+        path = schemas / f"{name}.schema.json"
         assert path.exists(), f"{path} missing — run `engine duty schema --write`"
         committed = json.loads(path.read_text())
         assert committed == model.model_json_schema(), (

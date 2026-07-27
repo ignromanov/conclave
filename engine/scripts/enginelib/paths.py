@@ -218,6 +218,14 @@ def forge_templates_dir() -> Path: return forge_references_dir() / "templates"
 def templates_dir() -> Path: return forge_templates_dir()
 
 
+# spec 091: the engine-owned duty base. Derived from forge_dir() rather than from a
+# source-relative offset, so CONCLAVE_ENGINE_ROOT keeps working when CODE is a plugin
+# install rather than this checkout.
+def duty_roster_dir() -> Path: return forge_dir() / "roster"
+def duty_schema_dir() -> Path: return duty_roster_dir() / "schema"
+def duty_template_path() -> Path: return duty_roster_dir() / "templates" / "DUTY.md"
+
+
 def snapshot_path_for_advisor(cache_type: str, advisor_id: str) -> Path:
     if cache_type == "gh":
         base = gh_cache_dir()
