@@ -45,8 +45,13 @@ if _SCRIPTS_DIR not in sys.path:
 
 # Forge is a META-advisor: a valid explicit invocation/lifecycle target, but not a
 # domain advisor — excluded from dashboard auto-enumeration (Forge invariant #7:
-# inventory is discovered, not hardcoded). See spec 2026-07-01 §3.3.
-META_ADVISORS: set[str] = {"forge"}
+# inventory is discovered, not hardcoded). See spec 2026-07-01 §3.3. Sourced from
+# enginelib.advisors — the shared roster|META seam other call sites route through
+# too (doctor.py, briefing/__main__.py) — rather than redeclared here.
+from enginelib.advisors import (  # noqa: E402 (follows the sys.path bootstrap above)
+    META_ADVISORS,
+    with_meta,
+)
 
 
 def _project_dir(root: Path) -> Path:
@@ -527,7 +532,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     known = _known_advisors(root)
-    if advisor not in known and advisor not in META_ADVISORS:
+    if advisor not in with_meta(known):
         listing = ", ".join(sorted(known)) or "(none hired — run /conclave:forge to hire)"
         print(
             f"session-init: advisor '{advisor}' not in instance registry.\nKnown: {listing}",

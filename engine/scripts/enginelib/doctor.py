@@ -40,9 +40,9 @@ def _hot_check(root: Path, fix: bool) -> Check:
 
 
 def _advisor_check(root: Path, advisor: str) -> Check:
-    from enginelib.advisors import _META_ADVISORS, known_advisors
+    from enginelib.advisors import known_advisors, with_meta
     known = known_advisors(root)
-    ok = advisor in known or advisor in _META_ADVISORS
+    ok = advisor in with_meta(known)
     if ok:
         return Check(f"advisor:{advisor}", True, "in instance registry")
     listing = ", ".join(sorted(known)) or "(none hired)"

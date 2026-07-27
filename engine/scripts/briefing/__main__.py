@@ -74,11 +74,12 @@ def main(argv: list[str] | None = None) -> int:
     # DATA-root domain roster _registry_advisors() enumerates. Admission asks "may this
     # advisor hold a briefing", which is roster + META — gating on the enumeration alone
     # rejected forge, the one advisor guaranteed to exist in every instance (#38).
-    # Same enumerate-vs-gate split as enginelib.advisors.lifecycle_advisors().
-    from enginelib.advisors import _META_ADVISORS  # noqa: PLC2701
+    # Same enumerate-vs-gate split as enginelib.advisors.lifecycle_advisors(); routed
+    # through the same with_meta() seam rather than re-open-coding the union.
+    from enginelib.advisors import with_meta
 
     registry = _registry_advisors()
-    if registry and args.advisor not in registry | _META_ADVISORS:
+    if registry and args.advisor not in with_meta(registry):
         known = ", ".join(sorted(registry))
         print(
             f"briefing: advisor '{args.advisor}' is not in the instance registry.\n"

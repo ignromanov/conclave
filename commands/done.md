@@ -3,7 +3,7 @@ description: |
   MANDATORY session completion checklist for ALL advisors (with or without Quorum).
   3 mandatory + 6 conditional items (1-9), DO-CONFIRM format.
   Every advisor session MUST end with this skill. No exceptions.
-  Conditional items 4-8 fire situationally — rarely all at once (WHO Checklist research favours ≤7 active per run).
+  Conditional items 4-9 fire situationally — rarely all at once (WHO Checklist research favours ≤7 active per run).
 ---
 
 !`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/agent-data-policy.md`

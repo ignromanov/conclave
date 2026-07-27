@@ -167,6 +167,22 @@ def test_rebuild_after_input_change_rewrites(ai_root):
     assert path.read_text(encoding="utf-8") != before, "input changed but briefing did not"
 
 
+def test_unreadable_existing_briefing_is_rewritten_not_raised(ai_root):
+    """The old unconditional-overwrite code never read the existing briefing, so a
+    corrupt file quietly repaired itself on the next write. Build-and-compare added
+    a read for the comparison — an unreadable file must still self-heal, not raise
+    (which would wedge every future session start at exit 1)."""
+    _seed_progress(ai_root)
+    path = ai_root / "agent-memory" / "advisors" / "briefings" / "kai-cto.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\xff\xfe not valid utf-8 \x80\x81")
+
+    r = run_engine("briefing", "build", "kai-cto")
+    assert r.returncode == 0, f"stderr: {r.stderr[:400]}"
+    assert "wrote=" in r.stdout
+    assert path.read_text(encoding="utf-8").startswith("<!-- AUTO-GENERATED")
+
+
 # ---------------------------------------------------------------------------
 # Cases 4–8 — successful build for kai-cto
 # ---------------------------------------------------------------------------

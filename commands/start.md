@@ -250,7 +250,7 @@ Render the start-summary using the ▍-framed format (per `output-formatting.md`
 ▍
 ▍ **focus**       {current focus from briefing}
 ▍ **queue**       {N} open issues ({AI: x, GH: y}) · {P0_count} P0
-▍ **briefing**    `agent-memory/advisors/briefings/{advisor}.md` ({last_regen})
+▍ **briefing**    `agent-memory/advisors/briefings/{advisor}.md` ({unchanged | regenerated})
 ▍ ⚠ **interrupted** {title} ({path})              ← OMIT if none
 ▍ **tier**        {Quick | Feature | Epic}
 ▍ **skills**      {chain → e.g. brainstorming → writing-plans → workflow.dev-lifecycle}

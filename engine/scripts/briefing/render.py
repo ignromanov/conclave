@@ -186,10 +186,21 @@ def write_if_changed(content: str, out_path: Path) -> bool:
     Comparison ignores the generated_at stamp (see _normalize_for_compare), so a
     rebuild with identical inputs is a true no-op — it neither touches the file
     nor its mtime. Returns True if written, False if left alone.
+
+    A briefing that fails to read back (not valid UTF-8, permissions) is treated
+    as changed rather than raised: the old unconditional-overwrite code never read
+    the existing file at all, so an unreadable briefing quietly repaired itself on
+    the next write. Raising here instead would wedge the session permanently —
+    build-and-compare must not turn a self-correcting condition into a stuck one.
     """
     if out_path.is_file():
-        existing = out_path.read_text(encoding="utf-8")
-        if _normalize_for_compare(existing) == _normalize_for_compare(content):
+        try:
+            existing: str | None = out_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            existing = None
+        if existing is not None and _normalize_for_compare(existing) == _normalize_for_compare(
+            content
+        ):
             return False
 
     # Atomic write: tmp in same dir so os.replace() is a rename. Body and footer are
