@@ -1,0 +1,55 @@
+name: CI
+
+# Until this file existed the repo had no CI at all, while its specs and docs spoke of gates:
+# the publication gate, the code/data gate, the suite-coverage gate, the charter test and the
+# lint gate all ran only when an agent remembered to run them (GH#40). They run here now.
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    name: suite · py${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 is the measured floor (engine/scripts/pyproject.toml requires-python, established
+        # by import sweep rather than by declaration); 3.13 is what the engine is developed
+        # against. Running both is what keeps the floor from becoming a claim nobody tests.
+        python: ['3.11', '3.13']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install engine + dev extras
+        run: pip install -e './engine/scripts[dev]'
+
+      # tests/test_ruff_gate.py skips itself when it cannot find ruff, so a runner without ruff
+      # would report green on a gate that never executed. Fail here, loudly, instead — a missing
+      # linter is a broken CI, not a passing one.
+      - name: Assert the lint gate can run
+        run: ruff --version
+
+      # pytest.ini at the repo root is the single source of config (GH#99) — rootdir, pythonpath
+      # and both testpaths. Invoke it bare from the repo root, exactly as the docs prescribe; any
+      # narrower invocation resolves a different rootdir and a different suite set.
+      #
+      # `-rs` is the one addition: it lists every skipped test with its reason, and (per GH#45)
+      # it is also what restores the `N passed, M skipped` trailer that the configured `-q` loses.
+      # A CI log that shows neither its total nor its skips cannot distinguish a green suite from
+      # a suite that quietly declined to run — which is the failure this workflow exists to close.
+      - name: Suite
+        run: python -m pytest -rs
