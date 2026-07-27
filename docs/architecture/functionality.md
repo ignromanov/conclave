@@ -25,8 +25,9 @@ sentences feed the next session as priors.
 ```
 
 1. Runs `lifecycle/session_init.py --advisor <advisor>` in a single call. Orchestrates: GH
-   snapshot (TTL=900s from `gh-cache/`; no live calls from briefing), briefing mtime-guard
-   (>24h triggers `briefing/regen.py`), resume scan (`ops/handoffs/*-<advisor>-*.md`),
+   snapshot (TTL=900s from `gh-cache/`; no live calls from briefing), briefing build-and-compare
+   (always rebuilds; writes only when the rendered content actually differs from what's on
+   disk), resume scan (`ops/handoffs/*-<advisor>-*.md`),
    reflexion extract (last 3 session frontmatter `reflexion:` fields injected as priors),
    overlay scan, feedback cadence check.
 2. Reads `agent-memory/advisors/briefings/<advisor>.md` + `agent-memory/hot.md` into context.
@@ -293,7 +294,7 @@ are the cache; sessions/decisions/GH issues are the truth.
 | Layer | Storage | Who writes | Freshness |
 |-------|---------|-----------|-----------|
 | Source of truth | `agent-memory/advisors/{sessions,decisions,mentions}/` + GH issues | Scripts via `close-session.sh`, `file-decision.sh`, `mention.sh` | Append-only, never overwritten |
-| Cache (briefings) | `agent-memory/advisors/briefings/<advisor>.md` | `regen.py` | Regenerated if mtime >24h (mtime-guard in `session_init.py`) |
+| Cache (briefings) | `agent-memory/advisors/briefings/<advisor>.md` | `regen.py` | Rebuilt every session; written only when content actually differs (build-and-compare in `session_init.py`) |
 | Cross-agent live | `agent-memory/hot.md` (≤500 words) | Lifecycle scripts; reconciled by Quorum/Forge | Updated per session; three sections: Now / Recent decisions / Watch |
 
 Briefing structure: eager layer ≤6000 chars (current focus, open issues, recent decisions,

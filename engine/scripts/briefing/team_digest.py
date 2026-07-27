@@ -46,15 +46,22 @@ _GENERATED_AT_RE = re.compile(r"<!-- generated_at: ([^\s>]+)")
 
 
 def _briefing_status(briefing_path: Path) -> str:
-    """Return 'fresh' / 'stale (Nd)' / 'missing' based on briefing mtime."""
+    """Return 'unchanged (<1d)' / 'unchanged (Nd)' / 'missing'.
+
+    Reports elapsed time since the briefing's content last changed on disk — not a
+    freshness judgment. `engine briefing build` writes only on a real content
+    change (#14 — build-and-compare), so mtime now means "content last changed",
+    not "content last verified"; the moment of last verification isn't recorded
+    anywhere, so this deliberately makes no claim about staleness.
+    """
     if not briefing_path.is_file():
         return "missing"
     age_s = int(time.time() - briefing_path.stat().st_mtime)
     age_h = age_s // 3600
     if age_h < 24:
-        return "fresh"
+        return "unchanged (<1d)"
     age_d = age_h // 24
-    return f"stale ({age_d}d)"
+    return f"unchanged ({age_d}d)"
 
 
 def _queue_count(advisor: str) -> int:

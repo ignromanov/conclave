@@ -131,6 +131,7 @@ def test_rebuild_with_unchanged_inputs_does_not_rewrite(ai_root):
     assert second.returncode == 0, f"stderr: {second.stderr[:400]}"
     assert "unchanged=" in second.stdout
     assert path.stat().st_mtime_ns == mtime_before, "briefing was rewritten with no input change"
+    assert not list(path.parent.glob(".briefing-tmp-*")), "no-write path left a tmp file behind"
 
 
 def test_timestamp_drift_alone_is_not_a_change(ai_root):
