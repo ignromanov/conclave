@@ -1,7 +1,7 @@
 """session-init.py — session initialization helper (Phase 4, spec 085 / plugin 098).
 
 Absorbs team.start Steps 1/1b/1c + Overlay loading:
-  Step 1:   gh-fetch + briefing mtime-guard (>24h) + briefing-build
+  Step 1:   gh-fetch + briefing build-and-compare (#14)
   Step 1b:  resume-scan (ops/specs/*/resume-prompt.md + ops/handoffs/*-<advisor>-*.md)
   Step 1c:  reflexion extract — last-3 sessions' `reflexion:` frontmatter
   Overlays: scan agent-memory/advisors/<advisor>/contracts/*.md
@@ -9,7 +9,7 @@ Absorbs team.start Steps 1/1b/1c + Overlay loading:
 Arg: --advisor <slug>
 
 Exit codes (mirror gh-fetch contract):
-  0  = success, nothing regenerated (cache-hit / briefing fresh)
+  0  = success, nothing regenerated (cache-hit / briefing unchanged)
   2  = success, briefing regenerated
   1  = error
   3  = stale-fail (gh-fetch stale, briefing unreadable)
@@ -47,8 +47,6 @@ if _SCRIPTS_DIR not in sys.path:
 # domain advisor — excluded from dashboard auto-enumeration (Forge invariant #7:
 # inventory is discovered, not hardcoded). See spec 2026-07-01 §3.3.
 META_ADVISORS: set[str] = {"forge"}
-
-BRIEFING_MAX_AGE_S = 86400  # 24 h
 
 
 def _project_dir(root: Path) -> Path:
@@ -194,22 +192,13 @@ def _step1_load_briefing(advisor: str, root: Path) -> tuple[int, list[str]]:
                 lines.append(f"    stderr: {result.stderr.strip()[:120]}")
             return 3, lines
 
-    # Briefing mtime-guard
+    # Build-and-compare (#14): mtime cannot tell freshness — the build's 18 scans
+    # read git state and the specs tree, which can move without touching the
+    # briefing file, and vice versa. So always build; the build itself writes only
+    # when the rendered content actually differs from what's on disk, and reports
+    # that in its stdout via wrote=/unchanged=.
     briefing_path = root / "agent-memory" / "advisors" / "briefings" / f"{advisor}.md"
-    now = int(time.time())
-    mtime = int(briefing_path.stat().st_mtime) if briefing_path.is_file() else 0
-    age_s = now - mtime
-    needs_regen = (not briefing_path.is_file()) or (age_s > BRIEFING_MAX_AGE_S)
 
-    if not needs_regen:
-        age_h = age_s // 3600
-        lines.append(f"  briefing: fresh ({age_h}h old) — skipping regen")
-        lines.append(f"  briefing-path: {briefing_path}")
-        # Briefing did not regenerate; gh-refresh (exit 2) is orthogonal and already
-        # surfaced in the gh-fetch line. Reserve exit 2 strictly for a real regen.
-        return 0, lines
-
-    # Regen
     t0 = time.monotonic()
     bb_result = subprocess.run(
         [sys.executable, "-m", "engine", "briefing", "build", advisor],
@@ -224,6 +213,13 @@ def _step1_load_briefing(advisor: str, root: Path) -> tuple[int, list[str]]:
         if bb_result.stderr.strip():
             lines.append(f"    stderr: {bb_result.stderr.strip()[:120]}")
         return 1, lines
+
+    if "unchanged=" in bb_result.stdout:
+        lines.append(f"  briefing: unchanged ({bb_ms}ms)")
+        lines.append(f"  briefing-path: {briefing_path}")
+        # Briefing did not regenerate; gh-refresh (exit 2) is orthogonal and already
+        # surfaced in the gh-fetch line. Reserve exit 2 strictly for a real regen.
+        return 0, lines
 
     lines.append(f"  briefing-build: regenerated ({bb_ms}ms)")
     lines.append(f"  briefing-path: {briefing_path}")

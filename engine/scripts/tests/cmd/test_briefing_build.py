@@ -111,6 +111,62 @@ def test_forge_meta_advisor_regenerates(ai_root):
 
 
 # ---------------------------------------------------------------------------
+# #14 — freshness is a fact, not an estimate
+# ---------------------------------------------------------------------------
+# session_init regenerated on an mtime guard (>24h), which is wrong in both
+# directions: a 2h-old briefing counted as fresh however much its inputs had moved,
+# and a 25h-old one was rebuilt even when nothing had. The build now renders, compares
+# against what is on disk, and writes only on a real difference.
+
+def test_rebuild_with_unchanged_inputs_does_not_rewrite(ai_root):
+    _seed_progress(ai_root)
+    path = ai_root / "agent-memory" / "advisors" / "briefings" / "kai-cto.md"
+
+    first = run_engine("briefing", "build", "kai-cto")
+    assert first.returncode == 0, f"stderr: {first.stderr[:400]}"
+    assert "wrote=" in first.stdout
+    mtime_before = path.stat().st_mtime_ns
+
+    second = run_engine("briefing", "build", "kai-cto")
+    assert second.returncode == 0, f"stderr: {second.stderr[:400]}"
+    assert "unchanged=" in second.stdout
+    assert path.stat().st_mtime_ns == mtime_before, "briefing was rewritten with no input change"
+
+
+def test_timestamp_drift_alone_is_not_a_change(ai_root):
+    """generated_at is stamped into every render, so it must be excluded from the
+    comparison — otherwise every build looks like a change and the fix is a no-op."""
+    _seed_progress(ai_root)
+    path = ai_root / "agent-memory" / "advisors" / "briefings" / "kai-cto.md"
+
+    run_engine("briefing", "build", "kai-cto")
+    mtime_before = path.stat().st_mtime_ns
+
+    time.sleep(1.1)  # guarantee a different generated_at value
+
+    again = run_engine("briefing", "build", "kai-cto")
+    assert "unchanged=" in again.stdout
+    assert path.stat().st_mtime_ns == mtime_before, "a new timestamp alone triggered a rewrite"
+
+
+def test_rebuild_after_input_change_rewrites(ai_root):
+    _seed_progress(ai_root)
+    path = ai_root / "agent-memory" / "advisors" / "briefings" / "kai-cto.md"
+
+    run_engine("briefing", "build", "kai-cto")
+    before = path.read_text(encoding="utf-8")
+
+    (ai_root / "progress-summary.md").write_text(
+        "# Progress Summary\n\n**Phase**: P2 | **v2.0 SHIPPED** Jul 27\n", encoding="utf-8"
+    )
+
+    after_run = run_engine("briefing", "build", "kai-cto")
+    assert after_run.returncode == 0, f"stderr: {after_run.stderr[:400]}"
+    assert "wrote=" in after_run.stdout
+    assert path.read_text(encoding="utf-8") != before, "input changed but briefing did not"
+
+
+# ---------------------------------------------------------------------------
 # Cases 4–8 — successful build for kai-cto
 # ---------------------------------------------------------------------------
 

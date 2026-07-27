@@ -1,14 +1,15 @@
 """__main__.py — entrypoint for `python3 -m briefing <advisor>`.
 
-Orchestrates the 7 section scans + render + hot-append, emitting
+Orchestrates the 7 section scans + render (body + hot.md footer), emitting
 machine-parseable progress lines that match the legacy bash output:
 
     [briefing-build] step=<name> took=<n>ms
     ...
-    [briefing-build] wrote=<path>
+    [briefing-build] wrote=<path>       # content differed from what was on disk
+    [briefing-build] unchanged=<path>   # build-and-compare found no real change (#14)
 
 Step names (in order): who-i-am, project-state, decisions, my-queue, p0,
-sessions, mentions, render, hot.
+sessions, mentions, render.
 """
 from __future__ import annotations
 
@@ -220,14 +221,18 @@ def main(argv: list[str] | None = None) -> int:
 
     out_path = paths.briefings_dir() / f"{advisor}.md"
 
+    # Build-and-compare (#14): render the full final content (body + hot.md footer)
+    # and write only if it actually differs from what is on disk — the comparison
+    # ignores the generated_at stamp so an unchanged rebuild is a true no-op.
     t0 = _now_ms()
-    render.write_body(values, out_path)
+    content = render.render_content(values)
+    written = render.write_if_changed(content, out_path)
     _emit_step("render", t0)
 
-    # hot.md reference footer (AC8 — content not embedded, path reference only).
-    render.append_hot(out_path)
-
-    print(f"[briefing-build] wrote={out_path}", flush=True)
+    if written:
+        print(f"[briefing-build] wrote={out_path}", flush=True)
+    else:
+        print(f"[briefing-build] unchanged={out_path}", flush=True)
     return 0
 
 
