@@ -1,9 +1,10 @@
 """enginelib.lifecycle.gh_fetch — TTL-cached GH issue snapshot writer.
 
 Contract: no stdout, no argparse, no sys.exit. Subprocess (via enginelib.gh) + clock +
-file I/O are allowed, as is a stderr diagnostic — `resolve_repos()` refuses a malformed
-roster scope, and the *reason* is the whole point of refusing rather than falling through,
-so it cannot wait for a caller to reconstruct it from an empty list.
+file I/O are allowed, as is a stderr diagnostic — `resolve_repos()` names a malformed
+roster key whenever one occurs, whether that leaves the scope refused outright or just
+missing that one key, and the *reason* is the whole point: neither an empty return nor a
+scope quietly short one key lets a caller reconstruct it from the return value alone.
 Port of lifecycle/gh-fetch.sh.
 
 run(advisor, no_cache=False) -> "hit" | "refreshed" | "lock-error" | "gh-error" | "unscoped"
@@ -82,12 +83,17 @@ def resolve_repos(owner: str) -> list[str]:
     repo name into "/app", which is not a repo and must not reach gh. Dropping it here
     rather than at a caller keeps both consumers — `run()` and `gh-repos` — on one rule.
 
-    **Declared-nothing and declared-and-unusable are different facts.** A roster naming no
-    repo keys falls through to the git remote. A roster that names one and yields no usable
-    slug is an operator TYPO, and substituting the git remote would hide it behind a scope
-    that happens to work — so refuse at layer 1 and name the key and the value that did it.
-    Fail-closed held either way; the diagnostic is what the distinction buys, so it is the
-    deliverable here, not the empty list.
+    **Declared-nothing, declared-and-unusable, and declared-mixed are three different facts.**
+    A roster naming no repo keys falls through to the git remote — silently, since there is
+    nothing to report. A roster that names one or more keys and NONE survive the shape check
+    is an operator TYPO with no usable scope at all: refuse (return `[]`) and name every key
+    and value that failed, rather than substituting the git remote and hiding the typo behind
+    a scope that happens to work. A roster that names two keys where only one is malformed is
+    ALSO a typo, but not a fatal one — the working sibling is real and gets used, so the run
+    is not refused; the malformed key is still named on stderr, because a sibling that happens
+    to work must not let a typo travel silently. Fail-closed only when nothing declared
+    survives; the stderr diagnostic fires whenever a declared key is malformed, independent of
+    whether another declared key is usable.
     """
     owner = owner.strip()
     declared: list[tuple[str, str, str]] = []  # (roster key, raw value, built slug)
@@ -97,21 +103,34 @@ def resolve_repos(owner: str) -> list[str]:
             declared.append((key, value, value if "/" in value else f"{owner}/{value}"))
 
     usable = [slug for _, _, slug in declared if _SLUG_RE.match(slug)]
-    if usable:
-        return usable
+    malformed = [(key, value, slug) for key, value, slug in declared if not _SLUG_RE.match(slug)]
 
-    if declared:
-        for key, value, slug in declared:
-            # A bare name depends on github.owner, so say what owner was when it failed —
-            # that is the actual typo in the common case, and it is not in `key`.
-            detail = "" if "/" in value else (
-                f" with github.owner {'unset' if not owner else repr(owner)}"
+    for key, value, slug in malformed:
+        # A bare name depends on github.owner, so say what owner was when it failed —
+        # that is the actual typo in the common case, and it is not in `key`.
+        detail = "" if "/" in value else (
+            f" with github.owner {'unset' if not owner else repr(owner)}"
+        )
+        if usable:
+            # A sibling key survived: not a refusal, so the sentence must say what actually
+            # happens next, not the all-malformed wording — that would claim a refusal that
+            # did not occur.
+            sys.stderr.write(
+                f"roster: {key}: {value!r}{detail} yields {slug!r}, which is not a repo — "
+                f"ignoring it and continuing with the usable scope {', '.join(usable)}. "
+                f"Fix roster.yaml.\n"
             )
+        else:
             sys.stderr.write(
                 f"roster: {key}: {value!r}{detail} yields {slug!r}, which is not a repo — "
                 f"refusing the declared scope rather than substituting your git remote, "
                 f"which would hide the typo. Fix roster.yaml.\n"
             )
+
+    if usable:
+        return usable
+
+    if declared:
         return []
 
     slug = _git_remote_slug()

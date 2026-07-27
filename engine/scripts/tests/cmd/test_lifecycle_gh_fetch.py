@@ -378,6 +378,38 @@ def test_declared_nothing_still_falls_through_to_the_git_remote(tmp_path, monkey
     assert capfd.readouterr().err == "", "a roster that declared nothing must not be scolded"
 
 
+def test_mixed_declared_names_the_malformed_key_but_still_returns_the_usable_sibling(
+    tmp_path, monkeypatch, capfd
+):
+    """The third case the ruling above distinguishes: one declared key malformed, the other
+    usable. The typo must not hide behind the working sibling — but the run is not refused,
+    so the diagnostic cannot reuse the all-malformed wording (that would claim a refusal that
+    did not happen)."""
+    from enginelib.lifecycle import gh_fetch
+    _write_roster(
+        tmp_path,
+        "github:\n  owner: null\n  ai_repo: badrepo\n  main_repo: acme/product\n",
+        monkeypatch,
+    )
+    monkeypatch.setattr(gh_fetch, "_git_remote_slug", lambda: "should/notused")
+
+    assert gh_fetch.resolve_repos("") == ["acme/product"], (
+        "the usable sibling must still be returned, not swallowed by the typo"
+    )
+
+    err = capfd.readouterr().err
+    assert "github.ai_repo" in err, f"diagnostic names no roster key:\n{err}"
+    assert "'badrepo'" in err, f"diagnostic does not quote the declared value:\n{err}"
+    assert "'/badrepo'" in err, f"diagnostic does not show what the value produced:\n{err}"
+    assert "github.owner" in err, f"diagnostic omits the key actually at fault:\n{err}"
+    assert "acme/product" in err, (
+        f"diagnostic does not name the scope the run continues with:\n{err}"
+    )
+    assert "refusing" not in err, (
+        f"mixed case is not a refusal — reusing the all-malformed wording claims one falsely:\n{err}"
+    )
+
+
 def test_run_refuses_unscoped_rather_than_searching_a_null_owner_slug(tmp_path, monkeypatch):
     """The privacy contract holds on the malformed-slug path too: refuse, never search."""
     from enginelib import gh
