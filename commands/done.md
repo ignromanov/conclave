@@ -1,7 +1,7 @@
 ---
 description: |
   MANDATORY session completion checklist for ALL advisors (with or without Quorum).
-  3 mandatory + 5 conditional items (1-8), DO-CONFIRM format.
+  3 mandatory + 6 conditional items (1-9), DO-CONFIRM format.
   Every advisor session MUST end with this skill. No exceptions.
   Conditional items 4-8 fire situationally — rarely all at once (WHO Checklist research favours ≤7 active per run).
 ---
@@ -162,6 +162,20 @@ Complete `/conclave:feedback` before continuing. The gate is the
 8. ☐ **IF skill gap found** → log for creation
    - What was needed but didn't exist
    - Gate: **Notify** — recommend invoking `writing-skills`
+
+9. ☐ **IF this session resumed a handoff** → archive it
+   - A handoff is a resume-prompt. `/conclave:start` surfaces every one matching
+     `ops/handoffs/*-<advisor>-*.md`, so one that is never retired resurfaces at every
+     session forever — the counterpart to item 7, which only ever *creates* them.
+   ```bash
+   python -m engine lifecycle archive-handoff <filename>.md --dry-run   # confirm first
+   python -m engine lifecycle archive-handoff <filename>.md
+   ```
+   - Moves it to `ops/handoffs/archive/` — a move, never a delete, and it refuses to
+     overwrite an existing archived copy.
+   - Archive only what this session actually exhausted. Work that is still open stays
+     live: an unfinished handoff that vanishes is worse than a stale one that nags.
+   - Gate: **Notify** — show the user what was archived
 
 ## Risk-Adaptive Gates
 
