@@ -115,7 +115,11 @@ def main(argv: list[str] | None = None) -> int:
         mentions_dir=paths.mentions_dir(),
         gh_cache_dir=paths.gh_cache_dir(),
         personality_path=(
-            advisor_skill_dir(advisor, root / ".claude" / "skills")
+            advisor_skill_dir(
+                advisor,
+                root / ".claude" / "skills",
+                artifact="memory/personality.md",
+            )
             / "memory" / "personality.md"
         ),
         progress_path=root / "progress-summary.md",

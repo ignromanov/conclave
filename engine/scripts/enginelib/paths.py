@@ -106,7 +106,12 @@ def project_skills_dir() -> Path:
 _ADVISOR_SKILL_PREFIXES = ("conclave-", "team.")
 
 
-def advisor_skill_dir(advisor_id: str, skills_base: Path | None = None) -> Path:
+def advisor_skill_dir(
+    advisor_id: str,
+    skills_base: Path | None = None,
+    *,
+    artifact: str | None = None,
+) -> Path:
     """Resolve an advisor's SKILL directory, tolerating both the current
     `conclave-<id>` and legacy `team.<id>` layouts (#48).
 
@@ -114,8 +119,22 @@ def advisor_skill_dir(advisor_id: str, skills_base: Path | None = None) -> Path:
     when neither exists, returns the canonical `conclave-<id>` path so fresh
     provisioning always lands on the current layout. `skills_base` defaults to
     the project `.claude/skills/` where `advisor create` mints routers.
+
+    `artifact` — a dir-relative path the caller is actually after (e.g.
+    "memory/personality.md"). A half-migrated advisor can own BOTH layout dirs
+    while the artifact sits under only one; resolving on directory existence
+    alone then hands back a dir the file is not in, and the caller reports its
+    own advisor's personality as unwritten. When given, prefixes are probed for
+    the artifact first (canonical still wins on a tie), and only if no layout
+    holds it does resolution fall back to plain directory existence — so a
+    not-yet-written artifact still yields a sane write path.
     """
     base = skills_base if skills_base is not None else project_skills_dir()
+    if artifact:
+        for prefix in _ADVISOR_SKILL_PREFIXES:
+            candidate = base / f"{prefix}{advisor_id}"
+            if (candidate / artifact).exists():
+                return candidate
     for prefix in _ADVISOR_SKILL_PREFIXES:
         candidate = base / f"{prefix}{advisor_id}"
         if candidate.is_dir():
