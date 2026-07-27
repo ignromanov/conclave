@@ -12,7 +12,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from tests.cmd.helpers import run_engine
+from tests.cmd.helpers import make_git_repo, non_repo_dir, run_engine
 
 # helpers.py lives at engine/scripts/tests/cmd/helpers.py
 # parents[0]=cmd  parents[1]=tests  parents[2]=scripts
@@ -247,9 +247,10 @@ def test_search_scoped_by_repo_not_account_wide(tmp_path):
 def test_unscoped_refuses_account_wide_search(tmp_path):
     _setup_mock_gh(tmp_path)
     sentinel = tmp_path / "gh-called.log"
-    # No roster.yaml seeded; run from a non-repo cwd so git remote yields nothing.
-    non_repo = tmp_path / "elsewhere"
-    non_repo.mkdir()
+    # No roster.yaml seeded; pin git at a directory PROVEN to be outside any repository, so
+    # the remote fallback yields nothing. Asserted rather than inherited from tmp_path's
+    # location — see non_repo_dir.
+    non_repo = non_repo_dir(tmp_path, "elsewhere")
 
     r = run_engine(
         "lifecycle", "gh-fetch", "--advisor", "kai-cto",
@@ -307,12 +308,168 @@ def test_resolve_repos_empty_when_no_roster_no_remote(tmp_path, monkeypatch):
     assert gh_fetch.resolve_repos("acme") == []
 
 
+def test_resolve_repos_drops_the_slug_a_null_owner_leaves_malformed(tmp_path, monkeypatch):
+    """`owner: null` + a bare repo name built "/app" — a target gh accepts and no caller
+    could tell apart from a real slug. It must not survive resolution.
+
+    NOT coverage for the layer-1 refusal below: layer 2 is stubbed empty here, so this
+    assertion passes whether layer 1 refuses or falls through to a dead end.
+    """
+    from enginelib.lifecycle import gh_fetch
+    _write_roster(
+        tmp_path,
+        "github:\n  owner: null\n  ai_repo: null\n  main_repo: app\n",
+        monkeypatch,
+    )
+    monkeypatch.setattr(gh_fetch, "_git_remote_slug", lambda: "")
+    assert gh_fetch.resolve_repos("") == []
+
+
+# ---------------------------------------------------------------------------
+# 10b. Declared-nothing vs declared-and-unusable. An emptied layer 1 used to fall through
+#      to the git remote, making an operator typo indistinguishable from a roster that
+#      declared nothing — and hiding it behind a scope that happens to resolve.
+#
+#      Both tests below give layer 2 a WORKING remote. With a dead layer 2 neither can
+#      tell refusal from fall-through, which is exactly how the existing malformed-case
+#      test above passes against both behaviours.
+# ---------------------------------------------------------------------------
+def test_malformed_layer_1_refuses_even_when_the_git_remote_would_resolve(
+    tmp_path, monkeypatch, capfd
+):
+    from enginelib.lifecycle import gh_fetch
+    _write_roster(
+        tmp_path,
+        "github:\n  owner: null\n  ai_repo: null\n  main_repo: app\n",
+        monkeypatch,
+    )
+    # Layer 2 is live and would yield a perfectly usable slug.
+    consumer = make_git_repo(
+        tmp_path / "consumer", origin="git@github.com:real-owner/real-repo.git"
+    )
+    monkeypatch.setenv("CONCLAVE_GIT_REMOTE_CWD", str(consumer))
+    assert gh_fetch._git_remote_slug() == "real-owner/real-repo", (
+        "layer 2 is not reachable, so this test cannot distinguish the two behaviours"
+    )
+
+    assert gh_fetch.resolve_repos("") == [], "fell through to the git remote"
+
+    err = capfd.readouterr().err
+    assert "github.main_repo" in err, f"diagnostic names no roster key:\n{err}"
+    assert "'app'" in err, f"diagnostic does not quote the declared value:\n{err}"
+    assert "'/app'" in err, f"diagnostic does not show what the value produced:\n{err}"
+    assert "github.owner" in err, f"diagnostic omits the key actually at fault:\n{err}"
+
+
+def test_declared_nothing_still_falls_through_to_the_git_remote(tmp_path, monkeypatch, capfd):
+    """The other half of the ruling: a roster that names no repo keys is not a typo."""
+    from enginelib.lifecycle import gh_fetch
+    _write_roster(
+        tmp_path,
+        "github:\n  owner: acme\n  ai_repo: null\n  main_repo: null\n",
+        monkeypatch,
+    )
+    consumer = make_git_repo(
+        tmp_path / "consumer", origin="git@github.com:real-owner/real-repo.git"
+    )
+    monkeypatch.setenv("CONCLAVE_GIT_REMOTE_CWD", str(consumer))
+
+    assert gh_fetch.resolve_repos("acme") == ["real-owner/real-repo"]
+    assert capfd.readouterr().err == "", "a roster that declared nothing must not be scolded"
+
+
+def test_mixed_declared_names_the_malformed_key_but_still_returns_the_usable_sibling(
+    tmp_path, monkeypatch, capfd
+):
+    """The third case the ruling above distinguishes: one declared key malformed, the other
+    usable. The typo must not hide behind the working sibling — but the run is not refused,
+    so the diagnostic cannot reuse the all-malformed wording (that would claim a refusal that
+    did not happen)."""
+    from enginelib.lifecycle import gh_fetch
+    _write_roster(
+        tmp_path,
+        "github:\n  owner: null\n  ai_repo: badrepo\n  main_repo: acme/product\n",
+        monkeypatch,
+    )
+    monkeypatch.setattr(gh_fetch, "_git_remote_slug", lambda: "should/notused")
+
+    assert gh_fetch.resolve_repos("") == ["acme/product"], (
+        "the usable sibling must still be returned, not swallowed by the typo"
+    )
+
+    err = capfd.readouterr().err
+    assert "github.ai_repo" in err, f"diagnostic names no roster key:\n{err}"
+    assert "'badrepo'" in err, f"diagnostic does not quote the declared value:\n{err}"
+    assert "'/badrepo'" in err, f"diagnostic does not show what the value produced:\n{err}"
+    assert "github.owner" in err, f"diagnostic omits the key actually at fault:\n{err}"
+    assert "acme/product" in err, (
+        f"diagnostic does not name the scope the run continues with:\n{err}"
+    )
+    assert "refusing" not in err, (
+        f"mixed case is not a refusal — reusing the all-malformed wording claims one falsely:\n{err}"
+    )
+
+
+def test_run_refuses_unscoped_rather_than_searching_a_null_owner_slug(tmp_path, monkeypatch):
+    """The privacy contract holds on the malformed-slug path too: refuse, never search."""
+    from enginelib import gh
+    from enginelib.lifecycle import gh_fetch
+    _write_roster(
+        tmp_path,
+        "github:\n  owner: null\n  ai_repo: null\n  main_repo: app\n",
+        monkeypatch,
+    )
+    monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
+    monkeypatch.setattr(gh_fetch, "_git_remote_slug", lambda: "")
+    searched: list[list[str]] = []
+    monkeypatch.setattr(gh, "search_issues", lambda stem, repos: searched.append(repos) or "[]")
+
+    assert gh_fetch.run("kai-cto", no_cache=True) == "unscoped"
+    assert searched == [], f"gh was handed a malformed scope: {searched}"
+
+
 def test_git_remote_slug_parses_ssh_and_https(monkeypatch):
     from enginelib.lifecycle import gh_fetch
     assert gh_fetch._parse_remote_slug("git@github.com:acme/conclave.git") == "acme/conclave"
     assert gh_fetch._parse_remote_slug("https://github.com/acme/conclave.git") == "acme/conclave"
     assert gh_fetch._parse_remote_slug("https://github.com/acme/conclave") == "acme/conclave"
     assert gh_fetch._parse_remote_slug("") == ""
+
+
+def _capture_git_cwd(monkeypatch) -> dict:
+    """Stub `git remote get-url origin` and record the cwd it was asked to run in."""
+    from enginelib.lifecycle import gh_fetch
+    seen: dict = {}
+
+    def fake_run(cmd, **kwargs):
+        seen.update(kwargs)
+        return subprocess.CompletedProcess(cmd, 0, "git@github.com:acme/project.git\n", "")
+
+    monkeypatch.setattr(gh_fetch.subprocess, "run", fake_run)
+    return seen
+
+
+def test_git_remote_slug_defaults_to_the_project_dir_not_the_process_cwd(tmp_path, monkeypatch):
+    """Unpinned, the fallback layer read whatever checkout the shell stood in. `gh-repos` is
+    invoked straight from advisor command prose and pins nothing, so the default belongs here."""
+    from enginelib.lifecycle import gh_fetch
+    project = tmp_path / "project"
+    monkeypatch.delenv("CONCLAVE_GIT_REMOTE_CWD", raising=False)
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project))
+    seen = _capture_git_cwd(monkeypatch)
+
+    assert gh_fetch._git_remote_slug() == "acme/project"
+    assert seen["cwd"] == str(project), "git ran in the process cwd, not the consumer project"
+
+
+def test_git_remote_slug_explicit_seam_still_wins_over_the_project_dir(tmp_path, monkeypatch):
+    from enginelib.lifecycle import gh_fetch
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path / "project"))
+    monkeypatch.setenv("CONCLAVE_GIT_REMOTE_CWD", str(tmp_path / "explicit"))
+    seen = _capture_git_cwd(monkeypatch)
+
+    gh_fetch._git_remote_slug()
+    assert seen["cwd"] == str(tmp_path / "explicit")
 
 
 # ---------------------------------------------------------------------------

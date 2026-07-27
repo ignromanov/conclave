@@ -17,6 +17,18 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Interpreter floor, enforced before the first thing that can fail below it. This file is the
+# worst of the three without a guard: nothing here trips the floor early, so a sub-floor user
+# answers the entire interactive interview and only then hits the failure. Refuse up front.
+# Measured, not declared; see engine/__main__.py for the full note.
+if sys.version_info < (3, 11):  # noqa: UP036 — see engine/__main__.py
+    sys.stderr.write(
+        f"Conclave requires Python 3.11 or newer.\n"
+        f"This is Python {sys.version.split()[0]} at {sys.executable}.\n"
+        f"Install a newer interpreter (e.g. `uv python install 3.13`) and re-run.\n"
+    )
+    sys.exit(1)
+
 # Plugin/repo root resolved from this file: engine/scripts/init/ -> parents[3] = root.
 ROOT = Path(__file__).resolve().parents[3]
 ENGINE = ROOT / "engine"

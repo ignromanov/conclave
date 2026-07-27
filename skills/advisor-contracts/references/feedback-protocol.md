@@ -71,7 +71,8 @@ Frontmatter holds structured fields; the body holds optional `notes`.
 ### Routing (set by triage)
 
 `layer` → fix owner: `skill` / `contract` / `memory` / `infra` → **Forge**;
-`workflow` → **Quorum**. `category: idea` → reviewed by both.
+`workflow` → **the facilitator role** (the `quorum` slot, if the instance hired one).
+`category: idea` → reviewed by both.
 
 ## How to emit
 
@@ -99,7 +100,7 @@ now − last_triage > 7 days   OR   new reviews since last triage ≥ 15
 ```
 
 When the cadence fires, the session-init output includes a `feedback:` line.
-Invoke `/conclave:triage` (Quorum + Forge) to run the triage pipeline.
+Invoke `/conclave:triage` (the facilitator role + Forge) to run the triage pipeline.
 
 ### `/conclave:triage` pipeline
 

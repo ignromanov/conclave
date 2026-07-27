@@ -30,5 +30,5 @@ Every advisor runs this loop internally before delivering a non-trivial answer
 
 ## Overlay hooks
 
-- Roles may redefine Stage 2 peer (e.g., Kai peers with Shade on security topics).
-- Roles may shorten to 3 stages for specific task types (e.g., Dev skips Stage 2 for trivial edits).
+- Roles may redefine Stage 2 peer (e.g., an architecture advisor peers with a security advisor on security topics).
+- Roles may shorten to 3 stages for specific task types (e.g., an implementation role skips Stage 2 for trivial edits).

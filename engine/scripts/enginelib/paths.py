@@ -61,6 +61,30 @@ def project_root() -> Path:
     return root.parent if root.name == ".conclave" else root
 
 
+def consumer_git_cwd() -> str | None:
+    """Working directory for `git` subprocesses that must read the CONSUMER's repository.
+
+    `CONCLAVE_GIT_REMOTE_CWD` (the existing test/ops seam), else `CLAUDE_PROJECT_DIR`, else
+    None — letting git use the process cwd, which is the right answer only when neither is
+    set (a dev/dogfood run standing in the project).
+
+    Both reads treat an EMPTY value as unset. `export CONCLAVE_GIT_REMOTE_CWD=` must not
+    silently restore the process cwd, which is the leak this exists to close.
+
+    Defaulting HERE rather than at call sites covers every caller by construction: the
+    lifecycle verbs are invoked straight from advisor command prose and pin nothing
+    themselves. One resolver for both git-reading verbs, so `gh-fetch`'s repo-scope
+    fallback and `git-fetch`'s session snapshot cannot drift onto different rules — they
+    did, and `git-fetch` wrote the engine's branch and the maintainer's worktree paths into
+    every consumer's DATA tree for as long as they were separate.
+    """
+    return (
+        os.environ.get("CONCLAVE_GIT_REMOTE_CWD")
+        or os.environ.get("CLAUDE_PROJECT_DIR")
+        or None
+    )
+
+
 def project_claude_dir() -> Path:
     """Project-side .claude/ dir (agents, skills, settings, CLAUDE.md). Sibling of the
     .conclave DATA root under the plugin; <root>/.claude for in-repo / test layouts."""

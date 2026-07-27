@@ -74,14 +74,14 @@ Every top-level `.ai/` directory has an `INDEX.md`:
 
 ## KB Updates routing (post-meeting)
 
-After writing meeting minutes, Quorum appends a `## KB Updates Required` section
-tagging the responsible advisor:
+After writing meeting minutes, the facilitator role appends a `## KB Updates Required`
+section tagging the responsible advisor:
 
 ```markdown
 ## KB Updates Required
-- [ ] architecture/data-flow.md — [decision summary] ← @kai
-- [ ] wiki: strategy/positioning — [decision summary] ← @nexus
+- [ ] architecture/data-flow.md — [decision summary] ← @<advisor-id>
+- [ ] wiki: strategy/positioning — [decision summary] ← @<advisor-id>
 ```
 
 On the next session, the tagged advisor executes the update — architecture registries
-directly, domain knowledge via `/wiki:capture`. Ignat confirms via commit.
+directly, domain knowledge via `/wiki:capture`. The operator confirms via commit.

@@ -8,12 +8,35 @@ Each row: "#<number> | <title> | <space-joined label names>" (R-F2 format).
 """
 
 import json
+import os
 import subprocess
+
+
+def _gh_env() -> dict[str, str] | None:
+    """Env for the gh call, or None to inherit.
+
+    plugin.json declares `userConfig.GH_TOKEN` (sensitive) and commands/init.md promised the
+    platform would expose it to engine subprocesses — but the platform exposes it as
+    CLAUDE_PLUGIN_OPTION_GH_TOKEN, and gh honours only GH_TOKEN/GITHUB_TOKEN. Nothing bridged the
+    two, so the declared setting did nothing and every call silently used whatever ambient
+    `gh auth` session happened to exist. With no plugin token configured we inherit, so plain
+    `gh auth login` keeps working.
+
+    Precedence caveat: an already-set GH_TOKEN *or* GITHUB_TOKEN suppresses the bridge. Those
+    two are not equally deliberate — GITHUB_TOKEN is injected automatically by GitHub Actions
+    and commonly exported by devcontainers and direnv. In any of those environments a user who
+    fills in the plugin's GH_TOKEN setting has it silently ignored in favour of the ambient one,
+    which is the same "declared setting does nothing" shape this function exists to fix.
+    """
+    token = os.environ.get("CLAUDE_PLUGIN_OPTION_GH_TOKEN", "").strip()
+    if not token or os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"):
+        return None
+    return {**os.environ, "GH_TOKEN": token}
 
 
 def _run_gh(args: list[str]) -> str:
     """Thin seam: call gh with *args, return stdout. Raises RuntimeError on failure."""
-    result = subprocess.run(["gh", *args], capture_output=True, text=True)
+    result = subprocess.run(["gh", *args], capture_output=True, text=True, env=_gh_env())
     if result.returncode != 0:
         raise RuntimeError(result.stderr)
     return result.stdout

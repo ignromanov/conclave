@@ -31,4 +31,4 @@ Default flow for any advisory decision an advisor helps the user reach.
 ## Overlay hooks
 
 - `replacement` — role may redefine the 5 beats (e.g., CFO uses 4 beats with explicit $ impact).
-- `extension` — role may add a beat (e.g., Shade adds "Threat model" between Trade-offs and Recommendation).
+- `extension` — role may add a beat (e.g., a security advisor adds "Threat model" between Trade-offs and Recommendation).

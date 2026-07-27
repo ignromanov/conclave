@@ -26,11 +26,11 @@ propagation: hire-template
 
 ```bash
 # ✅ CORRECT — explicit target repo
-gh issue create -R ${OWNER}/${AI_REPO} --title "[grant] ..." --label "grant,p1,advisor:nexus"
-gh issue create -R ${OWNER}/${MAIN_REPO}    --title "[bug] ..."   --label "bug,p1,advisor:kai"
+gh issue create -R ${OWNER}/${AI_REPO}   --title "[grant] ..." --label "grant,p1,advisor:${ADVISOR}"
+gh issue create -R ${OWNER}/${MAIN_REPO} --title "[bug] ..."   --label "bug,p1,advisor:${ADVISOR}"
 
 # ❌ WRONG — leaks private tasks into public repo
-gh issue create --title "[strategy] ..." --label "strategy,advisor:nexus"
+gh issue create --title "[strategy] ..." --label "strategy,advisor:${ADVISOR}"
 ```
 
 A `PreToolUse` hook (`.claude/hooks/gh-issue-repo-guard.sh`) blocks `gh issue create` without `-R` and rejects label-vs-repo mismatches.
@@ -61,7 +61,7 @@ Pick the target repo from the **type label** *before* running `gh issue create`:
 |------------|------|-----|
 | `bug` · `feature` · `task` · `tech-debt` · `refactor` | `${OWNER}/${MAIN_REPO}` | Code reality — useful to outside contributors |
 | `security:hardening` · `security:audit` (high-level only) | `${OWNER}/${MAIN_REPO}` | Public hardening (CSP, rate-limit policy). PoC/exploit details → GHSA |
-| `area:*` (codec, payment, rpc, ui, landing, deploy) | `${OWNER}/${MAIN_REPO}` | Always paired with code-side type label |
+| `area:*` — the instance's own subsystems, see §Area | `${OWNER}/${MAIN_REPO}` | Always paired with code-side type label |
 | `strategy` · `content` · `grant` · `research` · `ops` · `agent-infra` · `meeting-action` | `${OWNER}/${AI_REPO}` | Strategic / competitor-sensitive / internal process |
 | `documentation` (advisor-private docs, BRIEFINGs, topic-READMEs) | `${OWNER}/${AI_REPO}` | Internal authoring — public docs land in repo via PR commits, not issues |
 
@@ -88,7 +88,7 @@ gh issue create -R "$REPO" --title "[$TYPE] ..." --label "$TYPE,p1,advisor:NAME"
 | Category | Labels |
 |----------|--------|
 | Priority | `p0` (critical) · `p1` (must-have) · `p2` (nice-to-have) |
-| Advisor | `advisor:kai` · `advisor:nexus` · `advisor:spark` · `advisor:shade` · `advisor:quorum` |
+| Advisor | `advisor:<id>` — one per hired advisor. **Instance data**: the set is whatever the roster holds, never a fixed list. Discover it, don't hardcode it: `ls .claude/agents/*.md` (or `python -m engine register advisor --dry-run`). |
 
 ### Type labels
 
@@ -96,26 +96,28 @@ gh issue create -R "$REPO" --title "[$TYPE] ..." --label "$TYPE,p1,advisor:NAME"
 |---------|------------|
 | `bug` · `feature` · `task` · `tech-debt` · `security:hardening` · `security:audit` | `strategy` · `content` · `grant` · `research` · `ops` · `agent-infra` · `meeting-action` |
 
+Type labels are **engine schema** — they drive the repo-routing decision tree above and are the
+same in every instance.
+
 ### Area (${MAIN_REPO} only)
 
-`area:codec` · `area:deploy` · `area:payment` · `area:ui` · `area:landing` · `area:rpc`
-
-**Note**: `growth` and `tech-debt` exist in both repos as supplementary labels.
+`area:*` is **instance data**: one label per subsystem the instance's code actually has, e.g.
+`area:ui` · `area:deploy` · `area:api`. Define the set once when the board is created and keep it
+stable; always pair an `area:*` label with a code-side type label.
 
 ---
 
 ## Milestones
 
-| Milestone | Due |
-|-----------|-----|
-| v1.0 — Launch | Mar 26 ✅ |
-| v1.1 — Base Network | ~Apr 15 |
-| v1.2 — @void-layer/codec | ~May 15 |
-| v1.3 — MCP Server | ~Jun 15 |
-| Grant Cycle Q2 | Jun 29 |
-| Content Foundation | Apr 29 |
-| Growth Phase 1 | May 14 |
-| Backlog | no due |
+Milestones are **instance data** — release trains, grant cycles, and campaign windows belong to the
+project, not to the engine. Create them on the board and reference them by exact title:
+
+```bash
+gh issue list --milestone "<exact milestone title>" --state open
+```
+
+The only convention the engine assumes is that a catch-all `Backlog` milestone with no due date
+exists, so an issue is never milestone-less.
 
 ---
 
@@ -192,8 +194,8 @@ gh issue list -R ${OWNER}/${MAIN_REPO} --label p0 --state open \
 gh issue list -R ${OWNER}/${AI_REPO} --label p0 --state open \
   --json number,title --template '{{range .}}AI#{{.number}} {{.title}}{{"\n"}}{{end}}'
 
-# By milestone
-gh issue list --milestone "v1.2 — @void-layer/codec" --state open \
+# By milestone (exact title from the instance's board)
+gh issue list --milestone "<milestone title>" --state open \
   --json number,title --template '{{range .}}#{{.number}} {{.title}}{{"\n"}}{{end}}'
 
 # By type
@@ -296,11 +298,14 @@ never duplicate issue title/body content. The briefing is auto-generated (spec 0
 
 ### NEVER in public Issues
 
-Bypass techniques, API key patterns, decompression payloads, Magic Dust tolerances, `/api/transfers` internals.
+Auth-bypass techniques, API key patterns or formats, exploit payloads, tolerance/threshold values an
+attacker could tune against, and internals of any endpoint that moves money or credentials. The test
+is not "is it sensitive" but "does publishing it shorten an attack".
 
 ### OK in public Issues
 
-CSP config, rate limiting (high-level), codec bounds checking (without PoC), grant existence + deadlines.
+Hardening work whose value does not depend on secrecy: CSP config, rate limiting at policy level,
+input-bounds checking described without a PoC, and the existence and deadlines of grants.
 
 ### Vulnerabilities → GHSA only
 
@@ -313,7 +318,7 @@ Use GitHub Security Advisories for vuln reports — never public Issues.
 ```
 [area] Short imperative description
 
-[codec] Implement TLV encoder/decoder
-[grant] Apply to NGI TALER before Apr 1
-[security] Add CSP headers to vercel.json
+[api] Implement the request encoder/decoder
+[grant] Apply to <programme> before <deadline>
+[security] Add CSP headers to the deploy config
 ```

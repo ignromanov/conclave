@@ -6,6 +6,23 @@ import sys
 import time
 from pathlib import Path
 
+# Interpreter floor, enforced before the first thing that can fail below it — here, `main()`'s
+# own `list[str] | None` signature, evaluated at definition time. Measured, not declared: the
+# runtime imports clean on 3.11+ and fails on 3.10 (`from datetime import UTC`). Repeated
+# verbatim in the other entrypoints; a shared helper would have to be imported, and imports are
+# precisely what breaks below the floor.
+#
+# The `noqa` on the guard below: UP036 calls it dead code because `requires-python` promises 3.11.
+# That promise is only kept by pip/uv at install time, and these entrypoints are launched as bare
+# scripts by the SessionStart hook — a path where nothing reads pyproject.toml at all.
+if sys.version_info < (3, 11):  # noqa: UP036
+    sys.stderr.write(
+        f"Conclave requires Python 3.11 or newer.\n"
+        f"This is Python {sys.version.split()[0]} at {sys.executable}.\n"
+        f"Install a newer interpreter (e.g. `uv python install 3.13`) and re-run.\n"
+    )
+    sys.exit(1)
+
 
 def _deps_present() -> bool:
     import importlib.util

@@ -31,6 +31,18 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Interpreter floor, enforced before the first thing that can fail below it — here, the
+# `enginelib` import below, whose module-level PEP 604 annotations are evaluated on import.
+# /conclave:done launches this file directly, so it cannot inherit another entrypoint's
+# refusal. Measured, not declared; see engine/__main__.py for the full note.
+if sys.version_info < (3, 11):  # noqa: UP036 — see engine/__main__.py
+    sys.stderr.write(
+        f"Conclave requires Python 3.11 or newer.\n"
+        f"This is Python {sys.version.split()[0]} at {sys.executable}.\n"
+        f"Install a newer interpreter (e.g. `uv python install 3.13`) and re-run.\n"
+    )
+    sys.exit(1)
+
 # Reach the enginelib package when run as a standalone lifecycle script
 # (`python3 lifecycle/study_phase.py`): sys.path[0] is lifecycle/, so add scripts/.
 _SCRIPTS_DIR = str(Path(__file__).resolve().parent.parent)

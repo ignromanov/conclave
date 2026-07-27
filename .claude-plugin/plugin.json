@@ -1,6 +1,6 @@
 {
   "name": "conclave",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Self-improving multi-agent advisory team OS — engine + lifecycle + memory, installable into any repo.",
   "author": {
     "name": "ignromanov",

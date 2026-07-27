@@ -25,6 +25,17 @@ import sys
 import time
 from pathlib import Path
 
+# Interpreter floor, enforced before the first thing that can fail below it — here, the lazy
+# `enginelib` imports further down, whose module-level PEP 604 annotations are evaluated on
+# import. Measured, not declared; see engine/__main__.py for the full note.
+if sys.version_info < (3, 11):  # noqa: UP036 — see engine/__main__.py
+    sys.stderr.write(
+        f"Conclave requires Python 3.11 or newer.\n"
+        f"This is Python {sys.version.split()[0]} at {sys.executable}.\n"
+        f"Install a newer interpreter (e.g. `uv python install 3.13`) and re-run.\n"
+    )
+    sys.exit(1)
+
 # Reach the enginelib package when run as a standalone lifecycle script
 # (`python3 lifecycle/session_init.py`): sys.path[0] is lifecycle/, so add scripts/.
 # Matches study_phase.py / gh_board_query.py (GH#1 it-8).
@@ -40,21 +51,23 @@ META_ADVISORS: set[str] = {"forge"}
 BRIEFING_MAX_AGE_S = 86400  # 24 h
 
 
-def _agents_dir(root: Path) -> Path:
-    """Minted-advisor directory. Under the plugin, advisors are CC-discoverable agents at
-    ${CLAUDE_PROJECT_DIR}/.claude/agents/ (sibling of the .conclave/ DATA root).
+def _project_dir(root: Path) -> Path:
+    """The CONSUMER project directory this session belongs to.
 
-    When CLAUDE_PROJECT_DIR is unset: if root is a `.conclave` DATA root, the project is its
-    parent, so agents live in the SIBLING root.parent/.claude/agents; otherwise root is already
-    project-like (in-repo / test use) and agents live in <root>/.claude/agents."""
+    CLAUDE_PROJECT_DIR when set; otherwise, a `.conclave` DATA root's project is its parent, and
+    any other root is already project-like (in-repo / test use)."""
     project = os.environ.get("CLAUDE_PROJECT_DIR")
     if project:
-        base = Path(project)
-    elif root.name == ".conclave":
-        base = root.parent
-    else:
-        base = root
-    return base / ".claude" / "agents"
+        return Path(project)
+    if root.name == ".conclave":
+        return root.parent
+    return root
+
+
+def _agents_dir(root: Path) -> Path:
+    """Minted-advisor directory. Under the plugin, advisors are CC-discoverable agents at
+    ${CLAUDE_PROJECT_DIR}/.claude/agents/ (sibling of the .conclave/ DATA root)."""
+    return _project_dir(root) / ".claude" / "agents"
 
 
 def _known_advisors(root: Path) -> set[str]:
@@ -116,13 +129,30 @@ def _step1_load_briefing(advisor: str, root: Path) -> tuple[int, list[str]]:
     scripts = _scripts_dir()
     lines: list[str] = []
 
+    # Pin every git-reading child to the CONSUMER project. Both verbs below run with
+    # cwd=engine/scripts, and both shell out to git: gh-fetch for the repo-scope fallback
+    # (`git remote get-url origin`), git-fetch for the session snapshot (status / worktree
+    # list / symbolic-ref). Unpinned they read the ENGINE checkout — which on a dev machine
+    # is a real repo, so a consumer's DATA tree got the engine's branch, a stranger's issue
+    # board, and the maintainer's absolute worktree paths.
+    #
+    # Overwrite only a falsy value: the var is an existing test/ops seam and a deliberate
+    # one must survive, but `setdefault` also preserved an EMPTY one — and the resolver
+    # reads empty as unset, so `export CONCLAVE_GIT_REMOTE_CWD=` silently restored the
+    # pre-fix behaviour. Resolve before handing it over: the child runs in engine/scripts,
+    # so a relative CLAUDE_PROJECT_DIR (`.`) would re-open the same leak from the other end.
+    git_env = os.environ.copy()
+    if not git_env.get("CONCLAVE_GIT_REMOTE_CWD"):
+        git_env["CONCLAVE_GIT_REMOTE_CWD"] = str(_project_dir(root).resolve())
+
     # git-fetch (non-blocking — writes git-cache/state.md for briefing-build consumers)
     t0 = time.monotonic()
     git_result = subprocess.run(
         [sys.executable, "-m", "engine", "lifecycle", "git-fetch"],
         capture_output=True,
         text=True,
-        cwd=str(_scripts_dir()),
+        cwd=str(scripts),
+        env=git_env,
     )
     git_ms = int((time.monotonic() - t0) * 1000)
     git_code = git_result.returncode
@@ -140,12 +170,16 @@ def _step1_load_briefing(advisor: str, root: Path) -> tuple[int, list[str]]:
     if advisor in META_ADVISORS:
         lines.append("  gh-fetch: skipped (meta-advisor)")
     else:
+        # Same pin as git-fetch above (see the note there): resolve_repos() layers
+        # roster → local git remote → refuse, and the middle layer must read the CONSUMER's
+        # origin or a null-roster instance pulls a stranger's issue board into the briefing.
         t0 = time.monotonic()
         result = subprocess.run(
             [sys.executable, "-m", "engine", "lifecycle", "gh-fetch", "--advisor", advisor],
             capture_output=True,
             text=True,
             cwd=str(scripts),
+            env=git_env,
         )
         gh_ms = int((time.monotonic() - t0) * 1000)
         gh_code = result.returncode
