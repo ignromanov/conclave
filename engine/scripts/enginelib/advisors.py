@@ -115,3 +115,17 @@ def known_advisors(root: Path) -> set[str]:
             continue
         advisors.add(stem)
     return advisors
+
+
+def lifecycle_advisors(root: Path) -> set[str]:
+    """The set valid as a *lifecycle target* — the hired roster plus the shipped
+    META roles.
+
+    This answers a different question from `known_advisors()`, and conflating the
+    two is a live defect class: `known_advisors()` enumerates the instance's own
+    domain roster (so audits and digests do not report forge as a hire), while a
+    lifecycle gate asks "may this advisor run this phase". forge ships in every
+    instance and is the one advisor guaranteed to exist, so a gate built on the
+    enumeration rejects it. Gate on this; enumerate on `known_advisors()`.
+    """
+    return known_advisors(root) | set(_META_ADVISORS)
