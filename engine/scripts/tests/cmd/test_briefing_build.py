@@ -90,6 +90,26 @@ def test_forge_meta_advisor_builds(ai_root):
     assert (ai_root / "agent-memory" / "advisors" / "briefings" / "forge.md").is_file()
 
 
+def test_forge_meta_advisor_regenerates(ai_root):
+    """The mutation path, not the session-init one.
+
+    briefing.regen gates on known_advisors(), which excludes META by design, so
+    `file decision` / `session close` / `mention create` / the post-commit hook all
+    declined to refresh forge — and returned 0, leaving the refusal invisible.
+    """
+    _seed_progress(ai_root)
+    scripts_dir = Path(__file__).resolve().parents[2]  # engine/scripts
+    r = subprocess.run(
+        [sys.executable, "-m", "briefing.regen", "forge"],
+        capture_output=True,
+        text=True,
+        cwd=str(scripts_dir),
+    )
+    assert "skipping unknown advisor: forge" not in r.stderr
+    assert r.returncode == 0, f"stderr: {r.stderr[:400]}"
+    assert (ai_root / "agent-memory" / "advisors" / "briefings" / "forge.md").is_file()
+
+
 # ---------------------------------------------------------------------------
 # Cases 4–8 — successful build for kai-cto
 # ---------------------------------------------------------------------------
