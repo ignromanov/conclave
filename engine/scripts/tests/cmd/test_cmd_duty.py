@@ -134,3 +134,55 @@ def test_projection_is_byte_identical_across_runs(tmp_path):
 def test_unknown_verb_is_a_usage_error(tmp_path):
     r = _run("nonesuch", tmp=tmp_path)
     assert r.returncode == 2, "argparse usage errors exit 2 by design (__main__ B4 note)"
+
+
+# --- §4 ledger + discharge ------------------------------------------------------------
+
+def test_record_appends_a_ledger_entry(tmp_path):
+    r = _run("record", "--advisor", "sage-cto", "--duty", "d_x",
+             "--session", "s1", "--outcome", "discharged", tmp=tmp_path)
+    assert r.returncode == 0, r.stderr
+    ledger = tmp_path / "agent-memory" / "advisors" / "sage-cto" / "duty-ledger.yaml"
+    assert ledger.exists(), r.stdout
+    assert "d_x" in ledger.read_text()
+
+
+def test_record_rejects_an_outcome_outside_the_vocabulary(tmp_path):
+    r = _run("record", "--advisor", "sage-cto", "--duty", "d_x",
+             "--session", "s1", "--outcome", "probably-fine", tmp=tmp_path)
+    assert r.returncode == 2, "argparse choices rejection is a usage error"
+
+
+def test_discharge_is_clean_when_nothing_is_owed(tmp_path):
+    """Empty base = no obligations in force. A fresh consumer must not be told it is
+    delinquent on its first session close."""
+    r = _run("discharge", "--advisor", "sage-cto", "--session", "s1", tmp=tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "0 deferred" in r.stdout
+
+
+def test_discharge_exit_code_is_warning_not_error_when_owed(tmp_path):
+    """Exit 2, not 1. An unmet obligation is a state to surface at session end, not a
+    broken tool — /conclave:done shows it and the operator decides."""
+    import textwrap
+    manifest = tmp_path / "m.yaml"
+    manifest.write_text(textwrap.dedent("""
+        version: 1
+        roles:
+          - {id: sage-cto, kind: advisor, inherits: ["kind:advisor"]}
+        missions:
+          - {id: m_session_close, goal: Close the session.}
+        norms:
+          - {type: obligation, role: sage-cto, mission: m_session_close}
+    """).strip(), encoding="utf-8")
+
+    r = _run("discharge", "--advisor", "sage-cto", "--session", "s1",
+             "--manifest", str(manifest), tmp=tmp_path)
+    assert r.returncode == 2, f"expected warning exit, got {r.returncode}: {r.stdout}"
+    assert "DEFERRED: m_session_close" in r.stdout
+
+    _run("record", "--advisor", "sage-cto", "--duty", "m_session_close",
+         "--session", "s1", "--outcome", "discharged", tmp=tmp_path)
+    r = _run("discharge", "--advisor", "sage-cto", "--session", "s1",
+             "--manifest", str(manifest), tmp=tmp_path)
+    assert r.returncode == 0, f"recorded discharge did not clear the obligation: {r.stdout}"

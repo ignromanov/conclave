@@ -3,7 +3,7 @@ description: |
   MANDATORY session completion checklist for ALL advisors (with or without Quorum).
   3 mandatory + 5 conditional items (1-8), DO-CONFIRM format.
   Every advisor session MUST end with this skill. No exceptions.
-  Conditional items 4-8 fire situationally — rarely all at once (WHO Checklist research favours ≤7 active per run).
+  Conditional items 4-9 fire situationally — rarely all at once (WHO Checklist research favours ≤7 active per run).
 ---
 
 !`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/agent-data-policy.md`
@@ -162,6 +162,35 @@ Complete `/conclave:feedback` before continuing. The gate is the
 8. ☐ **IF skill gap found** → log for creation
    - What was needed but didn't exist
    - Gate: **Notify** — recommend invoking `writing-skills`
+
+9. ☐ **IF the agent holds duties** → discharge check (spec 091 §4)
+
+   Record what became of each duty that activated this session, then report what is still
+   owed. `condition` is prose **you** evaluate in context — the check cannot decide it for
+   you, which is exactly why an unanswered conditional is surfaced instead of assumed in
+   either direction.
+
+   ```bash
+   # one per duty that activated
+   # outcome ∈ discharged | deferred | skipped | errored | condition-unmet
+   python -m engine duty record --advisor <id> --duty <duty_id> \
+     --session <session_id> --outcome <outcome> [--note "..."]
+
+   python -m engine duty discharge --advisor <id> --session <session_id>
+   ```
+
+   Exit 0 = nothing owed → omit the row. Exit 2 = something deferred or unevaluated, which
+   is **not** a failure: surface the `DEFERRED:` / `UNEVALUATED:` lines as a ⚠ **duties**
+   row in the Session Summary and let the operator decide. Suppressing them is precisely
+   what turns a duty model back into documentation.
+
+   Record the unhappy outcomes as readily as the happy one. A ledger holding only
+   discharges lets a duty that errors every time read as healthy, and the §5 health sweep
+   has nothing else to read.
+
+   Executors use `--executor <slug>` and run this at dispatch end, not session end — they
+   have no session lifecycle (`executor-protocol.md`).
+   - Gate: **Auto** (record) / **Notify** (anything owed)
 
 ## Risk-Adaptive Gates
 

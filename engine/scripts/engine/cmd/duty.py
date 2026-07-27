@@ -17,6 +17,7 @@ import shutil
 import sys
 from pathlib import Path
 
+from enginelib.duties.ledger import OUTCOMES
 from enginelib.duties.model import Manifest
 from enginelib.duties.validate import Finding
 
@@ -113,6 +114,43 @@ def _scaffold(args: argparse.Namespace) -> int:
     return 0
 
 
+def _record(args: argparse.Namespace) -> int:
+    """Append one ledger entry — how a session says what became of a duty."""
+    from enginelib.duties.ledger import append_entry
+
+    _, _, home = _agent_paths(args.advisor, args.executor)
+    entry = append_entry(home, duty_id=args.duty, session_id=args.session,
+                         outcome=args.outcome, note=args.note)
+    print(f"recorded {entry.duty_id} {entry.outcome} @ {entry.ts}")
+    return 0
+
+
+def _discharge(args: argparse.Namespace) -> int:
+    """Report which obligations in force were addressed this session.
+
+    Exit 2 (warning) when something is owed — deferred or unevaluated. Not exit 1: an
+    unmet obligation is a state to surface at session end, not a broken tool. `/conclave:done`
+    shows it; the operator decides.
+    """
+    from enginelib.duties.discharge import check_discharge
+
+    agent_id, _, home = _agent_paths(args.advisor, args.executor)
+    manifests = _base_manifests() + [_load_manifest(Path(args.manifest) if args.manifest else None)]
+    r = check_discharge(manifests[0], manifests[-1], agent_id, home, session_id=args.session)
+
+    for mission in r.discharged:
+        print(f"discharged: {mission}")
+    for mission in r.condition_unmet:
+        print(f"condition-unmet: {mission}")
+    for mission in r.deferred:
+        print(f"DEFERRED: {mission}")
+    for mission in r.unevaluated:
+        print(f"UNEVALUATED: {mission} — condition not answered this session")
+    print(f"=== Summary: {len(r.discharged)} discharged, {len(r.deferred)} deferred, "
+          f"{len(r.unevaluated)} unevaluated ===")
+    return 0 if r.is_clean else 2
+
+
 def _schema(args: argparse.Namespace) -> int:
     """Regenerate the committed JSON-Schemas from the models (single owner of the fact)."""
     import json
@@ -149,6 +187,21 @@ def register(sub) -> None:
     _add_target_args(v)
     v.add_argument("--id", required=True, help="Duty id (filename stem, e.g. d_close_session).")
     v.set_defaults(func=_scaffold)
+
+    v = vsub.add_parser("record", help="Append a ledger entry for one duty (spec 091 §4).")
+    _add_target_args(v)
+    v.add_argument("--duty", required=True, help="Duty or mission id.")
+    v.add_argument("--session", required=True, help="Session id this outcome belongs to.")
+    v.add_argument("--outcome", required=True,
+                   choices=sorted(OUTCOMES), help="What became of the duty.")
+    v.add_argument("--note", default=None, help="Optional one-line context.")
+    v.set_defaults(func=_record)
+
+    v = vsub.add_parser("discharge",
+                        help="Report obligations addressed vs owed for a session.")
+    _add_target_args(v)
+    v.add_argument("--session", required=True, help="Session id to check.")
+    v.set_defaults(func=_discharge)
 
     v = vsub.add_parser("schema", help="Regenerate the committed JSON-Schemas from the models.")
     v.set_defaults(func=_schema)
