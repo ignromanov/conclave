@@ -17,6 +17,7 @@ entries" means the next append silently replaces the file and the history is gon
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -93,7 +94,13 @@ def append_entry(
     # both read the same history and the second write drops the first one's entry — the
     # same hazard memory/hot.py takes this lock for, and parallel sessions are ordinary
     # here, not hypothetical.
-    with with_lock(str(ledger_path(agent_dir)) + ".lock"):
+    #
+    # The lock lives under LOCK_DIR, not beside the ledger: memory/hot.py's convention, and
+    # the ledger sits in the tracked DATA tree where a stray .lock would be committed. Keyed
+    # by the ledger's full path so two agents' ledgers never share one lock.
+    lock_key = str(ledger_path(agent_dir).resolve()).replace(os.sep, "_").lstrip("_")
+    lock_file = Path(os.environ.get("LOCK_DIR", "/tmp/conclave-locks")) / f"{lock_key}.lock"
+    with with_lock(lock_file):
         existing = read_entries(agent_dir)      # raises on corruption, before any write
         rows = [
             {k: v for k, v in

@@ -101,3 +101,12 @@ def test_concurrent_appends_do_not_lose_entries(tmp_path):
     entries = read_entries(tmp_path)
     assert len(entries) == 24, f"lost {24 - len(entries)} entries to a lost update"
     assert {e.duty_id for e in entries} == {f"d_{i}" for i in range(24)}
+
+
+def test_the_lock_file_never_lands_beside_the_ledger(tmp_path, monkeypatch):
+    """The ledger lives in the tracked DATA tree, so a stray .lock gets committed — it was
+    staged once before this test existed. memory/hot.py's convention is LOCK_DIR; follow it."""
+    monkeypatch.setenv("LOCK_DIR", str(tmp_path / "locks"))
+    append_entry(tmp_path, duty_id="d_x", session_id="s1", outcome="discharged")
+    assert not list(tmp_path.glob("*.lock")), "lock file landed in the data dir"
+    assert (tmp_path / "duty-ledger.yaml").is_file()
