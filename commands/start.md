@@ -57,9 +57,9 @@ session start.
    ```bash
    python3 engine/scripts/lifecycle/session_init.py --advisor <advisor>
    ```
-   Exit codes: 0 = cache-hit / briefing fresh, 2 = briefing regenerated, 3 = stale-fail, 1 = error.
-   The script handles: gh-fetch (TTL=900s), briefing mtime-guard (>24h), briefing-build if stale,
-   resume-scan (ops/specs/*/resume-prompt.md + ops/handoffs/*-<advisor>-*.md),
+   Exit codes: 0 = cache-hit / briefing content unchanged, 2 = briefing regenerated, 3 = stale-fail, 1 = error.
+   The script handles: gh-fetch (TTL=900s), briefing build-and-compare (always rebuilds; writes
+   only if content differs), resume-scan (ops/specs/*/resume-prompt.md + ops/handoffs/*-<advisor>-*.md),
    reflexion extract (last-3 sessions), overlay scan, and feedback cadence check.
    If a line starting with `  feedback:` appears in the output, triage is due — include it in
    the session-start summary and suggest running `/conclave:triage` this session.

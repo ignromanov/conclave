@@ -71,7 +71,7 @@ work begins. Detect whether interrupted work should resume. Classify request sca
 
 | Step | What happens | Output |
 |------|-------------|--------|
-| **1. Load briefing** | `session_init.py --advisor <name>` runs: TTL-gated `gh-fetch.sh` + `git-fetch.sh`; mtime-guard regen (>24h → `briefing-build.sh` / `python -m briefing`); resume scan; reflexion extract (last 3 sessions); overlay scan; feedback cadence check | Briefing loaded into context; resume/reflexion/overlay findings printed as prefixed lines |
+| **1. Load briefing** | `session_init.py --advisor <name>` runs: TTL-gated `gh-fetch.sh` + `git-fetch.sh`; briefing build-and-compare (`briefing-build.sh` / `python -m briefing` always runs, writes only if content differs); resume scan; reflexion extract (last 3 sessions); overlay scan; feedback cadence check | Briefing loaded into context; resume/reflexion/overlay findings printed as prefixed lines |
 | **1b. Resume check** | If `spec-resume:` or `handoff:` lines in step 1 output → present with `AskUserQuestion` (Resume / Start new / Skip) | User confirms whether to continue interrupted work |
 | **1c. Reflexion context** | Last 3 non-empty `reflexion:` values from prior sessions applied as priors | Advisor starts session aware of recent failure patterns |
 | **2. Tier detection** | Classify by signal: Quick (<30 min, opinion) / Feature (1–4h, clear scope) / Epic (multi-session, worktree) | Tier governs ceremony depth for all subsequent steps |
@@ -82,16 +82,18 @@ work begins. Detect whether interrupted work should resume. Classify request sca
 | **6. Create tasks** | Feature/Epic only: `TaskCreate` for each work item + mandatory `/team.done` as final task | Task list tracking the session |
 | **7. Present & confirm** | Render `▍`-framed start summary; `AskUserQuestion` for tier/chain confirmation | Session confirmed before work begins |
 
-**Constitution II gate at step 1:** `session_init.py` checks briefing mtime. If the briefing is
-older than 24 hours, it triggers the briefing rebuild (`briefing-build.sh` / `python -m briefing`; there is no `briefing-build.py`) before loading. The advisor never works
-from a stale cache — the cache rebuilds automatically.
+**Constitution II gate at step 1:** `session_init.py` always runs the briefing rebuild
+(`briefing-build.sh` / `python -m briefing`; there is no `briefing-build.py`) before loading, and
+writes only when the rebuilt content actually differs from what's on disk (build-and-compare).
+The advisor never works from a stale cache — the cache rebuilds automatically, and mtime no longer
+gates whether that happens.
 
 **Exit codes from `session_init.py`:**
 
 | Code | Meaning |
 |------|---------|
-| 0 | Cache hit — briefing fresh, loaded as-is |
-| 2 | Briefing regenerated — stale threshold exceeded |
+| 0 | Cache hit — briefing content unchanged, loaded as-is |
+| 2 | Briefing regenerated — rebuilt content actually differed |
 | 3 | Stale-fail — regen attempted but gh-fetch unavailable |
 | 1 | Error |
 
@@ -309,7 +311,7 @@ Originally filed as feedback item `it-1` in `fb-1781159734-e51973`.
 
 ```
 /team.start
-  ├─ session_init.py (briefing regen if stale)   ← constitution II
+  ├─ session_init.py (briefing build-and-compare)   ← constitution II
   ├─ resume check
   ├─ tier detection
   ├─ GH issue check (truth reconciliation)       ← constitution II

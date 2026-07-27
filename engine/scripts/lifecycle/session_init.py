@@ -119,7 +119,7 @@ def _scripts_dir() -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Step 1 — gh-fetch + briefing mtime-guard + briefing-build
+# Step 1 — gh-fetch + briefing build-and-compare
 # ---------------------------------------------------------------------------
 
 def _step1_load_briefing(advisor: str, root: Path) -> tuple[int, list[str]]:
