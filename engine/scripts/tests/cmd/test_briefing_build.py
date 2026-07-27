@@ -75,6 +75,22 @@ def test_no_advisor_arg_exit2(ai_root):
 
 
 # ---------------------------------------------------------------------------
+# #38 — forge is a META advisor, not a domain hire
+# ---------------------------------------------------------------------------
+# _registry_advisors() enumerates DOMAIN advisors and strips forge as a lifecycle
+# skill. Gating admission on that enumeration rejected the one advisor guaranteed
+# to exist in every instance, so every forge session started on a stale briefing.
+# Enumerate on the roster; gate on lifecycle membership.
+
+def test_forge_meta_advisor_builds(ai_root):
+    _seed_progress(ai_root)
+    r = run_engine("briefing", "build", "forge")
+    assert "is not in the instance registry" not in r.stderr
+    assert r.returncode == 0, f"stderr: {r.stderr[:400]}"
+    assert (ai_root / "agent-memory" / "advisors" / "briefings" / "forge.md").is_file()
+
+
+# ---------------------------------------------------------------------------
 # Cases 4–8 — successful build for kai-cto
 # ---------------------------------------------------------------------------
 

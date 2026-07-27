@@ -69,8 +69,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("advisor", help="Canonical advisor name (e.g. nexus-ceo)")
     args = parser.parse_args(argv)
 
+    # META roles ship with the engine and are never hired, so they never appear in the
+    # DATA-root domain roster _registry_advisors() enumerates. Admission asks "may this
+    # advisor hold a briefing", which is roster + META — gating on the enumeration alone
+    # rejected forge, the one advisor guaranteed to exist in every instance (#38).
+    # Same enumerate-vs-gate split as enginelib.advisors.lifecycle_advisors().
+    from enginelib.advisors import _META_ADVISORS  # noqa: PLC2701
+
     registry = _registry_advisors()
-    if registry and args.advisor not in registry:
+    if registry and args.advisor not in registry | _META_ADVISORS:
         known = ", ".join(sorted(registry))
         print(
             f"briefing: advisor '{args.advisor}' is not in the instance registry.\n"
