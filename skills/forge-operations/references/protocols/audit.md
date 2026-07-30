@@ -114,7 +114,6 @@ Before emitting findings, apply `contracts/quality-loop.md`. Report skipped item
 | `.claude/skills/team.<a>/memory/topics/{inbox,decisions,sessions}.md` exists | ERROR |
 | `.claude/skills/team.<a>/memory/topics/*.md` exists (legacy) | ERROR |
 | `memory/personality.md` contains facts also in `.ai/product.md`/`progress.md` | WARN (grep-based) |
-| `.ai/agent-memory/advisors/briefings/<a>.md` not regenerated > 7 days | WARN (mtime check) |
 | Mention in `.ai/agent-memory/advisors/mentions/<a>/open/` older than 14 days | WARN (frontmatter.created) |
 | Mention `ref_session` points to non-existent session file | ERROR |
 | Session `decisions` list references non-existent decision slug | ERROR |

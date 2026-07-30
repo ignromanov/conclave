@@ -57,20 +57,22 @@ class TestBriefingStatus:
     def test_missing(self, tmp_path):
         assert _briefing_status(tmp_path / "nonexistent.md") == "missing"
 
-    def test_fresh(self, tmp_path):
+    def test_recent(self, tmp_path):
         f = tmp_path / "kai-cto.md"
         f.write_text("content", encoding="utf-8")
-        # mtime = now → fresh
-        assert _briefing_status(f) == "fresh"
+        # mtime = now → content changed less than a day ago
+        assert _briefing_status(f) == "unchanged (<1d)"
 
-    def test_stale(self, tmp_path):
+    def test_unchanged_for_days(self, tmp_path):
+        """#14: elapsed time since last content change, not a staleness verdict —
+        build-and-compare means an old mtime can still be perfectly accurate."""
         f = tmp_path / "kai-cto.md"
         f.write_text("content", encoding="utf-8")
         # Backdate mtime by 3 days.
         three_days_ago = f.stat().st_mtime - 3 * 86400
         os.utime(f, (three_days_ago, three_days_ago))
         result = _briefing_status(f)
-        assert result.startswith("stale")
+        assert result.startswith("unchanged")
         assert "3d" in result
 
 

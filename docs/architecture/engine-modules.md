@@ -67,8 +67,9 @@ Additional outputs: `hot.md` (≤500 words, cross-advisor live state, de-duped) 
 5 full briefings for a meeting start).
 
 Three regen triggers: mutation scripts (any write via `close-session.sh`, `file-decision.sh`,
-`mention.sh`), post-commit hook, and `team.start` mtime guard. Editing a briefing directly
-is always wrong — it is overwritten on the next `/team.start`.
+`mention.sh`), post-commit hook, and `team.start` build-and-compare (always rebuilds, writes
+only if content differs). Editing a briefing directly is always wrong — it is overwritten on
+the next `/team.start`.
 
 **VoidPay origin**: spec 084, shipped May 2026. Briefing total −41% (124,606 → 73,823 chars)
 despite +13 enrichment sections. Cap: 6,000 tokens advisory.
