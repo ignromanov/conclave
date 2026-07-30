@@ -57,7 +57,10 @@ session start.
    ```bash
    python3 engine/scripts/lifecycle/session_init.py --advisor <advisor>
    ```
-   Exit codes: 0 = cache-hit / briefing fresh, 2 = briefing regenerated, 3 = stale-fail, 1 = error.
+   Exit codes: 0 = cache-hit / briefing fresh, 2 = briefing regenerated, 1 = error
+   (the briefing could not be built). A failed gh-fetch is non-fatal (#76): the run
+   continues and prints a `degraded: gh-data-unavailable` line — board-derived
+   sections come from the stale cache, the rest of the briefing is current.
    The script handles: gh-fetch (TTL=900s), briefing mtime-guard (>24h), briefing-build if stale,
    resume-scan (ops/specs/*/resume-prompt.md + ops/handoffs/*-<advisor>-*.md),
    reflexion extract (last-3 sessions), overlay scan, and feedback cadence check.
