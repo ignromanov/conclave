@@ -1,24 +1,24 @@
 """session-init.py — session initialization helper (Phase 4, spec 085 / plugin 098).
 
 Absorbs team.start Steps 1/1b/1c + Overlay loading:
-  Step 1:   gh-fetch + briefing mtime-guard (>24h) + briefing-build
+  Step 1:   gh-fetch + briefing build-and-compare (#14)
   Step 1b:  resume-scan (ops/specs/*/resume-prompt.md + ops/handoffs/*-<advisor>-*.md)
   Step 1c:  reflexion extract — last-3 sessions' `reflexion:` frontmatter
   Overlays: scan agent-memory/advisors/<advisor>/contracts/*.md
 
 Arg: --advisor <slug>
 
-Exit codes:
-  0  = success, nothing regenerated (cache-hit / briefing fresh)
+Exit codes (mirror gh-fetch contract):
+  0  = success, nothing regenerated (cache-hit / briefing unchanged)
   2  = success, briefing regenerated
   1  = error (the briefing itself could not be built)
 
 A failed gh-fetch or git-fetch is NOT an error (#76): both are advisory inputs to
 the briefing, so they log a FAILED line plus a `degraded:` marker and the run
-continues. Exit 3 ("stale-fail") is no longer emitted — it fired BEFORE the
-mtime-guard, which starved no-GitHub instances of a briefing entirely, and its
-documented meaning ("regen attempted but gh-fetch unavailable") never matched
-that behaviour because regen had not yet been attempted.
+continues. Exit 3 ("stale-fail") is no longer emitted — it returned BEFORE the
+briefing was built at all, which starved no-GitHub instances of a briefing
+entirely, and its documented meaning ("regen attempted but gh-fetch unavailable")
+never matched that behaviour because regen had not yet been attempted.
 
 Output: one compact summary block on stdout.
 """
@@ -51,10 +51,13 @@ if _SCRIPTS_DIR not in sys.path:
 
 # Forge is a META-advisor: a valid explicit invocation/lifecycle target, but not a
 # domain advisor — excluded from dashboard auto-enumeration (Forge invariant #7:
-# inventory is discovered, not hardcoded). See spec 2026-07-01 §3.3.
-META_ADVISORS: set[str] = {"forge"}
-
-BRIEFING_MAX_AGE_S = 86400  # 24 h
+# inventory is discovered, not hardcoded). See spec 2026-07-01 §3.3. Sourced from
+# enginelib.advisors — the shared roster|META seam other call sites route through
+# too (doctor.py, briefing/__main__.py) — rather than redeclared here.
+from enginelib.advisors import (  # noqa: E402 (follows the sys.path bootstrap above)
+    META_ADVISORS,
+    with_meta,
+)
 
 
 def _project_dir(root: Path) -> Path:
@@ -127,7 +130,7 @@ def _scripts_dir() -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Step 1 — gh-fetch + briefing mtime-guard + briefing-build
+# Step 1 — gh-fetch + briefing build-and-compare
 # ---------------------------------------------------------------------------
 
 def _step1_load_briefing(advisor: str, root: Path) -> tuple[int, list[str]]:
@@ -209,22 +212,13 @@ def _step1_load_briefing(advisor: str, root: Path) -> tuple[int, list[str]]:
                 lines.append(f"    stderr: {result.stderr.strip()[:120]}")
             lines.append("  degraded: gh-data-unavailable (board sections built from stale cache)")
 
-    # Briefing mtime-guard
+    # Build-and-compare (#14): mtime cannot tell freshness — the build's 18 scans
+    # read git state and the specs tree, which can move without touching the
+    # briefing file, and vice versa. So always build; the build itself writes only
+    # when the rendered content actually differs from what's on disk, and reports
+    # that in its stdout via wrote=/unchanged=.
     briefing_path = root / "agent-memory" / "advisors" / "briefings" / f"{advisor}.md"
-    now = int(time.time())
-    mtime = int(briefing_path.stat().st_mtime) if briefing_path.is_file() else 0
-    age_s = now - mtime
-    needs_regen = (not briefing_path.is_file()) or (age_s > BRIEFING_MAX_AGE_S)
 
-    if not needs_regen:
-        age_h = age_s // 3600
-        lines.append(f"  briefing: fresh ({age_h}h old) — skipping regen")
-        lines.append(f"  briefing-path: {briefing_path}")
-        # Briefing did not regenerate; gh-refresh (exit 2) is orthogonal and already
-        # surfaced in the gh-fetch line. Reserve exit 2 strictly for a real regen.
-        return 0, lines
-
-    # Regen
     t0 = time.monotonic()
     bb_result = subprocess.run(
         [sys.executable, "-m", "engine", "briefing", "build", advisor],
@@ -239,6 +233,13 @@ def _step1_load_briefing(advisor: str, root: Path) -> tuple[int, list[str]]:
         if bb_result.stderr.strip():
             lines.append(f"    stderr: {bb_result.stderr.strip()[:120]}")
         return 1, lines
+
+    if "unchanged=" in bb_result.stdout:
+        lines.append(f"  briefing: unchanged ({bb_ms}ms)")
+        lines.append(f"  briefing-path: {briefing_path}")
+        # Briefing did not regenerate; gh-refresh (exit 2) is orthogonal and already
+        # surfaced in the gh-fetch line. Reserve exit 2 strictly for a real regen.
+        return 0, lines
 
     lines.append(f"  briefing-build: regenerated ({bb_ms}ms)")
     lines.append(f"  briefing-path: {briefing_path}")
@@ -546,7 +547,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     known = _known_advisors(root)
-    if advisor not in known and advisor not in META_ADVISORS:
+    if advisor not in with_meta(known):
         listing = ", ".join(sorted(known)) or "(none hired — run /conclave:forge to hire)"
         print(
             f"session-init: advisor '{advisor}' not in instance registry.\nKnown: {listing}",

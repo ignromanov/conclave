@@ -52,6 +52,33 @@ def _archive_aged(args) -> int:
     return 0
 
 
+def _archive_handoff(args) -> int:
+    from enginelib.lifecycle import archive_handoff
+    from enginelib.paths import handoffs_dir
+
+    args._runlog_verb = "archive-handoff"
+    root = Path(args.handoffs_dir) if args.handoffs_dir else handoffs_dir()
+    if not root.is_dir():
+        print(f"archive-handoff: handoffs directory not found: {root}", file=sys.stderr)
+        args._runlog_args = f"dir={root},archived=0"
+        return 1
+    try:
+        moves = archive_handoff.run(root, args.names, args.dry_run)
+    except ValueError as exc:
+        print(f"archive-handoff: {exc}", file=sys.stderr)
+        args._runlog_args = f"dir={root},archived=0"
+        return 1
+    if args.dry_run:
+        for src, _dest in moves:
+            print(f"WOULD ARCHIVE: {src.name}")
+        args._runlog_args = f"dir={root},archived=0"
+    else:
+        for src, _dest in moves:
+            print(f"archived: {src.name}")
+        args._runlog_args = f"dir={root},archived={len(moves)}"
+    return 0
+
+
 def _git_fetch(args) -> int:
     import sys
 
@@ -217,6 +244,24 @@ def register(sub) -> None:
         help="Report candidates without mutating.",
     )
     aa.set_defaults(func=_archive_aged)
+
+    ah = vsub.add_parser(
+        "archive-handoff",
+        help="Move exhausted handoffs into ops/handoffs/archive/ (terminal state).",
+    )
+    ah.add_argument("names", nargs="+", help="Handoff filenames (bare names, not paths).")
+    ah.add_argument(
+        "--handoffs-dir",
+        dest="handoffs_dir",
+        default=None,
+        help="Handoffs directory (default: DATA-root ops/handoffs).",
+    )
+    ah.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report what would move without moving it.",
+    )
+    ah.set_defaults(func=_archive_handoff)
 
     rf = vsub.add_parser("resolve-finding", help="Transition a status/open finding to status/resolved with a note.")
     rf.add_argument("path", nargs="?", default=None, help="Path to the finding .md file.")

@@ -70,7 +70,7 @@ snapshot writers (gh-fetch.sh · git-fetch.sh)   ← sole gh/git call sites
   gh-cache + git-cache
         │
         ▼
-  session_init.py  ──── mtime-guard regen if briefing stale
+  session_init.py  ──── briefing build-and-compare (rebuild always, write if changed)
         │
         ▼
   Advisor context window

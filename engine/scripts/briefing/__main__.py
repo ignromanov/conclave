@@ -1,14 +1,15 @@
 """__main__.py — entrypoint for `python3 -m briefing <advisor>`.
 
-Orchestrates the 7 section scans + render + hot-append, emitting
+Orchestrates the 7 section scans + render (body + hot.md footer), emitting
 machine-parseable progress lines that match the legacy bash output:
 
     [briefing-build] step=<name> took=<n>ms
     ...
-    [briefing-build] wrote=<path>
+    [briefing-build] wrote=<path>       # content differed from what was on disk
+    [briefing-build] unchanged=<path>   # build-and-compare found no real change (#14)
 
 Step names (in order): who-i-am, project-state, decisions, my-queue, p0,
-sessions, mentions, render, hot.
+sessions, mentions, render.
 """
 from __future__ import annotations
 
@@ -69,8 +70,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("advisor", help="Canonical advisor name (e.g. nexus-ceo)")
     args = parser.parse_args(argv)
 
+    # META roles ship with the engine and are never hired, so they never appear in the
+    # DATA-root domain roster _registry_advisors() enumerates. Admission asks "may this
+    # advisor hold a briefing", which is roster + META — gating on the enumeration alone
+    # rejected forge, the one advisor guaranteed to exist in every instance (#38).
+    # Same enumerate-vs-gate split as enginelib.advisors.lifecycle_advisors(); routed
+    # through the same with_meta() seam rather than re-open-coding the union.
+    from enginelib.advisors import with_meta
+
     registry = _registry_advisors()
-    if registry and args.advisor not in registry:
+    if registry and args.advisor not in with_meta(registry):
         known = ", ".join(sorted(registry))
         print(
             f"briefing: advisor '{args.advisor}' is not in the instance registry.\n"
@@ -223,14 +232,18 @@ def main(argv: list[str] | None = None) -> int:
 
     out_path = paths.briefings_dir() / f"{advisor}.md"
 
+    # Build-and-compare (#14): render the full final content (body + hot.md footer)
+    # and write only if it actually differs from what is on disk — the comparison
+    # ignores the generated_at stamp so an unchanged rebuild is a true no-op.
     t0 = _now_ms()
-    render.write_body(values, out_path)
+    content = render.render_content(values)
+    written = render.write_if_changed(content, out_path)
     _emit_step("render", t0)
 
-    # hot.md reference footer (AC8 — content not embedded, path reference only).
-    render.append_hot(out_path)
-
-    print(f"[briefing-build] wrote={out_path}", flush=True)
+    if written:
+        print(f"[briefing-build] wrote={out_path}", flush=True)
+    else:
+        print(f"[briefing-build] unchanged={out_path}", flush=True)
     return 0
 
 
