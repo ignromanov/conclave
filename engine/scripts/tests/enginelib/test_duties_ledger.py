@@ -10,6 +10,7 @@ Hermetic: tmp_path only.
 from __future__ import annotations
 
 import pytest
+import yaml
 
 from enginelib.duties.ledger import OUTCOMES, append_entry, read_entries
 
@@ -80,9 +81,14 @@ def test_ledger_file_is_yaml_at_the_documented_path(tmp_path):
 
 def test_a_corrupt_ledger_fails_loudly_rather_than_silently_resetting(tmp_path):
     """The dangerous alternative is treating an unparseable ledger as empty: the next
-    append would then rewrite the file and the prior history would be gone for good."""
+    append would then rewrite the file and the prior history would be gone for good.
+
+    YAMLError, not a bare Exception: the point is that the parse itself refuses. A blind
+    `Exception` would also pass if read_entries died of a typo on the way to parsing, which
+    is the failure this test exists to distinguish from a clean refusal.
+    """
     (tmp_path / "duty-ledger.yaml").write_text("entries: [ unclosed\n", encoding="utf-8")
-    with pytest.raises(Exception):
+    with pytest.raises(yaml.YAMLError):
         read_entries(tmp_path)
 
 

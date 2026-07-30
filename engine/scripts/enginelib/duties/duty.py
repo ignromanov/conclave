@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from briefing.frontmatter_io import read
-
 from enginelib.duties.validate import Finding
 from enginelib.paths import duty_template_path
 
