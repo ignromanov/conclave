@@ -1,0 +1,138 @@
+{
+  "$defs": {
+    "Mission": {
+      "description": "A reusable goal bundle. Norms attach to (role, mission) pairs rather than to bare\nprose, which is what gives a norm a stable identity to be audited by.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "goal": {
+          "title": "Goal",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "goal"
+      ],
+      "title": "Mission",
+      "type": "object"
+    },
+    "Norm": {
+      "properties": {
+        "type": {
+          "enum": [
+            "obligation",
+            "permission",
+            "advice"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "mission": {
+          "title": "Mission",
+          "type": "string"
+        },
+        "condition": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Condition"
+        },
+        "priority": {
+          "default": 100,
+          "title": "Priority",
+          "type": "integer"
+        },
+        "co_sign_with": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Co Sign With",
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "role",
+        "mission"
+      ],
+      "title": "Norm",
+      "type": "object"
+    },
+    "Role": {
+      "description": "A role a norm can attach to. `inherits` names parents \u2014 typically an abstract role,\nwhich is how base norms reach concrete role-holders without being duplicated.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "advisor",
+            "executor"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "inherits": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Inherits",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "kind"
+      ],
+      "title": "Role",
+      "type": "object"
+    }
+  },
+  "description": "A roster file: the engine base, or one agent's self-written declarations.",
+  "properties": {
+    "version": {
+      "title": "Version",
+      "type": "integer"
+    },
+    "roles": {
+      "items": {
+        "$ref": "#/$defs/Role"
+      },
+      "title": "Roles",
+      "type": "array"
+    },
+    "missions": {
+      "items": {
+        "$ref": "#/$defs/Mission"
+      },
+      "title": "Missions",
+      "type": "array"
+    },
+    "norms": {
+      "items": {
+        "$ref": "#/$defs/Norm"
+      },
+      "title": "Norms",
+      "type": "array"
+    }
+  },
+  "required": [
+    "version"
+  ],
+  "title": "Manifest",
+  "type": "object"
+}

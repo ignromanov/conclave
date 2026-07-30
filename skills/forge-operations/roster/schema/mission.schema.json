@@ -1,0 +1,19 @@
+{
+  "description": "A reusable goal bundle. Norms attach to (role, mission) pairs rather than to bare\nprose, which is what gives a norm a stable identity to be audited by.",
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "goal": {
+      "title": "Goal",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "goal"
+  ],
+  "title": "Mission",
+  "type": "object"
+}

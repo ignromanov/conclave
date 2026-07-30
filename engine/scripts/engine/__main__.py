@@ -103,6 +103,8 @@ def _build_parser() -> argparse.ArgumentParser:
     inbox.register(sub)
     from engine.cmd import doctor
     doctor.register(sub)
+    from engine.cmd import duty
+    duty.register(sub)
     return p
 
 

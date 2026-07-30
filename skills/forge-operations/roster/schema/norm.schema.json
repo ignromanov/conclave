@@ -1,0 +1,52 @@
+{
+  "properties": {
+    "type": {
+      "enum": [
+        "obligation",
+        "permission",
+        "advice"
+      ],
+      "title": "Type",
+      "type": "string"
+    },
+    "role": {
+      "title": "Role",
+      "type": "string"
+    },
+    "mission": {
+      "title": "Mission",
+      "type": "string"
+    },
+    "condition": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Condition"
+    },
+    "priority": {
+      "default": 100,
+      "title": "Priority",
+      "type": "integer"
+    },
+    "co_sign_with": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Co Sign With",
+      "type": "array"
+    }
+  },
+  "required": [
+    "type",
+    "role",
+    "mission"
+  ],
+  "title": "Norm",
+  "type": "object"
+}

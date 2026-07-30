@@ -1,0 +1,30 @@
+{
+  "description": "A role a norm can attach to. `inherits` names parents \u2014 typically an abstract role,\nwhich is how base norms reach concrete role-holders without being duplicated.",
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "advisor",
+        "executor"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "inherits": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Inherits",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "kind"
+  ],
+  "title": "Role",
+  "type": "object"
+}

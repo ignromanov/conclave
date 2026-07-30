@@ -449,3 +449,70 @@ def test_enginelib_is_io_free():
         for lineno, what in visitor.hits:
             hits.append(f"{path.relative_to(ENGINE_ROOT)}:{lineno}: {what}")
     assert not hits, "enginelib/ has code-level print/argparse/sys.exit:\n" + "\n".join(hits)
+
+
+# ---------------------------------------------------------------------------
+# 9. Spin-out boundary (spec 091 acceptance §9) — the duty base ships to every consumer,
+#    so nothing instance-specific may survive in it.
+# ---------------------------------------------------------------------------
+# grep-gate (§1) is anchored at <engine_root>/{contracts,scripts,skills} and therefore never
+# sees skills/forge-operations/ at the REPO root, where the roster base lives. Hence a
+# separate gate rather than a widened one — widening §1 would silently change what an
+# existing gate covers.
+#
+# Honest limit: this cannot see the ids of advisors an instance hired, because those live in
+# DATA (.conclave/) and the suite is hermetic against it by design (conftest clears
+# CONCLAVE_AI_ROOT). What it does catch is the shape such a leak takes in CODE — instance
+# branding, an operator's absolute home path, a concrete `conclave-<id>` agent home, or a
+# reference into the DATA tree. A base file naming any of those is instance-specific by
+# construction.
+_ROSTER_BASE = REPO_ROOT / "skills" / "forge-operations" / "roster"
+
+_INSTANCE_LEAK_PATTERNS = {
+    # Reused, not re-enumerated: one owner for the branding/operator-path fact (§1).
+    "instance-branding": _GREP_GATE_PATTERN,
+    "operator-home-path": _ABS_HOME_RE,
+    "concrete-agent-home": re.compile(r"conclave-[a-z0-9][a-z0-9-]*|team\.[a-z0-9][a-z0-9-]*"),
+    "data-tree-reference": re.compile(r"\.conclave/|agent-memory/"),
+}
+
+
+def _roster_base_leaks(patterns: dict[str, re.Pattern[str]]) -> list[str]:
+    """Instance-specific hits in the roster base. Extracted so the completeness assertions
+    below can be exercised with a deliberately empty pattern set — a gate whose token list
+    silently empties reports clean while checking nothing, which is the failure mode this
+    repo has shipped four times."""
+    assert patterns, "leak-pattern set is empty — the gate would check nothing"
+    files = [p for p in sorted(_ROSTER_BASE.rglob("*"))
+             if p.is_file() and "__pycache__" not in p.parts]
+    assert files, f"{_ROSTER_BASE} holds no files — gate would pass vacuously"
+
+    hits = []
+    for path in files:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            for name, pattern in patterns.items():
+                if pattern.search(line):
+                    hits.append(
+                        f"{path.relative_to(REPO_ROOT)}:{lineno}: [{name}] {line.strip()}")
+    return hits
+
+
+def test_roster_base_is_domain_agnostic():
+    assert _ROSTER_BASE.is_dir(), (
+        f"{_ROSTER_BASE} is missing — the spin-out gate has nothing to check. Either the "
+        f"roster base moved (update this gate) or spec 091 was reverted (delete it)."
+    )
+    hits = _roster_base_leaks(_INSTANCE_LEAK_PATTERNS)
+    assert not hits, (
+        "spin-out boundary FAIL (spec 091 acceptance 9) — instance-specific content in the "
+        "engine-owned roster base:\n" + "\n".join(hits)
+    )
+
+
+def test_spin_out_gate_refuses_an_empty_pattern_set():
+    """The completeness assertion, asserted. Without this, a future edit that derives the
+    pattern set from something that comes back empty turns the gate into a no-op that
+    still reports clean."""
+    with pytest.raises(AssertionError, match="would check nothing"):
+        _roster_base_leaks({})
