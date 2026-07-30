@@ -80,7 +80,19 @@ def is_canonical_advisor(name: str = "", *, allow_lifecycle: bool = False) -> bo
 
 # Forge is a META-advisor: a valid lifecycle target but not a domain advisor,
 # so it is excluded from registry-driven enumeration (Forge invariant #7).
-_META_ADVISORS = frozenset({"forge"})
+META_ADVISORS = frozenset({"forge"})
+
+
+def with_meta(roster: set[str]) -> set[str]:
+    """*roster* plus the shipped META advisors — the set valid as a lifecycle target.
+
+    A "may this advisor do X" gate needs roster | META; enumeration alone
+    (dashboards, digests, audits) wants the roster without it. Conflating the two
+    is a recurring defect class — forge, the one advisor guaranteed to exist in
+    every instance, gets rejected by a gate built on enumeration (#38). Centralizes
+    the union so call sites stop re-open-coding `roster | META_ADVISORS` by hand.
+    """
+    return roster | META_ADVISORS
 
 
 def _agents_dir_for(root: Path) -> Path:
@@ -111,7 +123,21 @@ def known_advisors(root: Path) -> set[str]:
     advisors: set[str] = set()
     for agent_file in _agents_dir_for(root).glob("*.md"):
         stem = agent_file.stem
-        if stem in _META_ADVISORS or stem.startswith("exec-"):
+        if stem in META_ADVISORS or stem.startswith("exec-"):
             continue
         advisors.add(stem)
     return advisors
+
+
+def lifecycle_advisors(root: Path) -> set[str]:
+    """The set valid as a *lifecycle target* — the hired roster plus the shipped
+    META roles.
+
+    This answers a different question from `known_advisors()`, and conflating the
+    two is a live defect class: `known_advisors()` enumerates the instance's own
+    domain roster (so audits and digests do not report forge as a hire), while a
+    lifecycle gate asks "may this advisor run this phase". forge ships in every
+    instance and is the one advisor guaranteed to exist, so a gate built on the
+    enumeration rejects it. Gate on this; enumerate on `known_advisors()`.
+    """
+    return with_meta(known_advisors(root))

@@ -253,6 +253,25 @@ class TestMainExitCodes:
             rc = study_phase.main(["--advisor", "privacy-trust"])
         assert rc == 0
 
+    def test_meta_advisor_forge_accepted(self, tmp_path, monkeypatch):
+        """forge is the one advisor guaranteed to exist in every instance, yet
+        known_advisors() excludes META roles from roster enumeration by design.
+        The gate asks a different question — "is this a valid lifecycle target" —
+        so it must union the shipped meta-roles back in."""
+        root = _make_root(tmp_path)
+        monkeypatch.setenv("CONCLAVE_AI_ROOT", str(root))
+        wiki_dir = _stub_wiki_dir(tmp_path / "wiki_scripts", {
+            "wiki-capture-suggest.sh": ("echo 'none'", 0),
+            "wiki-audit-stale.sh": ("echo 'P0 (blocking):     0'", 0),
+            "wiki-hot-sync.sh": ("echo 'ok'", 0),
+            "wiki-link-check.sh": ("echo 'clean'", 0),
+            "promote-decision.sh": ("", 0),
+            "wiki-bridge-rebuild.sh": ("", 0),
+        })
+        with patch.object(study_phase, "_wiki_scripts_dir", return_value=wiki_dir):
+            rc = study_phase.main(["--advisor", "forge"])
+        assert rc == 0
+
     def test_p0_blocking_exits_3(self, tmp_path, monkeypatch):
         _make_root(tmp_path)
         monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))

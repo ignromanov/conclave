@@ -19,15 +19,21 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from enginelib.advisors import known_advisors
+from enginelib.advisors import lifecycle_advisors
 
 
 def _known() -> list[str]:
-    """Registry-driven advisor set for this instance (sorted). Empty when the
-    DATA root can't be resolved (colocated / test envs) — never a hardcoded tuple."""
+    """Advisors that may hold a briefing, for this instance (sorted). Empty when the
+    DATA root can't be resolved (colocated / test envs) — never a hardcoded tuple.
+
+    lifecycle_advisors(), not known_advisors(): the latter enumerates the hired domain
+    roster and deliberately omits META roles, so gating regen on it made every
+    mutation-triggered refresh silently decline to update forge — while still exiting 0,
+    which left the refusal invisible to the caller (#38).
+    """
     from briefing.paths import repo_root
     try:
-        return sorted(known_advisors(repo_root()))
+        return sorted(lifecycle_advisors(repo_root()))
     except RuntimeError:
         return []
 

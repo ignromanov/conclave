@@ -31,6 +31,50 @@ def test_conclave_wins_even_when_only_it_exists(tmp_path):
     assert advisor_skill_dir("iris", tmp_path) == tmp_path / "conclave-iris"
 
 
+# --- artifact-aware resolution -------------------------------------------------
+# Both layout dirs can exist for one advisor while the artifact lives under only
+# one of them. Resolving on directory existence alone then returns a dir the
+# caller's file is not in, and the caller reports it missing.
+
+def test_artifact_falls_through_when_absent_under_conclave(tmp_path):
+    """Both dirs exist; the artifact is only under legacy → resolve to legacy."""
+    (tmp_path / "conclave-sage-cto").mkdir()
+    legacy_mem = tmp_path / "team.sage-cto" / "memory"
+    legacy_mem.mkdir(parents=True)
+    (legacy_mem / "personality.md").write_text("voice", encoding="utf-8")
+    resolved = advisor_skill_dir(
+        "sage-cto", tmp_path, artifact="memory/personality.md"
+    )
+    assert resolved == tmp_path / "team.sage-cto"
+
+
+def test_artifact_prefers_conclave_when_present_in_both(tmp_path):
+    """Canonical prefix still wins when the artifact exists under both."""
+    for dirname in ("conclave-sage-cto", "team.sage-cto"):
+        mem = tmp_path / dirname / "memory"
+        mem.mkdir(parents=True)
+        (mem / "personality.md").write_text("voice", encoding="utf-8")
+    resolved = advisor_skill_dir(
+        "sage-cto", tmp_path, artifact="memory/personality.md"
+    )
+    assert resolved == tmp_path / "conclave-sage-cto"
+
+
+def test_artifact_absent_everywhere_falls_back_to_dir_resolution(tmp_path):
+    """No layout holds the artifact → behave exactly as the artifact-less call,
+    so a caller asking for a not-yet-written file still gets a sane write path."""
+    (tmp_path / "team.nexus-ceo").mkdir()
+    assert advisor_skill_dir(
+        "nexus-ceo", tmp_path, artifact="memory/personality.md"
+    ) == advisor_skill_dir("nexus-ceo", tmp_path)
+
+
+def test_artifact_absent_and_no_dirs_returns_canonical(tmp_path):
+    assert advisor_skill_dir(
+        "newbie", tmp_path, artifact="memory/personality.md"
+    ) == tmp_path / "conclave-newbie"
+
+
 # --- iter_advisor_skills: the #54 shared dual-prefix discovery helper ----------
 
 def _mkskill(base, dirname):
