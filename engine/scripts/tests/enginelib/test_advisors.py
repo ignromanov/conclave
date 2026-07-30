@@ -249,3 +249,60 @@ def test_create_also_scaffolds_router(tmp_path, monkeypatch):
     assert router_skill.is_file()
     assert "conclave-iris" in router_skill.read_text()
     assert result["router"] == str(router_skill)
+
+
+# ---------------------------------------------------------------------------
+# #75 — advisor.create rendered the WRONG persona template and never wrote the
+# briefing stub, so hire.md's own documented validation failed on every hire.
+# ---------------------------------------------------------------------------
+
+# The four axes hire.md §3a.5 greps for; the generic templates/personality.md
+# (Voice / Thinking style / Boundaries / Relationship to product) scores 0 of 4.
+_VOICE_AXES = (
+    "Domain Vocabulary",
+    "Characteristic Questions",
+    "Analytical Framework",
+    "Metaphor",
+)
+
+
+def _create_into(tmp_path, monkeypatch, id_="vega"):
+    """Run advisor.create with a DATA root as well as a project root."""
+    from enginelib import advisor
+    _seed(tmp_path, monkeypatch)
+    monkeypatch.delenv("CONCLAVE_ENGINE_ROOT", raising=False)
+    data_root = tmp_path / "data"
+    (data_root / "agent-memory" / "advisors" / "briefings").mkdir(parents=True)
+    monkeypatch.setenv("CONCLAVE_AI_ROOT", str(data_root))
+    advisor.create(advisor.AdvisorOpts(id=id_, role="Vault Advisor", color="cyan"))
+    return data_root
+
+
+def test_create_renders_the_four_axis_voice_template(tmp_path, monkeypatch):
+    """§3a.5 validates the persona by grepping for 4 axes; create must satisfy it."""
+    _create_into(tmp_path, monkeypatch)
+    persona = (
+        tmp_path / "project" / ".claude" / "skills" / "conclave-vega"
+        / "memory" / "personality.md"
+    ).read_text()
+
+    missing = [axis for axis in _VOICE_AXES if axis not in persona]
+    assert not missing, f"persona is missing the §3a.5 axes: {missing}"
+
+
+def test_create_writes_the_awaiting_first_launch_briefing_stub(tmp_path, monkeypatch):
+    """hire.md's Post-hire step asserts this sentinel exists; nothing wrote it."""
+    data_root = _create_into(tmp_path, monkeypatch)
+    stub = data_root / "agent-memory" / "advisors" / "briefings" / "vega.md"
+
+    assert stub.is_file(), "no briefing stub was written"
+    assert "AWAITING_FIRST_LAUNCH" in stub.read_text()
+
+
+def test_briefing_stub_substitutes_the_advisor_id(tmp_path, monkeypatch):
+    """A stub still carrying ${ID} would ship the placeholder to the operator."""
+    data_root = _create_into(tmp_path, monkeypatch)
+    text = (data_root / "agent-memory" / "advisors" / "briefings" / "vega.md").read_text()
+
+    assert "vega" in text
+    assert "${ID}" not in text

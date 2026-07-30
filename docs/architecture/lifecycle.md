@@ -94,8 +94,13 @@ gates whether that happens.
 |------|---------|
 | 0 | Cache hit — briefing content unchanged, loaded as-is |
 | 2 | Briefing regenerated — rebuilt content actually differed |
-| 3 | Stale-fail — regen attempted but gh-fetch unavailable |
-| 1 | Error |
+| 1 | Error — the briefing itself could not be built |
+
+gh-fetch and git-fetch are advisory inputs, so a failure in either is non-fatal (#76):
+the step logs `FAILED … — continuing` plus a `degraded: gh-data-unavailable` marker and
+proceeds to the briefing build. Exit 3 ("stale-fail") is no longer emitted — it returned
+*before* the briefing was built at all, so an instance whose roster declares no repos
+never reached briefing build at all.
 
 ---
 

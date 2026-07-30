@@ -76,17 +76,28 @@ class TestMainEntrypoint:
     def test_known_advisor_exits_zero(self, capsys, kai_cto_tmp_root):
         """briefing_main(["kai-cto"]) must run against an isolated tmp tree.
 
-        Without VOIDPAY_AI_ROOT isolation this test overwrites the live
+        Without root isolation this test overwrites the live
         agent-memory/advisors/briefings/kai-cto.md on every pytest run.
         The kai_cto_tmp_root fixture (conftest.py) seeds a hermetic .ai-like
-        root and points VOIDPAY_AI_ROOT at it for the duration of the call.
+        root and both resolvers are pointed at it for the duration of the call.
+
+        Two resolvers must be pinned, not one. `briefing.paths` honours the
+        VOIDPAY_AI_ROOT back-compat alias, but `enginelib.paths.repo_root` —
+        which this call also reaches — knows only CONCLAVE_AI_ROOT, and falls
+        back to CLAUDE_PROJECT_DIR/.conclave when it is unset. That fallback is
+        why the isolation appeared to work: a dev box has CLAUDE_PROJECT_DIR, so
+        the ambient instance root stood in for the tmp one, and the test only
+        failed once CI ran it where no such var exists.
         """
         from unittest.mock import patch
 
         import briefing.paths as _paths
         from briefing.__main__ import main as briefing_main
         with patch.object(_paths, "_REPO_ROOT_CACHE", None):
-            with patch.dict("os.environ", {"VOIDPAY_AI_ROOT": str(kai_cto_tmp_root)}):
+            with patch.dict("os.environ", {
+                "VOIDPAY_AI_ROOT": str(kai_cto_tmp_root),
+                "CONCLAVE_AI_ROOT": str(kai_cto_tmp_root),
+            }):
                 rc = briefing_main(["kai-cto"])
         assert rc == 0
         # Confirm output was written under the tmp root, not the live tree.

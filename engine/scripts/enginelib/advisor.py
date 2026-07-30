@@ -96,14 +96,37 @@ def create(opts: AdvisorOpts) -> dict:
     # 8.5. Provision memory/personality.md (#55). The briefing personality_path
     # resolves to conclave-<id>/memory/personality.md; without a real file it
     # degrades to the 'not yet written' placeholder. hire.md Phase 3b enriches it.
-    personality = (paths.templates_dir() / "personality.md").read_text(encoding="utf-8")
+    #
+    # #75: this rendered templates/personality.md — the generic 4-section stub
+    # (Voice / Thinking style / Boundaries / Relationship to product). hire.md §3a.0
+    # mandates personality-template.md for the advisor tier and §3a.5 validates it by
+    # grepping for the 4-axis voice well, which the generic stub scores 0 of 4 on. So
+    # the protocol's own documented validation failed on every single hire.
+    # create() is the ADVISOR path; executors take the executor-identity-card branch
+    # and never reach here.
+    personality = (
+        paths.templates_dir() / "personality-template.md"
+    ).read_text(encoding="utf-8")
     personality = (
         personality
         .replace("{{advisor}}", name)
+        .replace("{{name}}", name)
+        .replace("{{emoji}}", emoji)
         .replace("{{role}}", opts.role)
         .replace("${PROJECT_NAME}", project_name)
     )
     snapshot.snapshot_write(skill_file.parent / "memory" / "personality.md", personality)
+
+    # 8.5b. Seed the briefing stub (#75). hire.md's Post-hire step asserts as
+    # established fact that "the scaffold left the briefing holding the
+    # AWAITING_FIRST_LAUNCH sentinel" — but briefing-awaiting.md existed in the
+    # template set with nothing copying it, so the sentinel was never on disk and
+    # first-launch detection could not fire. ${CLAUDE_PLUGIN_ROOT} stays literal:
+    # it is a path the reader resolves at runtime, not a build-time placeholder.
+    briefing_stub = (
+        paths.templates_dir() / "briefing-awaiting.md"
+    ).read_text(encoding="utf-8").replace("${ID}", id_)
+    snapshot.snapshot_write(paths.briefings_dir() / f"{id_}.md", briefing_stub)
 
     # 8.6. Mint a forge: block skeleton into the wrapper frontmatter (#55) so
     # `engine model bump` has a target instead of silently skip-no-forge. The

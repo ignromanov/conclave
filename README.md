@@ -35,7 +35,7 @@ into durable edits to the agents' own skills.
 |---|---|
 | **Python 3.11+** | The engine's runtime. The floor is enforced at every entrypoint, which refuses older interpreters with a plain message rather than a traceback. macOS ships 3.9 as `/usr/bin/python3`, so a system-Python run will hit this. |
 | **[`uv`](https://docs.astral.sh/uv/)** | Provisions the engine's dependencies into a plugin-local venv on first run. Without it, install those four packages yourself: `PyYAML`, `python-frontmatter`, `pydantic`, `ruamel.yaml`. |
-| **[`gh`](https://cli.github.com/), authenticated** | The GitHub issue/board sync shells out to it. Run `gh auth status` to confirm. On failure, session-init exits 3 (stale-fail) and reports the error in the session-start block; the cached snapshot is left untouched rather than overwritten. |
+| **[`gh`](https://cli.github.com/), authenticated** | The GitHub issue/board sync shells out to it. Run `gh auth status` to confirm. On failure, session-init reports the error in the session-start block, prints a `degraded: gh-data-unavailable` line and continues — the briefing still builds, with board-derived sections served from the cached snapshot, which is left untouched rather than overwritten. Conclave is usable without `gh`; only the board sections go stale. |
 | **git** | Session state and the repo-scope fallback both read your project's git metadata. |
 
 ## Install
