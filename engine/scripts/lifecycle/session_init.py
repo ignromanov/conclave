@@ -8,11 +8,17 @@ Absorbs team.start Steps 1/1b/1c + Overlay loading:
 
 Arg: --advisor <slug>
 
-Exit codes (mirror gh-fetch contract):
+Exit codes:
   0  = success, nothing regenerated (cache-hit / briefing fresh)
   2  = success, briefing regenerated
-  1  = error
-  3  = stale-fail (gh-fetch stale, briefing unreadable)
+  1  = error (the briefing itself could not be built)
+
+A failed gh-fetch or git-fetch is NOT an error (#76): both are advisory inputs to
+the briefing, so they log a FAILED line plus a `degraded:` marker and the run
+continues. Exit 3 ("stale-fail") is no longer emitted — it fired BEFORE the
+mtime-guard, which starved no-GitHub instances of a briefing entirely, and its
+documented meaning ("regen attempted but gh-fetch unavailable") never matched
+that behaviour because regen had not yet been attempted.
 
 Output: one compact summary block on stdout.
 """
@@ -189,10 +195,19 @@ def _step1_load_briefing(advisor: str, root: Path) -> tuple[int, list[str]]:
         elif gh_code == 2:
             lines.append(f"  gh-fetch: refreshed ({gh_ms}ms)")
         else:
-            lines.append(f"  gh-fetch: FAILED exit={gh_code} ({gh_ms}ms)")
+            # #76: non-fatal, mirroring git-fetch above. Returning here short-circuited
+            # the mtime-guard and briefing build, so an instance whose roster declares no
+            # repos — where gh-fetch fails on EVERY run — never got a briefing at all for
+            # any advisor not carved out as a meta-advisor. The GH board is one section of
+            # the briefing; losing it must not cost the whole briefing.
+            #
+            # This is loop-discipline policy (a) — use stale data with a warning. Non-fatal
+            # must not mean silent, so the failure carries an explicit degraded marker
+            # rather than being inferable only from the absence of a line.
+            lines.append(f"  gh-fetch: FAILED exit={gh_code} ({gh_ms}ms) — continuing")
             if result.stderr.strip():
                 lines.append(f"    stderr: {result.stderr.strip()[:120]}")
-            return 3, lines
+            lines.append("  degraded: gh-data-unavailable (board sections built from stale cache)")
 
     # Briefing mtime-guard
     briefing_path = root / "agent-memory" / "advisors" / "briefings" / f"{advisor}.md"

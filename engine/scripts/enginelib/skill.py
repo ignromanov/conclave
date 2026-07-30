@@ -28,25 +28,55 @@ def _cache_dir() -> Path:
     return Path(env) if env else Path.home() / ".claude" / "plugins" / "cache"
 
 
+def _consumer_skill_dirs() -> list[Path]:
+    """The consumer PROJECT's own skill roots, anchored on CLAUDE_PROJECT_DIR (#74).
+
+    Distinct from `paths.skills_dir()`, which is `engine_root()/skills` — the skills the
+    ENGINE ships. Outside the engine repo those are different trees, so a consumer's own
+    skills resolved nowhere and the phantom audit reported them all as PHANTOM.
+
+    `project_root()` falls back to `repo_root()`, which raises when no DATA root is
+    locatable; a caller with neither anchor still deserves the global/cache roots, so an
+    unresolvable project degrades to "no project roots" rather than an exception.
+    """
+    try:
+        project = paths.project_root()
+    except RuntimeError:
+        return []
+    return [project / ".claude" / "skills", project / ".agents" / "skills"]
+
+
 def verify(name: str) -> Path | None:
     """Return the SKILL.md (or command .md) Path if the skill is found, else None.
 
-    Search order (first match wins):
-      1. Project-local: skills_dir() / name / SKILL.md
-      2. Global user skills: GLOBAL/name/SKILL.md then GLOBAL/bare/SKILL.md
-      3. Plugin cache skills: CACHE/*/*/*/skills/bare/SKILL.md
+    Search order (first match wins), most specific first:
+      1. Consumer project: <project>/.claude/skills/ then <project>/.agents/skills/
+      2. Engine-shipped: skills_dir() (== engine_root()/skills) / name / SKILL.md
+      3. Global user skills: GLOBAL/name/SKILL.md then GLOBAL/bare/SKILL.md
+      4. Plugin cache skills: CACHE/*/*/*/skills/bare/SKILL.md
          (if namespaced, prefer match whose plugin dir == namespace)
-      4. Plugin cache commands: CACHE/*/*/*/commands/bare.md (same preference)
+      5. Plugin cache commands: CACHE/*/*/*/commands/bare.md (same preference)
+
+    Step 1 precedes the global root deliberately: before #74 a consumer skill sharing a
+    name with a global one resolved to the GLOBAL file — a wrong-content hit, quieter and
+    worse than the PHANTOM the audit reported for the rest.
     """
     bare = name.split(":", 1)[-1]   # "superpowers:brainstorming" -> "brainstorming"
     ns = name.split(":", 1)[0] if ":" in name else ""
 
-    # 1. Project-local
+    # 1. Consumer project roots
+    for root in _consumer_skill_dirs():
+        for key in (name, bare):
+            candidate = root / key / "SKILL.md"
+            if candidate.is_file():
+                return candidate
+
+    # 2. Engine-shipped skills
     candidate = paths.skills_dir() / name / "SKILL.md"
     if candidate.is_file():
         return candidate
 
-    # 2. Global user skills
+    # 3. Global user skills
     global_dir = _global_dir()
     for key in (name, bare):
         candidate = global_dir / key / "SKILL.md"
@@ -55,7 +85,7 @@ def verify(name: str) -> Path | None:
 
     cache = _cache_dir()
 
-    # 3. Plugin cache skills (owner/plugin/version/skills/bare/SKILL.md)
+    # 4. Plugin cache skills (owner/plugin/version/skills/bare/SKILL.md)
     skill_matches = sorted(cache.glob(f"*/*/*/skills/{bare}/SKILL.md"))
     if ns:
         for p in skill_matches:
@@ -64,7 +94,7 @@ def verify(name: str) -> Path | None:
     if skill_matches:
         return skill_matches[0]
 
-    # 4. Plugin cache commands (owner/plugin/version/commands/bare.md)
+    # 5. Plugin cache commands (owner/plugin/version/commands/bare.md)
     cmd_matches = sorted(cache.glob(f"*/*/*/commands/{bare}.md"))
     if ns:
         for p in cmd_matches:

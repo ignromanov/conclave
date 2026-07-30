@@ -103,7 +103,10 @@ def main(argv: list[str] | None = None) -> int:
         sessions,
         spec_progress,
     )
-    from enginelib.paths import advisor_skill_dir  # #48 prefix-tolerant SKILL dir
+
+    # #48 prefix-tolerant SKILL dir; project_skills_dir is the PROJECT anchor (#77).
+    # briefing.paths is a lightweight DATA-only module and has neither.
+    from enginelib.paths import advisor_skill_dir, project_skills_dir
 
     root = paths.repo_root()
     ctx = ScanCtx(
@@ -114,14 +117,21 @@ def main(argv: list[str] | None = None) -> int:
         sessions_dir=paths.sessions_dir(),
         mentions_dir=paths.mentions_dir(),
         gh_cache_dir=paths.gh_cache_dir(),
+        # #77: the persona is PROJECT data (.claude/skills/), not DATA-root data. In
+        # plugin mode `.conclave` is a sibling of `.claude`, so `root/".claude"` pointed
+        # at a directory that never exists and 'Who I am' rendered blank for every
+        # consumer. Invisible on the dev instance only because the two trees are
+        # symlinked entry-by-entry there. Same anchor asymmetry as e3789d9 / #74.
         personality_path=(
             advisor_skill_dir(
                 advisor,
-                root / ".claude" / "skills",
+                project_skills_dir(),
                 artifact="memory/personality.md",
             )
             / "memory" / "personality.md"
         ),
+        # progress-summary.md IS per-instance DATA (tests/briefing/conftest.py:76), so
+        # this one correctly stays on the DATA root — it is not the same defect.
         progress_path=root / "progress-summary.md",
     )
 

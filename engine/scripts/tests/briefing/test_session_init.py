@@ -512,14 +512,17 @@ class TestStep1LoadBriefing:
         code, lines = session_init._step1_load_briefing("kai-cto", root)
         assert any("regenerated" in ln for ln in lines)
 
-    def test_gh_fetch_failure_returns_3(self, tmp_path, monkeypatch):
+    def test_gh_fetch_failure_does_not_abort_the_step(self, tmp_path, monkeypatch):
+        """Was test_gh_fetch_failure_returns_3, which pinned the #76 defect in place:
+        it asserted the early `return 3` that starved no-GitHub instances of a briefing.
+        See TestGhFetchFailureIsNonFatal for the full contract."""
         root = _make_root(tmp_path)
         monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
 
         _patch_engine_run(monkeypatch, gh_code=1)
 
         code, lines = session_init._step1_load_briefing("kai-cto", root)
-        assert code == 3
+        assert code != 3
         assert any("FAILED" in ln for ln in lines)
 
 
@@ -690,3 +693,54 @@ class TestForgeMetaAdvisor:
         code, lines = session_init._step1_load_briefing("forge", tmp_path)
         assert called["gh"] is False
         assert any("gh-fetch: skipped (meta-advisor)" in ln for ln in lines)
+
+
+class TestGhFetchFailureIsNonFatal:
+    """#76 — gh-fetch failure returned 3 BEFORE the mtime-guard, so an instance whose
+    roster declares no repos (gh-fetch fails every run) never reached briefing build
+    and no non-meta advisor ever got a briefing at all."""
+
+    def test_briefing_build_is_still_reached(self, tmp_path, monkeypatch):
+        """The regression that mattered: the build subprocess was never invoked."""
+        root = _make_root(tmp_path)
+        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        calls: dict = {}
+        _patch_engine_run(monkeypatch, gh_code=1, calls=calls)
+
+        code, lines = session_init._step1_load_briefing("kai-cto", root)
+
+        assert "briefing" in calls, f"briefing build was never reached: {lines}"
+        assert code == 2, f"expected regen exit 2, got {code}: {lines}"
+        assert any("briefing-path:" in ln for ln in lines)
+
+    def test_failure_is_surfaced_as_degraded_not_swallowed(self, tmp_path, monkeypatch):
+        """Non-fatal must not mean silent — false-clean is the other failure mode."""
+        root = _make_root(tmp_path)
+        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        _patch_engine_run(monkeypatch, gh_code=1)
+
+        _, lines = session_init._step1_load_briefing("kai-cto", root)
+
+        assert any("gh-fetch: FAILED" in ln for ln in lines)
+        assert any("degraded:" in ln for ln in lines), (
+            "a degraded run must carry a machine-readable marker, not just a FAILED line"
+        )
+
+    def test_healthy_gh_fetch_emits_no_degraded_marker(self, tmp_path, monkeypatch):
+        root = _make_root(tmp_path)
+        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        _patch_engine_run(monkeypatch, gh_code=0)
+
+        _, lines = session_init._step1_load_briefing("kai-cto", root)
+
+        assert not any("degraded:" in ln for ln in lines)
+
+    def test_briefing_build_failure_is_still_fatal(self, tmp_path, monkeypatch):
+        """Non-fatal gh-fetch must not weaken the gate that DOES matter."""
+        root = _make_root(tmp_path)
+        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        _patch_engine_run(monkeypatch, gh_code=1, briefing_code=1)
+
+        code, _ = session_init._step1_load_briefing("kai-cto", root)
+
+        assert code == 1

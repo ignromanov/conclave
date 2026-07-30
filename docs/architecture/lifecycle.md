@@ -92,8 +92,13 @@ from a stale cache — the cache rebuilds automatically.
 |------|---------|
 | 0 | Cache hit — briefing fresh, loaded as-is |
 | 2 | Briefing regenerated — stale threshold exceeded |
-| 3 | Stale-fail — regen attempted but gh-fetch unavailable |
-| 1 | Error |
+| 1 | Error — the briefing itself could not be built |
+
+gh-fetch and git-fetch are advisory inputs, so a failure in either is non-fatal (#76):
+the step logs `FAILED … — continuing` plus a `degraded: gh-data-unavailable` marker and
+proceeds to the mtime-guard. Exit 3 ("stale-fail") is no longer emitted — it returned
+*before* the mtime-guard, so an instance whose roster declares no repos never reached
+briefing build at all.
 
 ---
 
