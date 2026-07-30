@@ -103,6 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         sessions,
         spec_progress,
     )
+
     # #48 prefix-tolerant SKILL dir; project_skills_dir is the PROJECT anchor (#77).
     # briefing.paths is a lightweight DATA-only module and has neither.
     from enginelib.paths import advisor_skill_dir, project_skills_dir
