@@ -74,6 +74,49 @@ def test_no_advisor_arg_exit2(ai_root):
     assert "advisor required" in r.stderr
 
 
+# #77 — personality resolved against the DATA root, so 'Who I am' was blank in
+# every plugin-mode instance (where the project root and the DATA root differ).
+
+_PERSONA_PLACEHOLDER = "personality.md not yet written"
+
+
+def test_personality_resolves_from_project_root(ai_root, tmp_path, monkeypatch):
+    """The persona lives project-side; the briefing must find it there, not under DATA.
+
+    Plugin mode is the case where this bites: `.conclave` (DATA) is a SIBLING of
+    `.claude` (project), so resolving `<DATA>/.claude/skills` searches a directory
+    that does not exist. On the dev instance the two trees are symlinked together,
+    which is exactly why the defect stayed invisible here.
+    """
+    _seed_progress(ai_root)
+    project = tmp_path / "consumer-project"
+    persona = project / ".claude" / "skills" / "conclave-kai-cto" / "memory" / "personality.md"
+    persona.parent.mkdir(parents=True)
+    persona.write_text("# Kai\n\nI am the project-side persona, and I must reach the briefing.\n")
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project))
+
+    r = run_engine("briefing", "build", "kai-cto")
+
+    assert r.returncode == 0, f"stderr: {r.stderr[:400]}"
+    built = (ai_root / "agent-memory" / "advisors" / "briefings" / "kai-cto.md").read_text()
+    assert "I am the project-side persona" in built
+    assert _PERSONA_PLACEHOLDER not in built
+
+
+def test_missing_personality_still_placeholders(ai_root, tmp_path, monkeypatch):
+    """Repointing the anchor must not turn a genuinely absent persona into a crash."""
+    _seed_progress(ai_root)
+    project = tmp_path / "empty-project"
+    (project / ".claude" / "skills").mkdir(parents=True)
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project))
+
+    r = run_engine("briefing", "build", "kai-cto")
+
+    assert r.returncode == 0, f"stderr: {r.stderr[:400]}"
+    built = (ai_root / "agent-memory" / "advisors" / "briefings" / "kai-cto.md").read_text()
+    assert _PERSONA_PLACEHOLDER in built
+
+
 # ---------------------------------------------------------------------------
 # Cases 4–8 — successful build for kai-cto
 # ---------------------------------------------------------------------------
