@@ -242,8 +242,12 @@ Run all 6 steps in one call:
 python3 engine/scripts/lifecycle/study_phase.py --advisor <advisor>
 ```
 
-- Exit 0 → all clean; omit study row from Summary
-- Exit 2 → non-blocking findings (captures / P1 stale / link violations); emit `⚠ study` row
+- Exit 0 → every step ran and was clean; omit study row from Summary
+- Exit 2 → non-blocking findings (captures / P1 stale / link violations), **or** a step that
+  never ran (`steps-not-run:{N}` — absent script or exit=1); emit `⚠ study` row either way.
+  A step that could not run has measured nothing, so omitting the row would assert a health
+  nobody checked (#56A). Since the wiki extraction the scripts live in the `/wiki:*` plugin
+  and `engine/scripts/wiki/` is absent, so this is the expected state until that is resolved.
 - Exit 3 → **P0 BLOCKING** (wiki-audit-stale contradictions / canonical-ref drift) — must triage before close-session commit; emit `✗ study` row
 - Exit 1 → orchestration error; treat as P1
 
