@@ -21,7 +21,18 @@ def _doctor(args) -> int:
         print(f"doctor: {exc}", file=sys.stderr)
         return 1
 
-    checks = doctor.run_checks(root, advisor=args.advisor, fix=args.fix)
+    # Both trees, because the branches that strand work are usually in CODE while doctor
+    # is pointed at DATA (#58). Resolution lives here, not in enginelib: the pure core
+    # must not reach into the environment behind its callers' backs.
+    repos = [root]
+    try:
+        engine = paths.engine_root()
+    except RuntimeError:
+        engine = None
+    if engine is not None and engine.resolve() != root.resolve():
+        repos.append(engine)
+
+    checks = doctor.run_checks(root, advisor=args.advisor, fix=args.fix, repos=repos)
     for c in checks:
         mark = "ok  " if c.ok else "FAIL"
         print(f"[{mark}] {c.name}: {c.detail}")
@@ -32,7 +43,7 @@ def _doctor(args) -> int:
 
 
 def register(sub) -> None:
-    p = sub.add_parser("doctor", help="First-Launch preflight: data-root, hot.md, advisor canonicality.")
+    p = sub.add_parser("doctor", help="First-Launch preflight: data-root, hot.md, advisor canonicality, stranded branches.")
     p.add_argument("--advisor", default=None, help="Advisor slug to verify against the registry.")
     p.add_argument("--fix", action="store_true", help="Seed a missing hot.md skeleton.")
     p.set_defaults(func=_doctor)
