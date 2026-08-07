@@ -85,7 +85,7 @@ Each mutation to the advisor model happens via a named aspect. Load the aspect r
 |--------|-------|
 | `aspects/identity.md` | Mutate voice/character; affects `memory/personality.md` |
 | `aspects/references.md` | Add/update domain reference in `memory/references/<domain>.md` |
-| `aspects/forge-scripts.md` | Modify the Python engine in `engine/scripts/` (enginelib-first, thin adapters; gate: ruff + mypy + pytest, core I/O-free) |
+| `aspects/engine-scripts.md` | Modify the Python engine in `engine/scripts/` (enginelib-first, thin adapters; gate: ruff + mypy + pytest, core I/O-free) |
 | `aspects/lifecycle-skill.md` | Modify `team.{start,processing,done,handoff}/SKILL.md`; contract-changing, requires end-to-end smoke test |
 
 ## Blocked mutations (spec 051)

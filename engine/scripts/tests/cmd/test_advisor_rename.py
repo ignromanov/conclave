@@ -184,8 +184,11 @@ def test_refuses_invalid_target_slug(tmp_path, bad):
 
 def test_refuses_when_a_planned_move_would_collide(tmp_path):
     """A destination that already holds a file aborts the WHOLE run, mutating nothing."""
-    p = _instance(tmp_path)
-    _w(p["session"].parent / f"2026-08-06-{NEW}-neon.md", "---\nadvisor: someone\n---\n")
+    _instance(tmp_path)
+    _w(
+        tmp_path / ".claude" / "skills" / f"conclave-{NEW}" / "SKILL.md",
+        f"---\nname: conclave-{NEW}\n---\n",
+    )
     before = _snapshot(tmp_path)
     r = _rename("--from", OLD, "--to", NEW, "--apply", "--confirm", tmp=tmp_path)
     assert r.returncode == 2, r.stdout
@@ -487,4 +490,35 @@ def test_a_typo_owning_nothing_is_still_refused(tmp_path):
     r = _rename("--from", "nobdy-cto", "--to", NEW, "--apply", "--confirm", tmp=tmp_path)
     assert r.returncode == 1, r.stdout
     assert "not a canonical advisor" in r.stderr
+    assert _snapshot(tmp_path) == before
+
+
+def test_adopts_a_target_that_exists_but_owns_no_memory(tmp_path):
+    """The mirror of the retired-`--from` case, and the other half of the same
+    ordering problem.
+
+    A CODE-side rename creates the NEW agent-def before the data moves, so `--to`
+    is already in the roster while owning nothing. Refusing on roster membership
+    blocks the completion of the very rename that created it. Occupancy is judged
+    by MEMORY: config clashes are caught precisely by the path-collision check,
+    which names the two paths instead of the id.
+    """
+    p = _instance(tmp_path)
+    p["agent_def"].unlink()                                    # retired by the CODE rename
+    _w(tmp_path / ".claude" / "agents" / f"{NEW}.md", f"---\nname: {NEW}\n---\n")
+
+    r = _rename("--from", OLD, "--to", NEW, "--apply", "--confirm", tmp=tmp_path)
+    assert r.returncode == 0, r.stderr
+    moved = tmp_path / "agent-memory" / "advisors" / "sessions" / f"2026-08-06-{NEW}-neon.md"
+    assert moved.is_file()
+    assert f"advisor: {NEW}" in moved.read_text()
+
+
+def test_still_refuses_a_target_that_owns_memory(tmp_path):
+    """Adoption must not become a silent merge: a target with history of its own is
+    a different advisor, and folding two identities together is unrecoverable."""
+    _instance(tmp_path)
+    before = _snapshot(tmp_path)
+    r = _rename("--from", OLD, "--to", OTHER, "--apply", "--confirm", tmp=tmp_path)
+    assert r.returncode == 2, r.stdout
     assert _snapshot(tmp_path) == before

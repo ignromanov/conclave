@@ -18,7 +18,6 @@ I/O-free core: reads and writes files; no print, no argparse, no sys.exit.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
 from pathlib import Path
 
 from enginelib import advisors, paths, roster, router, snapshot
@@ -124,38 +123,7 @@ def create(opts: AdvisorOpts) -> dict:
     ).read_text(encoding="utf-8").replace("${ID}", id_)
     snapshot.snapshot_write(paths.briefings_dir() / f"{id_}.md", briefing_stub)
 
-    # 8.6. Mint a forge: block skeleton into the wrapper frontmatter (#55) so
-    # `engine model bump` has a target instead of silently skip-no-forge. The
-    # model-version is a placeholder; `model bump --advisor <id>` (hire Phase 3c)
-    # stamps the current standard. Only hired advisors get this — forge's own
-    # router (via scaffold_forge_router) stays bare, as a meta-advisor should.
-    forge_block = (
-        "forge:\n"
-        "  model-version: 0.0.0\n"
-        "  hired-by: forge\n"
-        f"  hired-at: {date.today().isoformat()}\n"
-    )
-    snapshot.snapshot_write(
-        skill_file, _insert_forge_block(skill_file.read_text(encoding="utf-8"), forge_block)
-    )
-
     # 9. Return JSON-serialisable result
     return {"id": id_, "agent": str(agent_file), "router": str(skill_file)}
 
 
-def _insert_forge_block(text: str, block: str) -> str:
-    """Insert a forge: block before the closing '---' of the wrapper frontmatter.
-
-    Line-based (not YAML-parsed) because the description uses a '|' block scalar;
-    a naive parse would be brittle. Falls back to the original text if no closing
-    frontmatter fence is found (defensive — a minted wrapper always has one).
-    """
-    lines = text.splitlines(keepends=True)
-    fences = 0
-    for i, ln in enumerate(lines):
-        if ln.rstrip("\r\n") == "---":
-            fences += 1
-            if fences == 2:
-                lines.insert(i, block)
-                return "".join(lines)
-    return text

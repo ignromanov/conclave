@@ -334,12 +334,23 @@ def plan(old: str, new: str) -> RenamePlan:
     # (forge → forge-chro left 130 artifacts naming an id the roster no longer knew),
     # so a membership test refuses precisely the migration this command exists for.
     # An id that owns artifacts on disk is not a typo, whether or not it is still hired.
-    if new in roster:
-        raise FileExistsError(f'--to "{new}" already exists in the roster')
+    #
+    # `--to` is judged the same way, and for the mirror-image reason: a CODE-side
+    # rename creates the NEW agent-def before the data moves, so the target is
+    # already in the roster while owning nothing. Refusing on roster membership
+    # blocks the completion of the very rename that created it. What must never
+    # happen is folding two identities together, so occupancy is judged by MEMORY.
+    # Config clashes are caught precisely by `_check_collisions`, which names the
+    # two paths rather than the id.
+    data_root = paths.repo_root()
+    if _owns_memory(new, data_root):
+        raise FileExistsError(
+            f'--to "{new}" already exists and owns memory of its own — renaming onto it '
+            f"would merge two advisors' histories, which cannot be undone."
+        )
 
     _check_ambiguous(old, new, roster)
 
-    data_root = paths.repo_root()
     claude_dirs = [paths.project_claude_dir(), data_root / ".claude"]
     p = RenamePlan(old=old, new=new, data_root=data_root)
 
@@ -416,6 +427,46 @@ def plan(old: str, new: str) -> RenamePlan:
 
     _check_collisions(p)
     return p
+
+
+def _owns_memory(advisor_id: str, data_root: Path) -> bool:
+    """Does *advisor_id* already hold a record of its own?
+
+    Only the HISTORY tree is consulted — sessions, decisions, mentions, feedback,
+    handoffs. Live config (an agent-def, a router, a briefing stub) is what a
+    freshly-created-or-renamed identity has and nothing more, so counting it would
+    make every target look occupied. Memory is what cannot be merged.
+    """
+    rx = token_re(advisor_id)
+    roots = [
+        data_root / "agent-memory" / "advisors" / d
+        for d in ("sessions", "decisions", "mentions", "audits")
+    ] + [data_root / "ops" / "feedback", data_root / "ops" / "handoffs"]
+    for root in roots:
+        for f in _iter_files(root):
+            if rx.search(f.as_posix()):
+                return True
+            text = _read(f)
+            if text is None:
+                continue
+            if any(d.endswith(f"{advisor_id}") for d in _field_values(text)):
+                return True
+    return False
+
+
+def _field_values(text: str) -> list[str]:
+    """Values of the structural id fields in *text*'s frontmatter."""
+    lines = [ln.rstrip("\r\n") for ln in text.splitlines()]
+    span = _frontmatter_span(lines)
+    if span is None:
+        return []
+    out = []
+    for i in range(span[0], span[1]):
+        for key in _ID_FIELDS:
+            if lines[i].startswith(f"{key}:"):
+                out.append(lines[i][len(key) + 1:].strip())
+                break
+    return out
 
 
 def _renamed_path(f: Path, root: Path, rx: re.Pattern[str], new: str) -> Path:

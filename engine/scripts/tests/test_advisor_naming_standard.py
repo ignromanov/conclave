@@ -20,6 +20,8 @@ which is `dev`.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from enginelib.advisors import ADVISOR_ROLES, is_valid_advisor_id, validate_advisor_id
@@ -187,3 +189,67 @@ def test_every_shipped_advisor_agent_def_conforms():
         f"shipped agent-defs violate <name>-<role>: {offenders}. "
         f"Allowed roles: {', '.join(sorted(ADVISOR_ROLES))}"
     )
+
+
+# ---------------------------------------------------------------------------
+# "Indistinguishable, merely pre-installed" — the ways forge was special-cased
+# ---------------------------------------------------------------------------
+
+def test_forge_overlays_are_audited_like_any_advisors(tmp_path):
+    """Spec 100 §3.3 records forge's overlays as RUN — "its self-mutation
+    contracts" — yet the overlay audit skipped the forge directory outright, so
+    forge was the one advisor whose contract drift nothing could detect."""
+    from enginelib.audit import overlays
+
+    skills = tmp_path / "skills"
+    base = tmp_path / "contracts"
+    base.mkdir()
+    for advisor in ("conclave-forge-chro", "conclave-sage-cto"):
+        d = skills / advisor / "contracts"
+        d.mkdir(parents=True)
+        (d / "phantom.md").write_text("# overlay with no base contract\n", encoding="utf-8")
+
+    rpt = overlays.run(skills, base)
+    reported = "\n".join(rpt.crit + rpt.warn) if hasattr(rpt, "crit") else str(rpt)
+    assert "forge-chro" in reported, reported
+
+
+def test_a_scaffolded_router_is_model_stampable(tmp_path):
+    """`engine model bump` skips any router with no `forge:` block ("skip-no-forge").
+
+    forge's router was minted by scaffold_router alone, which wrote no block, so
+    the one advisor shipped in every instance silently never carried a
+    model-version. An ordinary advisor is stampable; so is this one now.
+    """
+    from enginelib import router
+
+    info = router.scaffold_router("vera-cto", skills_root=tmp_path)
+    body = Path(info["skill"]).read_text(encoding="utf-8")
+    assert "\nforge:" in body, body
+    assert "model-version:" in body
+
+
+def test_rescaffolding_a_bare_stub_stays_idempotent(tmp_path):
+    """#58's guard must survive the block becoming universal: a bare stub is still
+    re-mintable, because 'has a forge: block' no longer distinguishes enriched."""
+    from enginelib import router
+
+    first = router.scaffold_router("vera-cto", skills_root=tmp_path)
+    again = router.scaffold_router("vera-cto", skills_root=tmp_path)
+    assert again.get("skipped") is None, again
+    assert Path(first["skill"]).read_text() == Path(again["skill"]).read_text()
+
+
+def test_rescaffolding_refuses_to_reset_a_bumped_model_version(tmp_path):
+    """The half of #58's protection that a sections-only check would have lost."""
+    from enginelib import router
+
+    info = router.scaffold_router("vera-cto", skills_root=tmp_path)
+    skill = Path(info["skill"])
+    skill.write_text(
+        skill.read_text().replace("model-version: 0.0.0", "model-version: 2.1.0"),
+        encoding="utf-8",
+    )
+    again = router.scaffold_router("vera-cto", skills_root=tmp_path)
+    assert again.get("skipped") == "enriched", again
+    assert "model-version: 2.1.0" in skill.read_text()

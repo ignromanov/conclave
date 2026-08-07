@@ -48,10 +48,12 @@ def run(skills_dir: Path, base_dir: Path) -> OverlayReport:
         for prefix in _ADVISOR_PREFIXES
         for p in skills_dir.glob(f"{prefix}*/contracts/*.md")
     ]
-    overlays = sorted(
-        p for p in candidates
-        if _bare_dir(p.parent.parent.name) != "forge"
-    )
+    # No advisor is exempt. This used to skip the `forge` directory, which left the
+    # one advisor shipped in every instance as the only one whose contract drift
+    # nothing could detect — while spec 100 §3.3 records forge's overlays as RUN,
+    # "its self-mutation contracts". The forge → forge-chro rename already made the
+    # literal stop matching; removing it stops the exemption coming back by accident.
+    overlays = sorted(candidates)
 
     for overlay in overlays:
         advisor = overlay.parent.parent.name
