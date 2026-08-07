@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from typing import Any
@@ -115,20 +116,31 @@ def _load_items(fetch: bool) -> list[dict[str, Any]]:
     return data.get("items", [])
 
 
-def _advisor_label_stem(advisor: str) -> str:
-    """nexus-ceo → nexus, quorum → quorum."""
-    return advisor.split("-")[0]
+def _board_advisor_matches(field_value: str, advisor: str) -> bool:
+    """Does a board item's `advisor` field claim *advisor*?
+
+    The Project board's advisor field is a THIRD surface, distinct from the
+    `advisor:<id>` label that `enginelib.advisors.advisor_label` builds: boards
+    populated before the protocol settled carry the bare stem (`kai`), newer ones
+    carry the whole id (`kai-cto`). Both are accepted — a read path that misses
+    items is the failure this whole change exists to remove.
+
+    Matching is token-wise, not substring: the old `stem in field` test let
+    `nexus-ceo` claim a hypothetical `nexus-design`'s items, and a multi-advisor
+    field is comma-separated, so tokens are what the field actually holds.
+    """
+    tokens = {t for t in re.split(r"[^a-z0-9-]+", field_value.strip().lower()) if t}
+    return advisor in tokens or advisor.split("-")[0] in tokens
 
 
 def mode_advisor_open(items: list[dict[str, Any]], advisor: str) -> int:
     """Print non-Done items tagged for advisor. Returns item count printed."""
-    stem = _advisor_label_stem(advisor)
     count = 0
     for item in items:
         if item.get("status") == "Done":
             continue
         advisor_field = str(item.get("advisor", "")).lower()
-        if stem not in advisor_field:
+        if not _board_advisor_matches(advisor_field, advisor):
             continue
         content = item.get("content", {})
         repo = content.get("repository", "")
@@ -138,7 +150,7 @@ def mode_advisor_open(items: list[dict[str, Any]], advisor: str) -> int:
         print(f"{repo}#{num} [{status}] {title}")
         count += 1
     if count == 0:
-        print(f"(no open items for advisor:{stem})")
+        print(f"(no open items for advisor:{advisor})")
     return count
 
 

@@ -11,6 +11,8 @@ import json
 import os
 import subprocess
 
+from enginelib.advisors import advisor_label
+
 
 def _gh_env() -> dict[str, str] | None:
     """Env for the gh call, or None to inherit.
@@ -58,14 +60,14 @@ def gh_advisor_issues(advisor: str, repo: str) -> list[str]:
     args = [
         "issue", "list",
         "-R", repo,
-        "--label", f"advisor:{advisor}",
+        "--label", advisor_label(advisor),
         "--state", "open",
         "--json", "number,title,labels",
     ]
     return _parse_rows(_run_gh(args))
 
 
-def search_issues(label_stem: str, repos: list[str]) -> str:
+def search_issues(advisor: str, repos: list[str]) -> str:
     # TRIPWIRE — sole `gh search issues` call site (lifecycle gh snapshot).
     # Fail-closed on privacy: scope by explicit --repo slugs, NEVER account-wide
     # (--owner). An empty repo list is a caller bug — refuse rather than leak
@@ -76,15 +78,15 @@ def search_issues(label_stem: str, repos: list[str]) -> str:
     return _run_gh([
         "search", "issues",
         *repo_args,
-        "--label", f"advisor:{label_stem}",
+        "--label", advisor_label(advisor),
         "--state", "open",
         "--json", "number,title,labels,state,repository",
         "--limit", "50",
     ])
 
 
-def search_closed_by_labels(label_stem: str, repos: list[str], sticky_labels: list[str]) -> str:
-    """Closed issues labelled advisor:<stem> AND a sticky label, as one JSON array.
+def search_closed_by_labels(advisor: str, repos: list[str], sticky_labels: list[str]) -> str:
+    """Closed issues labelled advisor:<id> AND a sticky label, as one JSON array.
 
     One `gh search issues --state closed` per sticky label (AND within a call, OR
     across labels), results de-duped by issue number. Keeps closed "sticky" issues
@@ -100,7 +102,7 @@ def search_closed_by_labels(label_stem: str, repos: list[str], sticky_labels: li
         raw = _run_gh([
             "search", "issues",
             *repo_args,
-            "--label", f"advisor:{label_stem}",
+            "--label", advisor_label(advisor),
             "--label", sticky,
             "--state", "closed",
             "--json", "number,title,labels,state,repository",

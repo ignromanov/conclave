@@ -71,7 +71,7 @@ class TestAdvisorOpen:
         # "Onboarding kit" is Done — should be excluded
         assert "Onboarding kit" not in out
 
-    def test_filters_by_advisor_stem(self, capsys):
+    def test_filters_by_advisor(self, capsys):
         gh_board_query.mode_advisor_open(_ITEMS_WITH_DATA, "kai-cto")
         out = capsys.readouterr().out
         assert "Spec 084" in out
@@ -129,18 +129,36 @@ class TestMissingFields:
 
 
 # ---------------------------------------------------------------------------
-# _advisor_label_stem
+# _board_advisor_matches
 # ---------------------------------------------------------------------------
 
-class TestAdvisorLabelStem:
-    def test_strips_role_suffix(self):
-        assert gh_board_query._advisor_label_stem("kai-cto") == "kai"
-        assert gh_board_query._advisor_label_stem("nexus-ceo") == "nexus"
-        assert gh_board_query._advisor_label_stem("spark-cmo") == "spark"
-        assert gh_board_query._advisor_label_stem("shade-ciso") == "shade"
+class TestBoardAdvisorMatches:
+    """The board's advisor field has carried both the stem and the whole id.
 
-    def test_quorum_unchanged(self):
-        assert gh_board_query._advisor_label_stem("quorum") == "quorum"
+    Accepting both is deliberate: this is a READ path, and the failure it must
+    not have is a silently missed item.
+    """
+
+    def test_accepts_the_legacy_stem(self):
+        assert gh_board_query._board_advisor_matches("kai", "kai-cto")
+        assert gh_board_query._board_advisor_matches("nexus", "nexus-ceo")
+
+    def test_accepts_the_whole_id(self):
+        assert gh_board_query._board_advisor_matches("kai-cto", "kai-cto")
+
+    def test_accepts_one_entry_of_a_multi_advisor_field(self):
+        assert gh_board_query._board_advisor_matches("spark-cmo, kai-cto", "kai-cto")
+
+    def test_an_unrelated_advisor_is_not_claimed(self):
+        assert not gh_board_query._board_advisor_matches("spark-cmo", "kai-cto")
+
+    def test_a_longer_id_sharing_the_stem_is_not_claimed_by_substring(self):
+        """`nexus-ceo` must not swallow `nexus-design`'s items — the old test was
+        `stem in field`, which did exactly that."""
+        assert not gh_board_query._board_advisor_matches("nexus-design", "nexus-ceo")
+
+    def test_a_single_segment_id_is_unchanged(self):
+        assert gh_board_query._board_advisor_matches("quorum", "quorum")
 
 
 # ---------------------------------------------------------------------------

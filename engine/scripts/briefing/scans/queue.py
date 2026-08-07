@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from briefing.scans import ScanCtx
+from enginelib.advisors import advisor_label
 
 # Matches the json fence written by gh-fetch.sh (same regex as _gh_cache.py).
 _JSON_FENCE_RE = re.compile(r"^```json\s*\n(.*?)\n```", re.DOTALL | re.MULTILINE)
@@ -97,7 +98,7 @@ def build(ctx: ScanCtx) -> str:
     """Return markdown list of all open issues from gh-cache.
 
     Each line is enriched with repo prefix (#14) and issue age (#8).
-    Placeholder: _(no open issues for advisor:<short_name>)_
+    Placeholder: _(no open issues for advisor:<id>)_
     """
     cache_path = ctx.gh_cache_dir / f"{ctx.advisor}.md"
     items = _read_raw_items(cache_path, advisor=ctx.advisor)
@@ -109,5 +110,5 @@ def build(ctx: ScanCtx) -> str:
             lines.append(f"- {row}")
 
     if not lines:
-        return f"_(no open issues for advisor:{ctx.short_name})_"
+        return f"_(no open issues for {advisor_label(ctx.advisor)})_"
     return "\n".join(lines)
