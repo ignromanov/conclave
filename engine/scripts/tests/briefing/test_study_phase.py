@@ -224,12 +224,41 @@ class TestRunStudy:
         res = run_study(wiki_dir)
         assert len(res.errors) > 0
 
+    def test_a_step_that_did_not_run_is_not_clean(self, tmp_path):
+        """Collecting an error is not the same as reporting it (#56A).
+
+        The assertion above — `len(res.errors) > 0` — holds identically whether or not
+        those errors ever reach the caller, so it constrained nothing. A step that could
+        not run has verified nothing, and the result must say so.
+        """
+        wiki_dir = tmp_path / "wiki"
+        wiki_dir.mkdir()
+        res = run_study(wiki_dir)
+        assert res.ran_incompletely()
+        assert "not-run" in res.summary_row(), res.summary_row()
+
 
 # ---------------------------------------------------------------------------
 # main — exit codes
 # ---------------------------------------------------------------------------
 
 class TestMainExitCodes:
+    def test_absent_wiki_dir_does_not_report_clean(self, tmp_path, capsys):
+        """The shipped state, asserted (#56A).
+
+        `engine/scripts/wiki/` does not exist — the wiki scripts were extracted into a
+        plugin and `/wiki:*` owns the vault now. So on a real install NONE of the six
+        steps runs, yet the orchestrator printed `[study-phase] clean — no findings` and
+        exited 0: a claim of health produced from the absence of any measurement.
+        """
+        missing = tmp_path / "no-such-wiki-dir"
+        with patch.object(study_phase, "_wiki_scripts_dir", return_value=missing):
+            rc = study_phase.main([])
+        out = capsys.readouterr().out
+        assert rc == 2, f"exit {rc} claims a health it never measured"
+        assert "clean" not in out, out
+        assert "not-run" in out, out
+
     def test_unknown_advisor_exits_1(self, monkeypatch, tmp_path):
         _make_root(tmp_path)  # populates the agents registry (kai-cto)
         monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))

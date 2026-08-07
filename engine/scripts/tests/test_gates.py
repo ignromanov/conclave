@@ -20,6 +20,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import sys
 
 import pytest
 
@@ -323,6 +324,37 @@ def test_all_test_files_inside_declared_testpaths():
     )
 
 
+def test_skip_reasons_are_reported(tmp_path):
+    """A test that declines to run must say so under this repo's own pytest config.
+
+    The configured `-q` suppresses the skip list AND the `N passed, M skipped` trailer,
+    so a gate that skips itself reads as green in every local run. That is not
+    hypothetical: the ruff gate skipped for a whole session, an I001 rode into a commit,
+    and only CI — which passes `-rs` explicitly — caught it (#56B, GH#45).
+
+    Assert the effect, not the flag: run pytest against `pytest.ini` and require a skip
+    reason to survive. A config-string assertion would pass on any flag spelled `-rs`
+    even if some later addopt swallowed it again.
+    """
+    probe = tmp_path / "test_skip_probe.py"
+    probe.write_text(
+        "import pytest\n\n\ndef test_probe():\n    pytest.skip('CONCLAVE-SKIP-SENTINEL')\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-c", str(REPO_ROOT / "pytest.ini"), str(probe)],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    )
+    assert "CONCLAVE-SKIP-SENTINEL" in result.stdout, (
+        "skip-visibility gate FAIL — a skipped test's reason does not survive the "
+        "configured addopts, so a self-disarming gate is indistinguishable from a "
+        "passing one. Add `-rs` to pytest.ini addopts (#56B, GH#45).\n"
+        f"{result.stdout}{result.stderr}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # 2. import-check.sh (a) — dangling @import targets in skills/**/SKILL.md.
 # ---------------------------------------------------------------------------
@@ -516,3 +548,75 @@ def test_spin_out_gate_refuses_an_empty_pattern_set():
     still reports clean."""
     with pytest.raises(AssertionError, match="would check nothing"):
         _roster_base_leaks({})
+
+
+# ---------------------------------------------------------------------------
+# 9. Package-shadow gate — a regular package silently replaces a sibling module.
+#
+# `enginelib/roster/` was created beside `enginelib/roster.py`. Once the directory
+# carries an `__init__.py`, `import enginelib.roster` resolves to the PACKAGE and every
+# name the module exported is gone — no ImportError, no warning, just an API that stopped
+# existing (#73).
+#
+# The distinction is load-bearing and was verified by running it, not recalled: a directory
+# WITHOUT `__init__.py` is a PEP 420 namespace portion, and FileFinder still prefers the
+# sibling `.py`. So a bare-directory check would condemn harmless leftovers (a stray
+# `__pycache__` parent is exactly that) while a regular package is the only real shadow.
+# ---------------------------------------------------------------------------
+_PKG_SCAN_ROOT = SCRIPTS_ROOT
+_PKG_SCAN_SKIP = {"__pycache__", "node_modules", "build", "dist", ".venv", "worktrees"}
+
+
+def _shadowing_packages(root: pathlib.Path) -> list[str]:
+    """Regular packages that shadow a sibling module, as 'dir/ shadows dir.py' strings.
+
+    The skip set is matched against the path RELATIVE to root. Matching absolute parts
+    disables the gate wholesale the moment the checkout sits under a directory that
+    happens to be named in the set — this file was first written that way, and inside
+    `worktrees/<branch>/` it reported clean against a deliberately planted shadow.
+    """
+    hits = []
+    for init in root.rglob("__init__.py"):
+        pkg = init.parent
+        if pkg == root or _PKG_SCAN_SKIP & set(pkg.relative_to(root).parts):
+            continue
+        sibling = pkg.with_suffix(".py")
+        if sibling.is_file():
+            hits.append(f"{pkg.relative_to(root)}/ shadows {sibling.relative_to(root)}")
+    return sorted(hits)
+
+
+def test_no_regular_package_shadows_a_sibling_module():
+    assert _PKG_SCAN_ROOT.is_dir(), f"{_PKG_SCAN_ROOT} missing — gate would pass vacuously"
+    hits = _shadowing_packages(_PKG_SCAN_ROOT)
+    assert not hits, (
+        "package-shadow gate FAIL — a regular package takes import precedence over the "
+        "module of the same name, deleting its API without an error (#73):\n  "
+        + "\n  ".join(hits)
+        + "\nRemove the directory, or merge the module into its __init__.py."
+    )
+
+
+def test_shadow_detector_separates_regular_from_namespace_package(tmp_path):
+    """The detector, detected — and its one false-positive risk pinned.
+
+    A gate that only ever runs against a clean tree proves nothing about whether it can
+    fail. This builds both shapes and requires the regular package to be caught and the
+    namespace portion to be ignored, so neither a blind gate nor an over-eager one
+    survives.
+
+    The root deliberately sits under a directory named in the skip set: the first version
+    of this gate matched the skip set against absolute path parts, so every check inside
+    `worktrees/<branch>/` was skipped and the gate passed against a planted shadow. A root
+    in a neutral temp dir cannot reproduce that, which is why this one is not neutral.
+    """
+    root = tmp_path / "worktrees" / "some-branch"
+    (root / "regdir").mkdir(parents=True)
+    (root / "regdir" / "__init__.py").touch()
+    (root / "regdir.py").touch()
+    (root / "nsdir").mkdir()
+    (root / "nsdir" / "__pycache__").mkdir()
+    (root / "nsdir.py").touch()
+
+    hits = _shadowing_packages(root)
+    assert hits == ["regdir/ shadows regdir.py"], hits

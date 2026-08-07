@@ -12,14 +12,20 @@ Steps:
   6. wiki-link-check.sh --quiet     (informational)
 
 Exit codes:
-  0  = all steps clean (emit nothing to summary row)
+  0  = every step RAN and was clean (emit nothing to summary row)
   1  = error in orchestration itself
   2  = non-blocking findings (P1 stale, link violations, captures suggested)
+       OR a step that never ran (absent script / exit=1) — see below
   3  = P0 BLOCKING (wiki-audit-stale exit 3) — must triage before close-session
 
 Aggregate one-row study summary is printed to stdout:
-  study: capture:{N} · promoted:{N} · stale:P0:{N}/P1:{N} · link:{N}
+  study: capture:{N} · promoted:{N} · stale:P0:{N}/P1:{N} · link:{N} · steps-not-run:{N}
 Omit zero counters. Omit row entirely if all zero (caller checks exit code).
+
+`steps-not-run` exists because exit 0 was previously returned when the step scripts were
+absent — which, after the wiki extraction moved them out of `engine/scripts/wiki/` into the
+`/wiki:*` plugin, is every install: all six steps missing, `clean — no findings` on stdout
+(#56A). Omission asserts a check passed; a step that did not run asserts nothing.
 """
 from __future__ import annotations
 
@@ -136,6 +142,15 @@ class StudyResult:
             or self.link_violations > 0
         )
 
+    def ran_incompletely(self) -> bool:
+        """True when some step never produced a verdict — absent script or exit=1.
+
+        Distinct from has_findings(): a finding is something a step MEASURED, this is a
+        step that measured nothing. Conflating the two is what let the phase report
+        `clean` while every one of its six steps was missing (#56A).
+        """
+        return bool(self.errors)
+
     def summary_row(self) -> str:
         parts: list[str] = []
         if self.captures:
@@ -148,6 +163,12 @@ class StudyResult:
             parts.append(stale_str)
         if self.link_violations:
             parts.append(f"link:{self.link_violations}")
+        # Last, so a real finding leads the row — but never omitted: per
+        # output-formatting.md, omitting a row asserts the check passed, and a step that
+        # did not run has asserted nothing. `not-run` covers both causes truthfully; the
+        # per-step reasons go to stderr.
+        if self.errors:
+            parts.append(f"steps-not-run:{len(self.errors)}")
         if not parts:
             return ""
         glyph = "✗" if self.stale_p0 else "⚠"
@@ -286,7 +307,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 3
 
-    if res.has_findings():
+    # A step that never ran is a finding about the phase itself. Exit 0 here would repeat
+    # the defect this branch closes: the caller reads 0 as "all clean; omit the row".
+    if res.has_findings() or res.ran_incompletely():
         return 2
 
     return 0

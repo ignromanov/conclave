@@ -80,7 +80,7 @@ def _make_feedback_id(agent: str, session_ref: str, now: datetime) -> str:
     return f"fb-{ts}-{short}"
 
 
-def _reopen_matches(root: Path, meta: dict) -> None:
+def _reopen_matches(root: Path, meta: dict) -> list[str]:
     """Stamp re-occurred + reopened_from on any new item whose fingerprint matches a
     RESOLVED item (live index or archived), unless a live non-terminal duplicate
     already exists at that fingerprint (an ordinary open dup is not a regression).
@@ -90,6 +90,15 @@ def _reopen_matches(root: Path, meta: dict) -> None:
     never-silent-delete is honored (the archive is not mutated). Archive shards store
     whole reviews ({items:[...]}); the fingerprint is recomputed per item exactly as
     feedback_index does.
+
+    Abstains on a file-level-only match (#59). Without `location.section` the fingerprint
+    buckets an entire file+category, so any two script-defects in the same file collide
+    and the stamp asserts a regression that never happened — and 093 Component E reads
+    `re-occurred` as proof an earlier fix failed. Only the NEW item needs checking:
+    section is part of the hash, so if it has one, a match proves the resolved side named
+    the same section.
+
+    Returns the abstention notes, for the caller to surface.
     """
     import json
 
@@ -127,11 +136,23 @@ def _reopen_matches(root: Path, meta: dict) -> None:
                     fp = fingerprint(item.get("location", {}), item.get("category", ""))
                     resolved_fp.setdefault(fp, f"{review.get('feedback_id')}:{item.get('id')}")
 
+    abstained: list[str] = []
     for item in meta.get("items", []):
-        fp = fingerprint(item.get("location", {}), item.get("category", ""))
-        if fp in resolved_fp and fp not in live_nonterminal_fp:
-            item["status"] = "re-occurred"
-            item["reopened_from"] = resolved_fp[fp]
+        loc = item.get("location") or {}
+        fp = fingerprint(loc, item.get("category", ""))
+        if fp not in resolved_fp or fp in live_nonterminal_fp:
+            continue
+        if not str(loc.get("section") or "").strip():
+            abstained.append(
+                f"{item.get('id')}: fingerprint matches resolved {resolved_fp[fp]}, but "
+                f"location carries no `section` — a file-level match cannot tell a "
+                f"regression from a different defect in the same file. Left as-is; add "
+                f"`location.section` if this really is the same finding recurring."
+            )
+            continue
+        item["status"] = "re-occurred"
+        item["reopened_from"] = resolved_fp[fp]
+    return abstained
 
 
 def _finalize(path: Path) -> int:
@@ -150,7 +171,8 @@ def _finalize(path: Path) -> int:
     # 093 E: reopen fingerprint-matched regressions BEFORE validation so the stamped
     # status/provenance are validated too.
     from briefing.paths import repo_root
-    _reopen_matches(repo_root(), meta)
+    for note in _reopen_matches(repo_root(), meta):
+        print(f"  NOTE: reopen abstained — {note}", file=sys.stderr)
 
     try:
         Review.model_validate(dict(meta))

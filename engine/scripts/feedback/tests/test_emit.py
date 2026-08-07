@@ -276,37 +276,50 @@ def _run_finalize(tmp_path: Path, path: Path) -> subprocess.CompletedProcess:
 
 
 def _draft_review(tmp_path: Path, feedback_id: str,
-                  file: str = "foo.py", category: str = "script-defect") -> Path:
+                  file: str = "foo.py", category: str = "script-defect",
+                  section: str | None = None) -> Path:
     from briefing.frontmatter_io import write
     d = tmp_path / "ops" / "feedback" / "2026-07-10"
     d.mkdir(parents=True, exist_ok=True)
     p = d / f"{feedback_id}.md"
+    location: dict[str, str] = {"file": file}
+    if section:
+        location["section"] = section
     write(p, {"feedback_id": feedback_id, "agent": "sage-cto", "agent_type": "advisor",
               "session_ref": "s1", "skill_version": "sha256:aabbcc",
               "created": "2026-07-10T00:00:00Z", "updated_at": "2026-07-10T00:00:00Z",
               "_draft": True, "summary": "t", "below_threshold_count": 0,
               "items": [{"id": "i1", "category": category, "layer": "skill",
-                         "location": {"file": file}, "observation": "o",
+                         "location": location, "observation": "o",
                          "suggested_fix": "x", "severity": "high",
                          "frequency": "occasional", "evidence": "tc:1",
                          "status": "open"}]}, "")
     return p
 
 
-def _seed_archive_resolved(tmp_path: Path, fid: str = "fb-old-xxxxxx") -> None:
+def _seed_archive_resolved(tmp_path: Path, fid: str = "fb-old-xxxxxx",
+                           section: str | None = None) -> None:
     arch = tmp_path / "ops" / "feedback" / "_archive"
     arch.mkdir(parents=True, exist_ok=True)
+    location: dict[str, str] = {"file": "foo.py"}
+    if section:
+        location["section"] = section
     (arch / "2026-06.jsonl").write_text(_json.dumps({
         "feedback_id": fid,
-        "items": [{"id": "i1", "location": {"file": "foo.py"},
+        "items": [{"id": "i1", "location": location,
                    "category": "script-defect", "status": "resolved"}]}) + "\n")
 
 
 def test_finalize_reopens_on_archived_resolved_match(tmp_path):
     """A new item whose fingerprint matches an archived RESOLVED item is stamped
-    re-occurred + reopened_from at finalize (093 P1 T5, closes #89)."""
-    _seed_archive_resolved(tmp_path)
-    new = _draft_review(tmp_path, "fb-new-bbbbbb")
+    re-occurred + reopened_from at finalize (093 P1 T5, closes #89).
+
+    Both sides carry a section, so the fingerprint identifies one defect rather than a
+    whole file. Fingerprints are section-inclusive, so a match here proves both sides
+    named the SAME section — which is what makes 'the fix regressed' a defensible claim.
+    """
+    _seed_archive_resolved(tmp_path, section="parse_args")
+    new = _draft_review(tmp_path, "fb-new-bbbbbb", section="parse_args")
     res = _run_finalize(tmp_path, new)
     assert res.returncode == 0, res.stderr
     item = read(new)[0]["items"][0]
@@ -314,18 +327,36 @@ def test_finalize_reopens_on_archived_resolved_match(tmp_path):
     assert item["reopened_from"] == "fb-old-xxxxxx:i1"
 
 
+def test_finalize_abstains_when_the_match_is_file_level_only(tmp_path):
+    """A bare file+category match is not evidence a fix regressed (#59).
+
+    Without a section the fingerprint buckets an ENTIRE FILE: any two script-defects in
+    foo.py collide. Stamping re-occurred there writes false provenance into the ledger,
+    and 093 Component E reads that field as proof an earlier fix failed. Abstain, and say
+    why, so the author can add the section that would make the claim checkable.
+    """
+    _seed_archive_resolved(tmp_path)
+    new = _draft_review(tmp_path, "fb-new-eeeeee")
+    res = _run_finalize(tmp_path, new)
+    assert res.returncode == 0, res.stderr
+    item = read(new)[0]["items"][0]
+    assert item["status"] == "open"
+    assert "reopened_from" not in item or item["reopened_from"] is None
+    assert "section" in res.stderr.lower(), res.stderr
+
+
 def test_finalize_no_reopen_when_live_nonterminal_dup(tmp_path):
     """Guard: an ordinary still-open duplicate at the same fingerprint must NOT be
     misclassified as a regression even when an archived resolved match exists."""
     from feedback.schema import fingerprint
-    fp = fingerprint({"file": "foo.py"}, "script-defect")
-    _seed_archive_resolved(tmp_path)
+    fp = fingerprint({"file": "foo.py", "section": "parse_args"}, "script-defect")
+    _seed_archive_resolved(tmp_path, section="parse_args")
     idx = tmp_path / "ops" / "feedback" / "_index"
     idx.mkdir(parents=True, exist_ok=True)
     (idx / "index.jsonl").write_text(_json.dumps({
         "feedback_id": "fb-live-cccccc", "item_id": "i9",
         "fingerprint": fp, "status": "accepted"}) + "\n")
-    new = _draft_review(tmp_path, "fb-new-dddddd")
+    new = _draft_review(tmp_path, "fb-new-dddddd", section="parse_args")
     res = _run_finalize(tmp_path, new)
     assert res.returncode == 0, res.stderr
     item = read(new)[0]["items"][0]
