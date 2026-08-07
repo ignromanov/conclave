@@ -78,6 +78,41 @@ _DATE_TIME_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{4}-")
 _WORD_CHAR = re.compile(r"[a-z0-9]")
 
 
+# Config names the advisor mid-token by design, so it is rewritten token-wise —
+# with two exceptions, both cases of a word that only LOOKS like an id.
+_YAML_KEY_LEAD = re.compile(r"^[ \t-]*$")
+_COMMAND_PREFIX = "/conclave:"
+
+
+def _rewrite_config(text: str, old: str, new: str) -> tuple[str, int]:
+    """Whole-token rewrite of *text*, skipping words that are not identities.
+
+    A **YAML key** is a schema word: every router carries a `forge:` provenance
+    block, and `forge` is also an advisor id, so a blind rewrite renamed the key
+    that `engine model bump` looks the block up by.
+
+    A **slash command** is a CODE-side name. `/conclave:forge` is the shipped
+    meta-skill and keeps its name when the advisor's id moves; rewriting the
+    reference points the reader at a command that does not exist. (The router
+    skill `/conclave-<id>` is a different surface — it IS named for the advisor
+    and does move, which is why the separator is what tells them apart.)
+    """
+    count = 0
+
+    def repl(m: re.Match[str]) -> str:
+        nonlocal count
+        start, end = m.span()
+        line_start = text.rfind("\n", 0, start) + 1
+        if text[end:end + 1] == ":" and _YAML_KEY_LEAD.fullmatch(text[line_start:start]):
+            return m.group(0)
+        if text[max(0, start - len(_COMMAND_PREFIX)):start] == _COMMAND_PREFIX:
+            return m.group(0)
+        count += 1
+        return new
+
+    return token_re(old).sub(repl, text), count
+
+
 def _id_positions(part: str, old: str, *, is_name: bool) -> list[int]:
     """Offsets in *part* where *old* stands in an identity position.
 
@@ -182,7 +217,11 @@ def _classify(path: Path, data_root: Path, claude_dirs: list[Path]) -> str:
         if rel is None:
             continue
         head = rel.parts[0] if rel.parts else ""
-        if head in ("agents", "skills") or rel.name == "CLAUDE.md":
+        # `CLAUDE.md` is config only at the TOP of a claude dir, where it carries
+        # the roster table. Matching it at any depth reached a git worktree of the
+        # engine repo parked at `.claude/worktrees/…` and offered to edit that
+        # checkout's own seed — a different repo, and one this rename cannot roll back.
+        if head in ("agents", "skills") or rel.as_posix() == "CLAUDE.md":
             return CONFIG
         return UNCLASSIFIED
 
@@ -443,7 +482,7 @@ def plan(old: str, new: str) -> RenamePlan:
                 continue
             acted = dst != f
             if cls == CONFIG:
-                n = len(rx.findall(text))
+                _, n = _rewrite_config(text, old, new)
                 if n:
                     p.edits.append(Edit(dst, cls, "token", f"{old} → {new} ×{n}"))
                     acted = True
@@ -573,7 +612,7 @@ def apply(p: RenamePlan) -> dict[str, int]:
         if path.name.endswith(".jsonl"):
             new_text, _ = _rewrite_jsonl(text, p.old, p.new)
         elif any(e.kind == "token" for e in p.edits if e.path == path):
-            new_text = token_re(p.old).sub(p.new, text)
+            new_text, _ = _rewrite_config(text, p.old, p.new)
         else:
             new_text, _ = _rewrite_fields(text, p.old, p.new)
         if new_text != text:

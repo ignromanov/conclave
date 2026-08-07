@@ -53,6 +53,14 @@ def _instance(tmp: Path) -> dict[str, Path]:
         tmp / ".claude" / "skills" / f"conclave-{OTHER}" / "SKILL.md",
         f"---\nname: conclave-{OTHER}\n---\n\nEscalate perf questions to {OLD}.\n",
     )
+    # Two things inside config that LOOK like the id and are not: the router's
+    # provenance block is keyed `<meta-advisor>:` (a schema key), and a slash
+    # command is a CODE-side name this rename does not own.
+    p["router_meta"] = _w(
+        tmp / ".claude" / "skills" / f"conclave-{OTHER}" / "memory" / "personality.md",
+        f"---\n{OLD}:\n  model-version: 1.4.0\n  hired-by: {OLD}\n---\n\n"
+        f"> Self-chosen identity. Mutated only via `/conclave:{OLD} evolve`.\n",
+    )
     p["claude_md"] = _w(
         tmp / ".claude" / "CLAUDE.md",
         f"| `team.{OLD}` | Engineering advisor |\n| `team.{OTHER}` | Growth advisor |\n",
@@ -310,6 +318,26 @@ def test_config_cross_references_in_other_advisors_are_rewritten(applied):
     assert OLD not in body
 
 
+def test_config_yaml_key_named_like_the_advisor_is_a_schema_key(applied):
+    """Every router carries a `forge:` provenance block. `forge` is also an
+    advisor id, so the whole-token replace renamed the KEY as well — and
+    `engine model bump`, which reads that block by name, would stop finding it.
+
+    A key is a schema word; only the value beside it is an identity."""
+    _, p, _ = applied
+    body = p["router_meta"].read_text()
+    assert f"\n{OLD}:\n" in body, "the provenance key was rewritten"
+    assert f"hired-by: {NEW}" in body, "the value beside it was not"
+
+
+def test_config_slash_command_is_a_code_name(applied):
+    """`/conclave:forge` is the shipped meta-skill's command. It lives in CODE
+    and keeps its name when the advisor's id moves; rewriting the reference
+    points the operator at a command that does not exist."""
+    _, p, _ = applied
+    assert f"/conclave:{OLD} evolve" in p["router_meta"].read_text()
+
+
 def test_config_roster_surfaces_are_rewritten(applied):
     _, p, _ = applied
     for key in ("claude_md", "manifest", "hot"):
@@ -419,6 +447,26 @@ def test_the_data_roots_own_claude_md_is_config_not_unclassified(tmp_path):
     assert r.returncode == 0, r.stderr
     config_block = r.stdout.split("config", 1)[1].split("\n\n", 1)[0]
     assert ".claude/CLAUDE.md" in config_block, r.stdout
+
+
+def test_only_the_top_level_claude_md_is_config(tmp_path):
+    """`.claude/CLAUDE.md` carries the roster table. A `CLAUDE.md` nested deeper
+    is someone else's project seed.
+
+    This instance keeps a git worktree of the ENGINE repo at
+    `.claude/worktrees/104-p0-efficacy-gate/`, and matching `CLAUDE.md` at any
+    depth made the planner offer to edit that checkout's own seed file — a
+    different repo, from a rename whose rollback story covers neither."""
+    _instance(tmp_path)
+    nested = _w(
+        tmp_path / ".claude" / "worktrees" / "some-branch" / "CLAUDE.md",
+        f"A checkout that happens to mention {OLD}.\n",
+    )
+    before = nested.read_text(encoding="utf-8")
+    r = _rename("--from", OLD, "--to", NEW, "--apply", "--confirm", tmp=tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert nested.read_text(encoding="utf-8") == before
+    assert (tmp_path / ".claude" / "CLAUDE.md").read_text(encoding="utf-8").count(NEW) == 1
 
 
 def test_the_run_log_is_excluded_even_when_its_location_is_overridden(tmp_path):
