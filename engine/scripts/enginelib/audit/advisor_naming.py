@@ -30,10 +30,14 @@ def run(agents_dir: Path) -> Findings:
     if not agents_dir.is_dir():
         return findings
 
+    # `is_file()` follows the link: the project's agents dir is a symlink layer
+    # over the DATA tree, so retiring an advisor deletes the target and can leave
+    # the link behind. A glob still sees it, and the audit told the operator to
+    # migrate the memory of a file that does not exist.
     offenders = sorted(
         md.stem
         for md in agents_dir.glob("*.md")
-        if not md.stem.startswith("exec-") and not is_valid_advisor_id(md.stem)
+        if md.is_file() and not md.stem.startswith("exec-") and not is_valid_advisor_id(md.stem)
     )
     if not offenders:
         return findings
