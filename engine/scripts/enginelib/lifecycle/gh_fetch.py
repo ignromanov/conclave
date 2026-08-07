@@ -29,6 +29,16 @@ from pathlib import Path
 from enginelib import gh, roster, snapshot
 from enginelib.paths import consumer_git_cwd, ensure_dir, snapshot_path_for_advisor
 
+
+def _label_for(advisor: str) -> str:
+    """The id this advisor's issues are labelled with.
+
+    Was `advisor.split("-")[0]`. GitHub matches labels exactly, so querying
+    `advisor:kai` for `kai-cto` returned nothing, forever, without an error —
+    the snapshot then cached that empty result as fact.
+    """
+    return advisor
+
 # owner/repo out of an ssh (git@host:owner/repo.git) or https URL, .git optional.
 _REMOTE_SLUG_RE = re.compile(r"[:/]([^/:]+/[^/:]+?)(?:\.git)?/?$")
 
@@ -179,11 +189,10 @@ def run(advisor: str, no_cache: bool = False) -> str:
         if not no_cache and not snapshot.snapshot_is_stale(cache_path, ttl):
             return "hit"
 
-        # Map canonical advisor id (e.g. kai-cto) → GH label stem (advisor:kai).
-        stem = advisor.split("-")[0]
+        label_id = _label_for(advisor)
 
         try:
-            issues_json = gh.search_issues(stem, repos)
+            issues_json = gh.search_issues(label_id, repos)
         except RuntimeError:
             return "gh-error"
 
@@ -200,7 +209,7 @@ def run(advisor: str, no_cache: bool = False) -> str:
         sticky_labels = roster.roster_get_list("github.sticky_labels")
         if sticky_labels:
             try:
-                closed_json = gh.search_closed_by_labels(stem, repos, sticky_labels)
+                closed_json = gh.search_closed_by_labels(label_id, repos, sticky_labels)
             except (RuntimeError, ValueError):
                 closed_json = "[]"
             issues_json = _merge_issue_json(issues_json, closed_json)

@@ -70,6 +70,13 @@ def _phantom_skills(args: argparse.Namespace) -> int:
     return 0
 
 
+def _advisor_naming(args: argparse.Namespace) -> int:
+    from enginelib.audit import advisor_naming
+    from enginelib.paths import project_agents_dir
+
+    return _emit(advisor_naming.run(project_agents_dir()))
+
+
 def _registry_consistency(args: argparse.Namespace) -> int:
     from enginelib.audit import registry_consistency
     from enginelib.paths import project_claude_dir
@@ -203,6 +210,7 @@ _AUDITS: dict[str, Callable[[argparse.Namespace], int]] = {
     "architecture-doc": _architecture_doc,
     "phantom-skills": _phantom_skills,
     "registry-consistency": _registry_consistency,
+    "advisor-naming": _advisor_naming,
     "overlays": _overlays,
     "agent-configs": _agent_configs,
     "skills": _skills,

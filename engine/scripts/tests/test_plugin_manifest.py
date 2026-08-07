@@ -46,7 +46,7 @@ def test_agents_tree():
     # (D-9: exec-argus-test removed — superseded pre-rename twin of exec-iris-test, argus→iris 2026-05-08)
     agents = (ROOT / "agents")
     names = {p.stem for p in agents.glob("*.md")}
-    assert "forge" in names
+    assert "forge-chro" in names
     # (#61: exec-scout-dev retired — self-declared atlas duplicate, no real contract
     #  difference; retiring it also frees the `scout` name for exec-scout-research.)
     expected_exec = {f"exec-{x}" for x in

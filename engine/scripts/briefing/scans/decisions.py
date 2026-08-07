@@ -13,6 +13,7 @@ Top 5 across both sources.
 from __future__ import annotations
 
 from briefing.scans import ScanCtx
+from enginelib.advisors import files_for_advisor
 
 _PLACEHOLDER = "_(no decisions recorded yet)_"
 
@@ -32,8 +33,7 @@ def build(ctx: ScanCtx) -> str:
     # 1. Advisor-specific decisions.
     dec_dir = ctx.decisions_dir
     if dec_dir.is_dir():
-        pattern = f"*-{ctx.advisor}-*.md"
-        stems.extend(f.stem for f in dec_dir.glob(pattern))
+        stems.extend(f.stem for f in files_for_advisor(dec_dir, ctx.advisor, field="by"))
 
     # 2. Cross-cutting Y-statements from ops/decisions/.
     ops_dec_dir = ctx.repo_root / "ops" / "decisions"

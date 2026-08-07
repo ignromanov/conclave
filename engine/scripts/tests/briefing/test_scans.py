@@ -259,7 +259,7 @@ class TestQueue:
     def test_missing_cache_returns_placeholder(self, tmp_path):
         ctx = make_ctx(tmp_path)
         result = queue.build(ctx)
-        assert "_(no open issues for advisor:kai)_" == result
+        assert "_(no open issues for advisor:kai-cto)_" == result
 
     def test_formats_rows_as_list(self, tmp_path):
         ctx = make_ctx(tmp_path)
@@ -276,7 +276,7 @@ class TestQueue:
         ctx = make_ctx(tmp_path)
         _make_gh_cache(ctx.gh_cache_dir, ctx.advisor, [])
         result = queue.build(ctx)
-        assert "_(no open issues for advisor:kai)_" == result
+        assert "_(no open issues for advisor:kai-cto)_" == result
 
     @_NEEDS_INSTANCE
     def test_real_kai_cto_queue(self):
@@ -303,7 +303,7 @@ class TestQueue:
             progress_path=repo_root() / "progress-summary.md",
         )
         result = queue.build(ctx)
-        assert "_(no open issues for advisor:kai)_" not in result
+        assert "_(no open issues for advisor:kai-cto)_" not in result
         # Queue rows now carry a repo prefix (e.g. "voidpay-ai#140") per enrichment #14.
         assert result.startswith("- ")
 

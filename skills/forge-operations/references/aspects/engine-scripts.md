@@ -1,4 +1,4 @@
-# Aspect: Forge Scripts
+# Aspect: Engine Scripts
 
 Modify the Python engine under `engine/scripts/` — the `engine <noun> <verb>` CLI (argparse adapters in
 `engine/cmd/`) over the I/O-free `enginelib/` core.

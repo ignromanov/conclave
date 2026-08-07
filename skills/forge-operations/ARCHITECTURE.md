@@ -224,7 +224,7 @@ graph LR
         subgraph asp[references/aspects/]
             ID[identity.md]
             RF[references.md]
-            FS[forge-scripts.md]
+            FS[engine-scripts.md]
             LS[lifecycle-skill.md]
             AF[agent-frontmatter.md]
             CO[contract-overlays.md]

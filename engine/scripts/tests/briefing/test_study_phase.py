@@ -298,7 +298,7 @@ class TestMainExitCodes:
             "wiki-bridge-rebuild.sh": ("", 0),
         })
         with patch.object(study_phase, "_wiki_scripts_dir", return_value=wiki_dir):
-            rc = study_phase.main(["--advisor", "forge"])
+            rc = study_phase.main(["--advisor", "forge-chro"])
         assert rc == 0
 
     def test_p0_blocking_exits_3(self, tmp_path, monkeypatch):

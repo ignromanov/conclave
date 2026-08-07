@@ -83,8 +83,9 @@ def _last_session(advisor: str) -> str:
     sess_dir = sessions_dir()
     if not sess_dir.is_dir():
         return "—"
-    pattern = f"*-{advisor}-*.md"
-    matches = list(sess_dir.glob(pattern))
+    from enginelib.advisors import files_for_advisor
+
+    matches = files_for_advisor(sess_dir, advisor, field="advisor")
     if not matches:
         return "—"
     stem = sorted((f.stem for f in matches), reverse=True)[0]

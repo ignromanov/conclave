@@ -189,10 +189,10 @@ class TestKnownAdvisors:
         assert session_init._known_advisors(root) == {"privacy-trust", "growth-monetization"}
 
     def test_excludes_non_advisor_agents(self, tmp_path):
-        """forge and exec-* stems are meta/executor agents — never hired advisors."""
+        """forge-chro and exec-* stems are meta/executor agents — never hired advisors."""
         root = _make_root(tmp_path)
         _write(root / ".claude" / "agents" / "privacy-trust.md", "# advisor\n")
-        _write(root / ".claude" / "agents" / "forge.md", "# meta\n")
+        _write(root / ".claude" / "agents" / "forge-chro.md", "# meta\n")
         _write(root / ".claude" / "agents" / "exec-coder.md", "# exec\n")
         assert session_init._known_advisors(root) == {"privacy-trust"}
 
@@ -667,19 +667,19 @@ class TestRenderDashboard:
 
 class TestForgeMetaAdvisor:
     def test_meta_advisors_is_forge(self):
-        """AC11 anchor: the meta set names forge explicitly."""
-        assert "forge" in session_init.META_ADVISORS
+        """AC11 anchor: the meta set names the forge advisor explicitly."""
+        assert "forge-chro" in session_init.META_ADVISORS
 
     def test_forge_absent_from_dashboard(self, tmp_path):
         """AC10: forge is not auto-enumerated among hired advisors."""
         agents = tmp_path / ".claude" / "agents"
         agents.mkdir(parents=True)
-        (agents / "forge.md").write_text("---\nname: forge\n---\n")
+        (agents / "forge-chro.md").write_text("---\nname: forge-chro\n---\n")
         (agents / "iris.md").write_text("---\nname: iris\n---\n")
         assert session_init._known_advisors(tmp_path) == {"iris"}
 
     def test_forge_admitted_by_main(self, monkeypatch, tmp_path, capsys):
-        """AC9: session_init --advisor forge is not rejected by main()."""
+        """AC9: session_init --advisor forge-chro is not rejected by main()."""
         monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
         (tmp_path / "ops").mkdir()
         (tmp_path / ".claude").mkdir()
@@ -687,9 +687,9 @@ class TestForgeMetaAdvisor:
             session_init, "_advisor_summary",
             lambda a, r: (0, [f"[session-init] advisor={a}"]),
         )
-        rc = session_init.main(["--advisor", "forge"])
+        rc = session_init.main(["--advisor", "forge-chro"])
         assert rc == 0
-        assert "advisor=forge" in capsys.readouterr().out
+        assert "advisor=forge-chro" in capsys.readouterr().out
 
     def test_gh_fetch_skipped_for_meta(self, monkeypatch, tmp_path):
         """AC9: gh-fetch is skipped for meta-advisors (forge has no domain GH board)."""
@@ -702,7 +702,7 @@ class TestForgeMetaAdvisor:
 
         monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
         monkeypatch.setattr(session_init.subprocess, "run", _fake_run)
-        code, lines = session_init._step1_load_briefing("forge", tmp_path)
+        code, lines = session_init._step1_load_briefing("forge-chro", tmp_path)
         assert called["gh"] is False
         assert any("gh-fetch: skipped (meta-advisor)" in ln for ln in lines)
 

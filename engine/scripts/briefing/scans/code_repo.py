@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from briefing.scans import ScanCtx
+from enginelib.advisors import files_for_advisor
 
 _PLACEHOLDER = "_(no code repo in cwd — running from .ai/ or non-git directory)_"
 
@@ -120,8 +121,7 @@ def _last_session_mtime(ctx: ScanCtx) -> datetime | None:
     if not sess_dir.is_dir():
         return None
 
-    pattern = f"*-{ctx.advisor}-*.md"
-    files = list(sess_dir.glob(pattern))
+    files = files_for_advisor(sess_dir, ctx.advisor, field="advisor")
     if not files:
         return None
 

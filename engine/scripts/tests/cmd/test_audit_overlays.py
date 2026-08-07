@@ -107,8 +107,11 @@ def test_not_declared(tmp_path):
     )
 
 
-def test_forge_excluded(tmp_path):
-    """team.forge overlays are NOT scanned even without a base file → no output, exit 0."""
+def test_forge_overlays_are_scanned_under_the_legacy_prefix(tmp_path):
+    """REVERSED: forge's overlays used to be exempt from this audit, which left the
+    one advisor shipped in every instance as the only one whose contract drift
+    nothing could detect. Spec 100 §3.3 records them as real self-mutation
+    contracts, and the operator's ruling makes forge an ordinary advisor."""
     skills, contracts, env = _setup(tmp_path)
 
     (skills / "team.forge" / "contracts").mkdir(parents=True)
@@ -120,7 +123,7 @@ def test_forge_excluded(tmp_path):
     r = run_engine("audit", "overlays", env=env)
 
     assert r.returncode == 0
-    assert r.stdout.strip() == ""
+    assert "team.forge overlay some-contract has no base" in r.stdout, r.stdout
 
 
 def test_conclave_prefix_overlay_scanned(tmp_path):
@@ -139,8 +142,8 @@ def test_conclave_prefix_overlay_scanned(tmp_path):
     assert f"WARN: {adv} overlay {contract} has no base in team.forge/contracts/" in r.stdout
 
 
-def test_conclave_forge_excluded(tmp_path):
-    """#54: conclave-forge (current-layout meta) overlays are excluded by bare id."""
+def test_forge_overlays_are_scanned_under_the_current_prefix(tmp_path):
+    """The conclave-<id> twin of the reversal above — no advisor is exempt."""
     skills, contracts, env = _setup(tmp_path)
     (skills / "conclave-forge" / "contracts").mkdir(parents=True)
     (skills / "conclave-forge" / "contracts" / "some-contract.md").write_text(
@@ -148,4 +151,4 @@ def test_conclave_forge_excluded(tmp_path):
     )
     r = run_engine("audit", "overlays", env=env)
     assert r.returncode == 0
-    assert r.stdout.strip() == ""
+    assert "conclave-forge overlay some-contract has no base" in r.stdout, r.stdout

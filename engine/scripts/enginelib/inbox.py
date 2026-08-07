@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from enginelib.advisors import advisor_label
+
 
 @dataclass
 class IssueSpec:
@@ -41,7 +43,7 @@ def parse_inbox(text: str, advisor: str) -> list[IssueSpec]:
         title = remainder.rstrip()
         if not title:
             continue
-        labels = [f"advisor:{advisor}"]
+        labels = [advisor_label(advisor)]
         prio = _detect_priority(title)
         if prio:
             labels.append(prio)

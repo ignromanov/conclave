@@ -178,13 +178,13 @@ class TestQueueIssueAge:
     def test_missing_cache_returns_placeholder(self, tmp_path):
         ctx = make_ctx(tmp_path)
         result = queue.build(ctx)
-        assert result == "_(no open issues for advisor:kai)_"
+        assert result == "_(no open issues for advisor:kai-cto)_"
 
     def test_empty_items_returns_placeholder(self, tmp_path):
         ctx = make_ctx(tmp_path)
         _make_gh_cache(ctx.gh_cache_dir, ctx.advisor, [])
         result = queue.build(ctx)
-        assert result == "_(no open issues for advisor:kai)_"
+        assert result == "_(no open issues for advisor:kai-cto)_"
 
 
 # ---------------------------------------------------------------------------

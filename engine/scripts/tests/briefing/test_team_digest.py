@@ -43,7 +43,7 @@ class TestDefaultAdvisorsRegistry:
         agents.mkdir(parents=True)
         (agents / "sage-cto.md").write_text("---\n---\n")
         (agents / "iris.md").write_text("---\n---\n")
-        (agents / "forge.md").write_text("---\n---\n")  # META, excluded
+        (agents / "forge-chro.md").write_text("---\n---\n")  # META, excluded
         result = team_digest._default_advisors(tmp_path)
         assert set(result) == {"iris", "sage-cto"}
         assert "kai-cto" not in result  # no VoidPay fallthrough

@@ -127,10 +127,10 @@ def test_missing_personality_still_placeholders(ai_root, tmp_path, monkeypatch):
 
 def test_forge_meta_advisor_builds(ai_root):
     _seed_progress(ai_root)
-    r = run_engine("briefing", "build", "forge")
+    r = run_engine("briefing", "build", "forge-chro")
     assert "is not in the instance registry" not in r.stderr
     assert r.returncode == 0, f"stderr: {r.stderr[:400]}"
-    assert (ai_root / "agent-memory" / "advisors" / "briefings" / "forge.md").is_file()
+    assert (ai_root / "agent-memory" / "advisors" / "briefings" / "forge-chro.md").is_file()
 
 
 def test_forge_meta_advisor_regenerates(ai_root):
@@ -143,14 +143,14 @@ def test_forge_meta_advisor_regenerates(ai_root):
     _seed_progress(ai_root)
     scripts_dir = Path(__file__).resolve().parents[2]  # engine/scripts
     r = subprocess.run(
-        [sys.executable, "-m", "briefing.regen", "forge"],
+        [sys.executable, "-m", "briefing.regen", "forge-chro"],
         capture_output=True,
         text=True,
         cwd=str(scripts_dir),
     )
-    assert "skipping unknown advisor: forge" not in r.stderr
+    assert "skipping unknown advisor: forge-chro" not in r.stderr
     assert r.returncode == 0, f"stderr: {r.stderr[:400]}"
-    assert (ai_root / "agent-memory" / "advisors" / "briefings" / "forge.md").is_file()
+    assert (ai_root / "agent-memory" / "advisors" / "briefings" / "forge-chro.md").is_file()
 
 
 # ---------------------------------------------------------------------------

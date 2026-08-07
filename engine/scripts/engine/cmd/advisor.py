@@ -48,6 +48,28 @@ def _scaffold_router(args) -> int:
     return 0
 
 
+def _rename(args) -> int:
+    from enginelib import rename
+
+    args._runlog_verb = "advisor-rename"
+    args._runlog_args = f"from={args.old or ''},to={args.new or ''},apply={args.apply}"
+    if args.apply and not args.confirm:
+        print("--apply requires --confirm (this tree has no git rollback)", file=sys.stderr)
+        return 1
+    try:
+        plan = rename.plan(args.old or "", args.new or "")
+    except FileExistsError as e:
+        print(str(e), file=sys.stderr)
+        return 2
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    if args.apply:
+        rename.apply(plan)
+    print("\n".join(rename.render(plan, applied=args.apply)))
+    return 0
+
+
 def register(sub) -> None:
     p = sub.add_parser("advisor", help="Advisor management commands.")
     vsub = p.add_subparsers(dest="advisor_verb", required=True)
@@ -68,3 +90,23 @@ def register(sub) -> None:
         help="Overwrite even an enriched wrapper (default: skip to preserve enrichment).",
     )
     r.set_defaults(func=_scaffold_router)
+
+    rn = vsub.add_parser(
+        "rename",
+        help="Change an advisor id across config, history and caches. --dry-run is the default.",
+    )
+    rn.add_argument("--from", dest="old", default="", help="Current advisor slug.")
+    rn.add_argument("--to", dest="new", default="", help="New advisor slug (^[a-z0-9-]+$).")
+    rn.add_argument(
+        "--dry-run", action="store_true", default=False,
+        help="Report the full plan without writing (default behavior).",
+    )
+    rn.add_argument(
+        "--apply", action="store_true", default=False,
+        help="Perform the rename. Must be combined with --confirm.",
+    )
+    rn.add_argument(
+        "--confirm", action="store_true", default=False,
+        help="Required safety gate when using --apply.",
+    )
+    rn.set_defaults(func=_rename)
