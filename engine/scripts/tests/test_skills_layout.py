@@ -35,7 +35,7 @@ FORGE_PROTOCOLS = ["hire", "evolve", "audit", "audit-skills", "compose-roster"]
 def test_no_dangling_old_contract_paths():
     # the MOVED contracts must no longer be referenced at their old homes;
     # scripts STAY at engine/scripts/ (gate-resolved) so script refs are untouched here.
-    # CHANGELOG.md is append-only history (may quote old paths in dated entries) — skip it.
+    # CHANGELOG.md only grows new entries at the top (may quote old paths in dated entries) — skip it.
     bad = re.compile(r'engine/contracts/|team\.forge/contracts/')
     hits = []
     for md in _plugin_md_files():

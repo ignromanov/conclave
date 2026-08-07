@@ -226,7 +226,7 @@ def _valid_item_with_skill(item_id: str = "it-1", status: str = "resolved",
 
 
 def test_archive_row_preserves_every_item_and_the_body(tmp_path):
-    """Principle VI (never silent-delete): `unlink()` may only collapse a projection.
+    """Principle VI: `unlink()` may only collapse a projection, not destroy the record.
 
     The archive row is the record; hot.md is a cache. Before this test, the row carried
     only a summary + item_count, hot.md deduped items on (feedback_id, skill_slug) and

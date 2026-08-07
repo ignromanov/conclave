@@ -67,7 +67,7 @@ def test_archived_handoff_leaves_resume_scan(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# 3. Never-silent-delete: refuse to clobber an already-archived file
+# 3. Refuse to clobber an already-archived file
 # ---------------------------------------------------------------------------
 def test_refuses_to_overwrite_archived(tmp_path):
     d = tmp_path / "handoffs"

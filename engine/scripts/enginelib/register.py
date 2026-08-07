@@ -178,7 +178,7 @@ def create_executor(
     memory_content = (
         f"# Memory — {opts.chosen_name} (exec-{opts.chosen_name}-{opts.role})\n"
         "\n"
-        "> Flaky-ledger style. ≤50 lines hard cap. Append-only."
+        "> Flaky-ledger style. ≤50 lines hard cap. Only new entries are appended here."
         " Oldest entries pruned manually on overflow.\n"
         "\n"
         "## Burns + wins\n"

@@ -111,8 +111,8 @@ def test_scaffold_creates_a_duty_that_passes_validation(tmp_path):
 
 
 def test_scaffold_refuses_to_overwrite(tmp_path):
-    """Never-silent-delete (VISION §6). A second scaffold must not erase what the agent
-    wrote into the first one."""
+    """A second scaffold must not erase what the agent wrote into the first one — it
+    refuses rather than clobbers."""
     _run("scaffold", "--advisor", "sage-cto", "--id", "d_new", tmp=tmp_path)
     target = tmp_path / ".claude" / "skills" / "conclave-sage-cto" / "duties" / "d_new.md"
     target.write_text(CLEAN_DUTY, encoding="utf-8")
