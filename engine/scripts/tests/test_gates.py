@@ -20,6 +20,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import sys
 
 import pytest
 
@@ -320,6 +321,37 @@ def test_all_test_files_inside_declared_testpaths():
         "(they run in NO suite):\n  "
         + "\n  ".join(orphans)
         + "\nAdd their suite dir to pytest.ini testpaths."
+    )
+
+
+def test_skip_reasons_are_reported(tmp_path):
+    """A test that declines to run must say so under this repo's own pytest config.
+
+    The configured `-q` suppresses the skip list AND the `N passed, M skipped` trailer,
+    so a gate that skips itself reads as green in every local run. That is not
+    hypothetical: the ruff gate skipped for a whole session, an I001 rode into a commit,
+    and only CI — which passes `-rs` explicitly — caught it (#56B, GH#45).
+
+    Assert the effect, not the flag: run pytest against `pytest.ini` and require a skip
+    reason to survive. A config-string assertion would pass on any flag spelled `-rs`
+    even if some later addopt swallowed it again.
+    """
+    probe = tmp_path / "test_skip_probe.py"
+    probe.write_text(
+        "import pytest\n\n\ndef test_probe():\n    pytest.skip('CONCLAVE-SKIP-SENTINEL')\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-c", str(REPO_ROOT / "pytest.ini"), str(probe)],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    )
+    assert "CONCLAVE-SKIP-SENTINEL" in result.stdout, (
+        "skip-visibility gate FAIL — a skipped test's reason does not survive the "
+        "configured addopts, so a self-disarming gate is indistinguishable from a "
+        "passing one. Add `-rs` to pytest.ini addopts (#56B, GH#45).\n"
+        f"{result.stdout}{result.stderr}"
     )
 
 
