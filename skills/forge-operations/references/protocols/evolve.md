@@ -93,3 +93,14 @@ Each mutation to the advisor model happens via a named aspect. Load the aspect r
 - `Edit` on `.claude/skills/team.*/memory/BRIEFING.md` — file must not exist
 - `Edit` on `.claude/skills/team.*/memory/topics/*` — structure deprecated
 - Direct `Edit` on `.ai/agent-memory/advisors/**` — scripts only
+
+### Changing an advisor id
+
+`engine advisor rename --from <old> --to <new>` is the script for this. Never do it by hand:
+the id appears in live config, in the record, in derived caches and in dated evidence, and each
+wants different treatment — the record keeps its prose, the caches are dropped rather than
+carried forward, and `ops/archive/` + `ops/proof/` must keep naming the id that existed then.
+
+Dry-run is the default and prints the whole plan; mutation needs `--apply --confirm`. Read the
+plan before confirming — in particular the `unclassified` and `prose-only` sections, which list
+what the command deliberately did not touch.
