@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -50,6 +52,25 @@ def _review_content(text: str) -> tuple[int, int]:
     return n_items, len(body)
 
 
+def _walk_files(root: Path) -> Iterator[Path]:
+    """Every file under `root`, pruning `_SKIP_DIRS` during the walk instead of filtering them
+    out after the fact.
+
+    `Path.rglob` cannot prune. It descended into `.git/` and only then were those paths discarded,
+    so a snapshot taken while git was packing objects raced a directory that vanished mid-scan and
+    the WALK ITSELF raised FileNotFoundError on `.git/objects/<xx>` — the per-file `except OSError`
+    below sits inside the loop body and never gets the chance to run. Pruning removes the race and
+    the wasted traversal at once.
+
+    `os.walk` also swallows scandir errors by default (`onerror=None`), so a directory that
+    disappears in a tree we DO care about drops out of the walk rather than aborting the snapshot.
+    """
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+        for name in filenames:
+            yield Path(dirpath) / name
+
+
 def take(root: Path) -> Snapshot:
     files: dict[str, str] = {}
     reviews: dict[str, str] = {}
@@ -57,8 +78,9 @@ def take(root: Path) -> Snapshot:
     archive_rows: dict[str, dict] = {}
     runlog: list[str] = []
 
-    for path in root.rglob("*"):
-        if not path.is_file() or any(part in _SKIP_DIRS for part in path.parts):
+    for path in _walk_files(root):
+        # `is_file()` still matters: a file can vanish between the walk listing it and this line.
+        if not path.is_file():
             continue
         rel = str(path.relative_to(root))
         try:

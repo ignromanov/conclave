@@ -12,6 +12,8 @@ import pytest
 from evals.fixture import (
     CHARTER_RELPATH,
     REAL_PATH_PLACEHOLDER,
+    _build_path_token_re,
+    _home_roots,
     assert_no_leakage,
     build_fixture,
     find_real_path_carriers,
@@ -19,6 +21,37 @@ from evals.fixture import (
 
 # [0]=evals [1]=tests [2]=scripts [3]=engine [4]=repo root
 REPO = pathlib.Path(__file__).resolve().parents[4]
+
+
+# ---------------------------------------------------------------------------
+# The home-root derivation. Pinned on every platform, because the bug it replaces was
+# invisible on exactly one: `_PATH_TOKEN_RE` hardcoded `/Users/`, so on Linux the scrub saw no
+# absolute home path at all and three tests below passed only on a macOS machine. The scrub
+# tests themselves cannot catch a regression here — they run against whatever home the host
+# has — so the derivation is exercised directly against simulated homes instead.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    ("home", "expected_root"),
+    [
+        ("/home/runner", "/home"),   # Linux CI
+        ("/Users/someone", "/Users"),  # macOS
+        ("/root", "/root"),          # home directly under / — the parent is NOT usable
+    ],
+)
+def test_home_root_is_derived_from_the_running_machine(monkeypatch, home, expected_root):
+    monkeypatch.setattr(pathlib.Path, "home", staticmethod(lambda: pathlib.Path(home)))
+    roots = _home_roots()
+    assert expected_root in roots
+    rx = _build_path_token_re(roots)
+    assert rx.findall(f"work at {home}/proj/sub") == [f"{home}/proj/sub"]
+
+
+def test_a_home_directly_under_the_filesystem_root_does_not_match_everything(monkeypatch):
+    """`/root`'s parent is `/`. Using it as the alternative would match every absolute path on
+    the machine and scrub the entire fixture."""
+    monkeypatch.setattr(pathlib.Path, "home", staticmethod(lambda: pathlib.Path("/root")))
+    rx = _build_path_token_re(_home_roots())
+    assert rx.findall("/etc/passwd and /usr/local/bin/thing") == []
 
 
 def test_fixture_omits_the_document_under_test(tmp_path):
@@ -207,10 +240,14 @@ def _commit(root, msg="commit"):
 
 @pytest.fixture
 def home_scratch():
-    """A scratch directory rooted under the REAL `Path.home()` (`/Users/<name>/...` on this
-    machine), not under pytest's `tmp_path` (which macOS resolves to `/private/var/folders/...` —
-    outside the `/Users/...` shape `_PATH_TOKEN_RE` looks for). Required for tests that exercise
-    the absolute-path branch specifically; always removed afterwards."""
+    """A scratch directory rooted under the REAL `Path.home()`, not under pytest's `tmp_path`
+    (which macOS resolves to `/private/var/folders/...` and Linux to `/tmp/...` — neither is under
+    a home root, so `_PATH_TOKEN_RE` would not see it). Required for tests that exercise the
+    absolute-path branch specifically; always removed afterwards.
+
+    Deliberately says nothing about which home root that is: `_home_roots()` derives it per-machine
+    (`/Users` on macOS, `/home` on Linux), and pinning the macOS shape here is what kept these
+    tests passing only on the operator's laptop."""
     import shutil
     import tempfile
 
@@ -311,20 +348,36 @@ def test_the_real_fixture_build_carries_no_machine_real_path(tmp_path):
     forbid EVERY substring "/Users/" — `test_gates.py` legitimately discusses the general shape
     in prose/regex-source form (`/Users/<operator>/...`, `_ABS_HOME_RE`), which never resolves to
     a real path and is correctly left alone; only the specific, real, existing sibling paths are
-    asserted gone."""
+    asserted gone.
+
+    "Real, existing" is the whole point, and it is host-dependent by design: a path that does not
+    resolve cannot be escaped to, so `scrub_real_paths` deliberately leaves it alone. The named
+    leaks below are the operator's own sibling checkouts; on any other machine — a CI runner, a
+    contributor's laptop — they do not exist, and demanding they be scrubbed there asserts the
+    opposite of the documented rule. So each is asserted only where it resolves. The universal
+    invariant, `assert_no_leakage`, is checked unconditionally above and is what holds everywhere.
+    """
     fx = build_fixture(REPO, tmp_path / "fx")
     assert_no_leakage(fx)  # does not raise
-    for rel in (
-        "CLAUDE.md",
-        "docs/architecture/lifecycle.md",
-        "engine/scripts/tests/test_gates.py",
-        "engine/scripts/tests/test_decouple_gate.py",
-    ):
-        path = fx.root / rel
-        if not path.is_file():
-            continue
-        text = path.read_text(encoding="utf-8", errors="ignore")
-        for leak in _KNOWN_SIBLING_PATH_LEAKS:
+
+    inspected = [
+        rel
+        for rel in (
+            "CLAUDE.md",
+            "docs/architecture/lifecycle.md",
+            "engine/scripts/tests/test_gates.py",
+            "engine/scripts/tests/test_decouple_gate.py",
+        )
+        if (fx.root / rel).is_file()
+    ]
+    # Not a vacuity guard on the leaks (they are legitimately absent off this machine) but on the
+    # FILES: if every one of them were renamed away, the loop below would pass by checking nothing.
+    assert inspected, "none of the known path-carrying files is in the fixture — renamed/moved?"
+
+    live_leaks = [leak for leak in _KNOWN_SIBLING_PATH_LEAKS if pathlib.Path(leak).exists()]
+    for rel in inspected:
+        text = (fx.root / rel).read_text(encoding="utf-8", errors="ignore")
+        for leak in live_leaks:
             assert leak not in text, f"{rel} still carries {leak}"
 
 

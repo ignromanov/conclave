@@ -126,7 +126,32 @@ def find_norm_carriers(root: Path) -> list[str]:
 #
 # `~` requires at least one path segment after it (`~/x`, not bare `~`) — a bare tilde shows up in
 # ordinary prose ("~3 minutes") and would false-positive on every such mention otherwise.
-_PATH_TOKEN_RE = re.compile(r"~(?:/[\w.\-]+)+|/Users/[\w.\-]+(?:/[\w.\-]+)*")
+#
+# The absolute half is DERIVED, not enumerated. v1 hardcoded `/Users/`, the macOS home root, and so
+# saw nothing at all on Linux: every home-shaped path a CI runner produces lives under `/home/`, and
+# the three scrub tests passed only on the operator's own machine. `/Users` stays in the set because
+# a repo built on Linux can still carry a path a macOS operator committed — it is just no longer the
+# only shape recognised.
+def _home_roots() -> tuple[str, ...]:
+    """The directories operator homes sit in on this machine, plus the macOS root unconditionally.
+
+    `Path.home().parent` is `/Users` on macOS and `/home` on Linux. A home directly under the
+    filesystem root (`/root`) has `/` as its parent, which would make the alternative match every
+    absolute path — that case is dropped and the home itself is matched instead.
+    """
+    roots = {"/Users"}
+    home = Path.home()
+    parent = home.parent
+    roots.add(str(home) if parent == Path(parent.root) else str(parent))
+    return tuple(sorted(roots))
+
+
+def _build_path_token_re(roots: tuple[str, ...]) -> re.Pattern[str]:
+    abs_alts = "|".join(f"{re.escape(r)}/[\\w.\\-]+(?:/[\\w.\\-]+)*" for r in roots)
+    return re.compile(rf"~(?:/[\w.\-]+)+|{abs_alts}")
+
+
+_PATH_TOKEN_RE = _build_path_token_re(_home_roots())
 
 REAL_PATH_PLACEHOLDER = "/nonexistent"
 
