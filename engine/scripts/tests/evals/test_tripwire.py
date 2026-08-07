@@ -8,6 +8,7 @@ repo at all, regardless of how.
 """
 from __future__ import annotations
 
+import pathlib
 import subprocess
 
 from evals import tripwire
@@ -285,16 +286,20 @@ def test_a_tool_result_spill_naming_a_real_path_outside_the_fixture_aborts_the_r
     ours.mkdir(parents=True)
     watch = tripwire.watch_dir(watched, "CLAUDE_PROJECTS")
 
-    # The operator's home: a path of the watched SHAPE (`/Users/<name>/...`) that resolves. Read
-    # only, never written. Note what this does NOT cover, and why that is right: the fixture's own
-    # tempdir (`/private/var/folders/...`) is not of this shape, so a spill quoting fixture paths —
-    # the ordinary case — is swept rather than aborting every run. Real repos on this platform live
-    # under the home dir, which is the channel that matters.
+    # The operator's home: a path of the watched SHAPE that resolves. Read only, never written.
+    # Note what this does NOT cover, and why that is right: the fixture's own tempdir
+    # (`/private/var/folders/...` on macOS, `/tmp/...` on Linux) is not of this shape, so a spill
+    # quoting fixture paths — the ordinary case — is swept rather than aborting every run. Real
+    # repos live under the home dir, which is the channel that matters.
+    #
+    # The home dir ITSELF, not a subdirectory of it. v1 wrote `{home}/code`, which resolves on the
+    # operator's machine and nowhere else: on CI it named nothing, so the spill was classified as
+    # not-real and swept, and this test failed asserting the exact opposite of what it meant. The
+    # property under test is "names something that exists", so the path must be one that does.
+    real = pathlib.Path.home()
+    assert real.exists(), "no home directory — the premise of this test is unavailable"
     spill = ours / "btzq0yimd.txt"
-    spill.write_text(
-        f"{__import__('pathlib').Path.home()}/code:the agent grepped something real\n",
-        encoding="utf-8",
-    )
+    spill.write_text(f"{real}:the agent grepped something real\n", encoding="utf-8")
 
     swept = tripwire.sweep_tolerated(watch, tripwire.TOLERATED_PROJECT_WRITES)
     assert swept == [], "a spill naming a real path is evidence and must not be destroyed"
