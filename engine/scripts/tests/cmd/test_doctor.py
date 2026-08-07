@@ -7,7 +7,23 @@ from tests.cmd.helpers import run_engine
 
 
 def _env(root: Path) -> dict:
-    return {"CONCLAVE_AI_ROOT": str(root), "CLAUDE_PROJECT_DIR": ""}
+    """Pin every root the doctor code path reaches, not just the DATA one.
+
+    The adapter also resolves `paths.engine_root()` (for the merge-base check, #58), and
+    that one is derived from the module's own location unless CONCLAVE_ENGINE_ROOT says
+    otherwise. Left unset, these tests read the branch layout of whatever checkout they
+    happen to run in, and `test_fix_seeds_and_exits_0` fails on a developer machine with
+    a stranded branch while passing in CI — isolation that pins one resolver out of two
+    is how a green suite ends up weaker than the environment it claims to model.
+
+    The target deliberately does not exist: a non-repo yields nothing to report, which is
+    what a hermetic run should see.
+    """
+    return {
+        "CONCLAVE_AI_ROOT": str(root),
+        "CLAUDE_PROJECT_DIR": "",
+        "CONCLAVE_ENGINE_ROOT": str(root / "no-engine-checkout"),
+    }
 
 
 def _mk_root(tmp_path: Path) -> Path:
