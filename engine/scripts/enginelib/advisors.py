@@ -5,6 +5,7 @@ Canonical advisor name = team.<name>/SKILL.md slug minus the "team." prefix.
 Lifecycle skills are infrastructure, not advisors, and are excluded.
 """
 import os
+import re
 from pathlib import Path
 
 from enginelib.paths import (
@@ -40,6 +41,77 @@ def _agent_ids(agents_dir: Path) -> set[str]:
             continue
         ids.add(stem)
     return ids
+
+
+# The closed vocabulary of advisor role slugs. An advisor id is `<name>-<role>`,
+# mirroring the executors' `exec-<name>-<role>` and its exactly-3-segment gate.
+#
+# The rule that admits a slug: it must name a SEAT ACCOUNTABLE FOR AN OUTCOME the
+# product is judged on — revenue, security posture, architecture, the privacy
+# promise — not a FUNCTION THAT PRODUCES AN ARTIFACT when dispatched. Two
+# mechanical corollaries make that checkable rather than arguable: an advisor role
+# is standing (it persists between sessions and accumulates memory) where an
+# executor role is dispatched; and an advisor role must be an unambiguous executive
+# title a person can actually hold. `eng` fails all three — nobody holds the title
+# "Eng", and its accountability sentence collapses to "produces code", which is the
+# executor role `dev`.
+#
+# Ambiguous acronyms are excluded rather than arbitrated: `cdo` (Data vs Digital)
+# has no dominant reading, so the data seat is `cdao`; `cco` has four; `cso` three,
+# so security is `ciso`. Where one reading DOES dominate in software the short slug
+# is kept and the others get longer established forms: `cpo` is Product, privacy is
+# `cdpo`, people is `chro`; `cro` is Revenue.
+#
+# `chro` is the seat forge holds: it hires advisors, evolves their personalities and
+# responsibilities, and audits the roster for drift. Under the operator's ruling
+# that forge is an ordinary advisor that merely ships pre-installed, the roster IS
+# the organisation it manages, so the people seat is not vacuous here.
+ADVISOR_ROLES: frozenset[str] = frozenset({
+    "ceo",    # strategy, prioritisation, "should we build this at all"
+    "coo",    # delivery cadence, process, operational execution
+    "cto",    # architecture, engineering direction, technical risk, performance
+    "cpo",    # product vision, roadmap, scope, UX
+    "cmo",    # brand, positioning, demand generation, content/SEO
+    "cro",    # monetisation, pricing, the acquisition→revenue funnel
+    "cfo",    # unit economics, budget, runway
+    "ciso",   # threat model, vulnerabilities, security posture
+    "cdpo",   # the promise made about personal data — consent, retention, trust
+    "cdao",   # data governance, metrics, measurement, experimentation
+    "clo",    # legal, licensing, regulatory compliance, ToS/IP
+    "chro",   # the roster itself — hiring, evolution, drift
+})
+
+_ADVISOR_ID_RE = re.compile(rf"^[a-z0-9]+-(?:{'|'.join(sorted(ADVISOR_ROLES))})$")
+
+
+def validate_advisor_id(advisor_id: str) -> None:
+    """Raise ValueError unless *advisor_id* is `<name>-<role>` with a vocabulary role.
+
+    Exactly two segments — the persona name carries no hyphen. That mirrors the
+    executor gate's exactly-three; letting `mary-jane-cto` through here while
+    `exec-mary-jane-dev` is rejected would make two rules meant to mirror each
+    other disagree.
+
+    A shape-only check would not do the job this exists for: `engineering-data`
+    and `growth-monetization` have two segments each and are still two domains
+    with no persona. Only the closed vocabulary separates them from `vera-cto`.
+    """
+    if advisor_id and _ADVISOR_ID_RE.fullmatch(advisor_id):
+        return
+    roles = ", ".join(sorted(ADVISOR_ROLES))
+    raise ValueError(
+        f"invalid advisor id: {advisor_id!r}. An advisor id is <name>-<role>: a persona "
+        f"name with no hyphen, then one role from the closed vocabulary.\n"
+        f"  roles: {roles}\n"
+        f"Executor roles (dev, test, rank, research, critic, judge) are NOT advisor "
+        f"roles — they name a function that produces an artifact, not a seat "
+        f"accountable for an outcome."
+    )
+
+
+def is_valid_advisor_id(advisor_id: str) -> bool:
+    """Non-raising twin of `validate_advisor_id`, for audits that report rather than refuse."""
+    return bool(advisor_id) and bool(_ADVISOR_ID_RE.fullmatch(advisor_id))
 
 
 def advisor_label(advisor: str) -> str:
@@ -142,7 +214,7 @@ def is_canonical_advisor(name: str = "", *, allow_lifecycle: bool = False) -> bo
 
 # Forge is a META-advisor: a valid lifecycle target but not a domain advisor,
 # so it is excluded from registry-driven enumeration (Forge invariant #7).
-META_ADVISORS = frozenset({"forge"})
+META_ADVISORS = frozenset({"forge-chro"})
 
 
 def with_meta(roster: set[str]) -> set[str]:

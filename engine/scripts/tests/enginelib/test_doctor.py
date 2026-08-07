@@ -74,8 +74,8 @@ def test_advisor_not_in_registry_flagged(tmp_path):
 
 def test_forge_meta_advisor_accepted(tmp_path):
     root = _mk_root(tmp_path)
-    checks = doctor.run_checks(root, advisor="forge")
-    assert _check(checks, "advisor:forge").ok is True
+    checks = doctor.run_checks(root, advisor="forge-chro")
+    assert _check(checks, "advisor:forge-chro").ok is True
 
 
 # ---------------------------------------------------------------------------

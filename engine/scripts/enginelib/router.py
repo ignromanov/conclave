@@ -6,12 +6,9 @@ plugin updates). I/O-free core: reads template, writes file; no print/argparse/e
 """
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
-from enginelib import paths, snapshot
-
-_ID_RE = re.compile(r"[a-z0-9-]+")
+from enginelib import advisors, paths, snapshot
 
 
 def _is_enriched(text: str) -> bool:
@@ -35,8 +32,7 @@ def scaffold_router(
     (#58) unless force=True — returns {..., "skipped": "enriched"} instead.
     Returns {"id": advisor_id, "skill": <path str>}. Raises ValueError on bad id.
     """
-    if not advisor_id or not _ID_RE.fullmatch(advisor_id):
-        raise ValueError(f"invalid advisor id: {advisor_id!r} (must match ^[a-z0-9-]+$)")
+    advisors.validate_advisor_id(advisor_id)
     root = skills_root if skills_root is not None else paths.project_skills_dir()
     skill_dir = root / f"conclave-{advisor_id}"
     skill_file = skill_dir / "SKILL.md"

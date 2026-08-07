@@ -19,13 +19,13 @@ def _seed_template(tmp_path, monkeypatch):
 def test_scaffold_writes_router(tmp_path, monkeypatch):
     _seed_template(tmp_path, monkeypatch)
     skills_root = tmp_path / ".claude" / "skills"
-    info = router.scaffold_router("iris", skills_root=skills_root)
-    p = skills_root / "conclave-iris" / "SKILL.md"
+    info = router.scaffold_router("iris-cpo", skills_root=skills_root)
+    p = skills_root / "conclave-iris-cpo" / "SKILL.md"
     assert p.is_file()
     body = p.read_text()
-    assert "name: conclave-iris" in body
-    assert "iris" in body and "/conclave:start" in body
-    assert info == {"id": "iris", "skill": str(p)}
+    assert "name: conclave-iris-cpo" in body
+    assert "iris-cpo" in body and "/conclave:start" in body
+    assert info == {"id": "iris-cpo", "skill": str(p)}
 
 
 def test_scaffold_rejects_bad_id(tmp_path, monkeypatch):
@@ -37,17 +37,17 @@ def test_scaffold_rejects_bad_id(tmp_path, monkeypatch):
 def test_scaffold_idempotent_overwrite(tmp_path, monkeypatch):
     _seed_template(tmp_path, monkeypatch)
     skills_root = tmp_path / ".claude" / "skills"
-    router.scaffold_router("iris", skills_root=skills_root)
-    router.scaffold_router("iris", skills_root=skills_root)  # no raise
-    assert (skills_root / "conclave-iris" / "SKILL.md").is_file()
+    router.scaffold_router("iris-cpo", skills_root=skills_root)
+    router.scaffold_router("iris-cpo", skills_root=skills_root)  # no raise
+    assert (skills_root / "conclave-iris-cpo" / "SKILL.md").is_file()
 
 
 def _enrich(path):
     """Simulate hire-time enrichment: a forge: block + a ## Scope section."""
     body = path.read_text()
     body = body.replace(
-        "name: conclave-iris\n",
-        "name: conclave-iris\nforge:\n  model-version: 1.0.0\n",
+        "name: conclave-iris-cpo\n",
+        "name: conclave-iris-cpo\nforge:\n  model-version: 1.0.0\n",
     )
     path.write_text(body + "\n## Scope\n\nIris owns quality gates.\n")
 
@@ -56,22 +56,22 @@ def test_scaffold_skips_enriched_wrapper(tmp_path, monkeypatch):
     """#58: re-running scaffold on an enriched wrapper must NOT clobber it."""
     _seed_template(tmp_path, monkeypatch)
     skills_root = tmp_path / ".claude" / "skills"
-    router.scaffold_router("iris", skills_root=skills_root)
-    p = skills_root / "conclave-iris" / "SKILL.md"
+    router.scaffold_router("iris-cpo", skills_root=skills_root)
+    p = skills_root / "conclave-iris-cpo" / "SKILL.md"
     _enrich(p)
-    info = router.scaffold_router("iris", skills_root=skills_root)  # re-run
+    info = router.scaffold_router("iris-cpo", skills_root=skills_root)  # re-run
     body = p.read_text()
     assert "forge:" in body and "## Scope" in body  # enrichment preserved
-    assert info == {"id": "iris", "skill": str(p), "skipped": "enriched"}
+    assert info == {"id": "iris-cpo", "skill": str(p), "skipped": "enriched"}
 
 
 def test_scaffold_force_overwrites_enriched(tmp_path, monkeypatch):
     """#58: --force still allows a full re-render (escape hatch)."""
     _seed_template(tmp_path, monkeypatch)
     skills_root = tmp_path / ".claude" / "skills"
-    router.scaffold_router("iris", skills_root=skills_root)
-    p = skills_root / "conclave-iris" / "SKILL.md"
+    router.scaffold_router("iris-cpo", skills_root=skills_root)
+    p = skills_root / "conclave-iris-cpo" / "SKILL.md"
     _enrich(p)
-    info = router.scaffold_router("iris", skills_root=skills_root, force=True)
+    info = router.scaffold_router("iris-cpo", skills_root=skills_root, force=True)
     assert "## Scope" not in p.read_text()  # force re-render drops enrichment
-    assert info == {"id": "iris", "skill": str(p)}
+    assert info == {"id": "iris-cpo", "skill": str(p)}

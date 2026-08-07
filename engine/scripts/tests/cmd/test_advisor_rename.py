@@ -18,8 +18,8 @@ import pytest
 from tests.cmd.helpers import run_engine
 
 OLD = "engineering-data"
-NEW = "vera-eng"
-OTHER = "growth-monetization"
+NEW = "vera-cto"
+OTHER = "atlas-cro"
 
 
 def _w(path: Path, text: str) -> Path:
@@ -172,13 +172,13 @@ def test_refuses_when_to_already_exists(tmp_path):
     assert _snapshot(tmp_path) == before
 
 
-@pytest.mark.parametrize("bad", ["Vera", "vera eng", "vera/eng", ""])
+@pytest.mark.parametrize("bad", ["Vera", "vera cto", "vera/cto", "", "vera-eng", "forge"])
 def test_refuses_invalid_target_slug(tmp_path, bad):
     _instance(tmp_path)
     before = _snapshot(tmp_path)
     r = _rename("--from", OLD, "--to", bad, "--apply", "--confirm", tmp=tmp_path)
     assert r.returncode == 1, r.stdout
-    assert "invalid --to" in r.stderr
+    assert "invalid --to" in r.stderr and "cto" in r.stderr
     assert _snapshot(tmp_path) == before
 
 
@@ -193,12 +193,22 @@ def test_refuses_when_a_planned_move_would_collide(tmp_path):
     assert _snapshot(tmp_path) == before
 
 
-def test_refuses_when_target_is_ambiguous_against_another_roster_id(tmp_path):
-    """Renaming TO an id that is a token-prefix of a live id would corrupt that id's
-    filenames on the next rename. Refuse rather than bake the ambiguity in."""
+def test_refuses_when_the_retired_id_is_ambiguous_against_another_roster_id(tmp_path):
+    """A token-overlapping pair cannot be told apart inside a dated filename.
+
+    The naming standard makes this unreachable from the `--to` side — every
+    conforming id is exactly two segments, so one can only match inside another if
+    they are equal. It stays reachable from `--from`, which is exactly where it
+    matters: the legacy ids awaiting migration are the ones that never conformed.
+    """
     _instance(tmp_path)
+    _w(tmp_path / ".claude" / "agents" / "growth.md", "---\nname: growth\n---\n")
+    _w(
+        tmp_path / ".claude" / "agents" / "growth-monetization.md",
+        "---\nname: growth-monetization\n---\n",
+    )
     before = _snapshot(tmp_path)
-    r = _rename("--from", OLD, "--to", "growth", "--apply", "--confirm", tmp=tmp_path)
+    r = _rename("--from", "growth", "--to", "gala-cro", "--apply", "--confirm", tmp=tmp_path)
     assert r.returncode == 1, r.stdout
     assert "ambiguous" in r.stderr
     assert _snapshot(tmp_path) == before

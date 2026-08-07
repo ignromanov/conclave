@@ -1,5 +1,5 @@
 ---
-name: forge
+name: forge-chro
 description: |
   Use when the user wants to manage the advisor model: hire new advisors, evolve existing
   (personality, responsibilities, toolbox), refactor lifecycle skills/commands, change

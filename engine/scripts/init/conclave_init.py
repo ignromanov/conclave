@@ -49,8 +49,13 @@ DATA_SUBDIRS = (
     "wiki",
 )
 
-DEFAULT_ADVISOR_ID = "advisor"
-DEFAULT_ADVISOR_ROLE = "Advisor"
+# The first advisor a fresh install gets. It must satisfy the <name>-<role> naming
+# standard like any other id — the bare "advisor" placeholder this used to mint is
+# precisely the scaffolding leftover the standard exists to stop reaching a roster.
+# The operator renames it at the naming ceremony (`engine advisor rename`); what
+# matters here is that the starting point conforms.
+DEFAULT_ADVISOR_ID = "nova-cto"
+DEFAULT_ADVISOR_ROLE = "Technical Advisor"
 DEFAULT_ADVISOR_COLOR = "blue"
 
 
@@ -209,12 +214,12 @@ def mint_advisor(data: Path, project: Path, advisor_id: str, role: str) -> bool:
 
 def scaffold_forge_router(project: Path) -> bool:
     """Invoke `engine advisor scaffold-router --id forge`. Idempotent — skip if it already exists."""
-    skill_file = project / ".claude" / "skills" / "conclave-forge" / "SKILL.md"
+    skill_file = project / ".claude" / "skills" / "conclave-forge-chro" / "SKILL.md"
     if skill_file.exists():
         return False
     env = {**os.environ, "CLAUDE_PROJECT_DIR": str(project)}
     subprocess.run(
-        [sys.executable, "-m", "engine", "advisor", "scaffold-router", "--id", "forge"],
+        [sys.executable, "-m", "engine", "advisor", "scaffold-router", "--id", "forge-chro"],
         env=env, cwd=str(ENGINE / "scripts"), check=True,
     )
     return True
@@ -297,7 +302,7 @@ def main() -> int:
     print(f"  advisor minted : {'advisor' if minted else 'kept (exists)'}"
           f"  ({project / '.claude/agents' / (DEFAULT_ADVISOR_ID + '.md')})")
     print(f"  forge router   : {'scaffolded' if forge_router else 'kept (exists)'}"
-          f"  ({project / '.claude/skills/conclave-forge/SKILL.md'})")
+          f"  ({project / '.claude/skills/conclave-forge-chro/SKILL.md'})")
     print(f"  SessionStart   : {settings_path} -> {HOOK_SCRIPT}")
     _git_msg = {
         "exists": "already a git repo",

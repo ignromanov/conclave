@@ -26,7 +26,7 @@ def test_excludes_forge_and_exec(tmp_path, monkeypatch):
     """forge (META) and exec-* (executors) are not advisors."""
     monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
     agents = tmp_path / ".claude" / "agents"
-    for stem in ("sage-cto", "forge", "exec-atlas-dev", "exec-themis-judge"):
+    for stem in ("sage-cto", "forge-chro", "exec-atlas-dev", "exec-themis-judge"):
         _write_agent(agents, stem)
     assert known_advisors(tmp_path) == {"sage-cto"}
 

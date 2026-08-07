@@ -76,7 +76,7 @@ def test_init_scaffolds_forge_router(tmp_path):
     (project / ".claude").mkdir(parents=True)
     created = ci.scaffold_forge_router(project)
     assert created is True
-    assert (project / ".claude" / "skills" / "conclave-forge" / "SKILL.md").is_file()
+    assert (project / ".claude" / "skills" / "conclave-forge-chro" / "SKILL.md").is_file()
     # idempotent
     assert ci.scaffold_forge_router(project) is False
 

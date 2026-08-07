@@ -70,7 +70,7 @@ def test_flag_first_ordering_kwarg_equivalent(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_canonical_advisors_enumeration_and_exclusion(monkeypatch, tmp_path):
-    """Seed team.kai-cto, team.forge (lifecycle→excluded), team.dev.
+    """Seed team.kai-cto, team.forge (the lifecycle SKILL → excluded), team.dev.
     Expect canonical_advisors() == ["dev", "kai-cto"] (sorted, forge excluded).
     """
     _seed_skills(tmp_path, ["kai-cto", "forge", "dev"])
@@ -119,19 +119,19 @@ def _seed(tmp_path, monkeypatch, *, skills=(), plugin_agents=(), project_agents=
 
 
 def test_forge_is_advisor(tmp_path, monkeypatch):
-    _seed(tmp_path, monkeypatch, plugin_agents=["forge.md", "exec-scout-research.md"])
-    assert is_canonical_advisor("forge") is True
+    _seed(tmp_path, monkeypatch, plugin_agents=["forge-chro.md", "exec-scout-research.md"])
+    assert is_canonical_advisor("forge-chro") is True
 
 
 def test_exec_excluded(tmp_path, monkeypatch):
-    _seed(tmp_path, monkeypatch, plugin_agents=["forge.md", "exec-scout-research.md", "exec-themis-judge.md"])
+    _seed(tmp_path, monkeypatch, plugin_agents=["forge-chro.md", "exec-scout-research.md", "exec-themis-judge.md"])
     ids = canonical_advisors()
     assert "exec-scout-research" not in ids and "exec-themis-judge" not in ids
 
 
 def test_project_flat_advisor_discovered(tmp_path, monkeypatch):
-    _seed(tmp_path, monkeypatch, project_agents=["iris.md"])
-    assert "iris" in canonical_advisors()
+    _seed(tmp_path, monkeypatch, project_agents=["iris-cpo.md"])
+    assert "iris-cpo" in canonical_advisors()
 
 
 def test_legacy_skill_dir_discovered(tmp_path, monkeypatch):
@@ -168,7 +168,7 @@ def test_discovery_skips_project_agents_without_claude_project_dir(tmp_path, mon
 
     ag = tmp_path / "agents"                      # plugin_agents_dir == engine.parent/agents
     ag.mkdir()
-    (ag / "forge.md").write_text("---\nname: x\n---\n")
+    (ag / "forge-chro.md").write_text("---\nname: x\n---\n")
 
     # An escapable "repo root" reachable via repo_root()'s ops+.claude
     # ancestor-walk from cwd, seeded with a stray project agent-def that
@@ -184,7 +184,7 @@ def test_discovery_skips_project_agents_without_claude_project_dir(tmp_path, mon
 
     result = canonical_advisors()
     assert "rogue" not in result
-    assert "forge" in result
+    assert "forge-chro" in result
     assert "growth" in result
 
 
@@ -228,8 +228,8 @@ def test_created_advisor_is_canonical_and_files(tmp_path, monkeypatch):
     # CONCLAVE_ENGINE_ROOT either. project-agents discovery still runs off
     # CLAUDE_PROJECT_DIR (set by _seed above), unaffected by this delenv.
     monkeypatch.delenv("CONCLAVE_ENGINE_ROOT", raising=False)
-    advisor.create(advisor.AdvisorOpts(id="testx", role="Test Advisor", color="blue"))
-    assert is_canonical_advisor("testx") is True
+    advisor.create(advisor.AdvisorOpts(id="vera-cto", role="Test Advisor", color="blue"))
+    assert is_canonical_advisor("vera-cto") is True
 
 
 # ---------------------------------------------------------------------------
@@ -244,10 +244,10 @@ def test_create_also_scaffolds_router(tmp_path, monkeypatch):
     # See test_created_advisor_is_canonical_and_files above — advisor.create needs
     # the REAL agent-frontmatter.md + advisor-router.md templates via templates_dir().
     monkeypatch.delenv("CONCLAVE_ENGINE_ROOT", raising=False)
-    result = advisor.create(advisor.AdvisorOpts(id="iris", role="Design Advisor", color="violet"))
-    router_skill = tmp_path / "project" / ".claude" / "skills" / "conclave-iris" / "SKILL.md"
+    result = advisor.create(advisor.AdvisorOpts(id="iris-cpo", role="Design Advisor", color="violet"))
+    router_skill = tmp_path / "project" / ".claude" / "skills" / "conclave-iris-cpo" / "SKILL.md"
     assert router_skill.is_file()
-    assert "conclave-iris" in router_skill.read_text()
+    assert "conclave-iris-cpo" in router_skill.read_text()
     assert result["router"] == str(router_skill)
 
 
@@ -266,7 +266,7 @@ _VOICE_AXES = (
 )
 
 
-def _create_into(tmp_path, monkeypatch, id_="vega"):
+def _create_into(tmp_path, monkeypatch, id_="vega-cmo"):
     """Run advisor.create with a DATA root as well as a project root."""
     from enginelib import advisor
     _seed(tmp_path, monkeypatch)
@@ -282,7 +282,7 @@ def test_create_renders_the_four_axis_voice_template(tmp_path, monkeypatch):
     """§3a.5 validates the persona by grepping for 4 axes; create must satisfy it."""
     _create_into(tmp_path, monkeypatch)
     persona = (
-        tmp_path / "project" / ".claude" / "skills" / "conclave-vega"
+        tmp_path / "project" / ".claude" / "skills" / "conclave-vega-cmo"
         / "memory" / "personality.md"
     ).read_text()
 
@@ -293,7 +293,7 @@ def test_create_renders_the_four_axis_voice_template(tmp_path, monkeypatch):
 def test_create_writes_the_awaiting_first_launch_briefing_stub(tmp_path, monkeypatch):
     """hire.md's Post-hire step asserts this sentinel exists; nothing wrote it."""
     data_root = _create_into(tmp_path, monkeypatch)
-    stub = data_root / "agent-memory" / "advisors" / "briefings" / "vega.md"
+    stub = data_root / "agent-memory" / "advisors" / "briefings" / "vega-cmo.md"
 
     assert stub.is_file(), "no briefing stub was written"
     assert "AWAITING_FIRST_LAUNCH" in stub.read_text()
@@ -302,7 +302,7 @@ def test_create_writes_the_awaiting_first_launch_briefing_stub(tmp_path, monkeyp
 def test_briefing_stub_substitutes_the_advisor_id(tmp_path, monkeypatch):
     """A stub still carrying ${ID} would ship the placeholder to the operator."""
     data_root = _create_into(tmp_path, monkeypatch)
-    text = (data_root / "agent-memory" / "advisors" / "briefings" / "vega.md").read_text()
+    text = (data_root / "agent-memory" / "advisors" / "briefings" / "vega-cmo.md").read_text()
 
-    assert "vega" in text
+    assert "vega-cmo" in text
     assert "${ID}" not in text

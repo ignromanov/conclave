@@ -52,7 +52,7 @@ session start.
 ### 1. Load briefing
 
 1. Detect the advisor from the `/conclave-<id>` router invocation (the router binds
-   `advisor=<id>` and passes it to session-init). For `forge`, this is `/conclave-forge`.
+   `advisor=<id>` and passes it to session-init). For `forge-chro`, this is `/conclave-forge-chro`.
 2. Run session-init (Steps 1/1b/1c + Overlay in one call):
    ```bash
    python3 engine/scripts/lifecycle/session_init.py --advisor <advisor>

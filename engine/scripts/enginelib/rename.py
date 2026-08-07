@@ -318,8 +318,12 @@ def plan(old: str, new: str) -> RenamePlan:
     """
     if not old or not _SLUG_RE.fullmatch(old):
         raise ValueError(f"invalid --from: must match ^[a-z0-9]+(-[a-z0-9]+)*$ (got: {old!r})")
-    if not new or not _SLUG_RE.fullmatch(new):
-        raise ValueError(f"invalid --to: must match ^[a-z0-9]+(-[a-z0-9]+)*$ (got: {new!r})")
+    # --to must conform to the naming standard; --from deliberately does NOT, because
+    # the ids that most need renaming are precisely the ones that never conformed.
+    try:
+        advisors.validate_advisor_id(new)
+    except ValueError as e:
+        raise ValueError(f"invalid --to: {e}") from e
     if old == new:
         raise ValueError("invalid --to: --from and --to are the same id")
 

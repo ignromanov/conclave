@@ -17,12 +17,11 @@ I/O-free core: reads and writes files; no print, no argparse, no sys.exit.
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from enginelib import paths, roster, router, snapshot
+from enginelib import advisors, paths, roster, router, snapshot
 
 
 @dataclass
@@ -48,10 +47,7 @@ def create(opts: AdvisorOpts) -> dict:
             "usage: engine advisor create --id X --role Y --color Z"
             " [--name N --emoji E --tone T]"
         )
-    if not re.fullmatch(r"[a-z0-9-]+", opts.id):
-        raise ValueError(
-            f"invalid --id: must match ^[a-z0-9-]+$ (got: {opts.id})"
-        )
+    advisors.validate_advisor_id(opts.id)
 
     # 2. Defaults
     id_ = opts.id
