@@ -328,11 +328,12 @@ def plan(old: str, new: str) -> RenamePlan:
         raise ValueError("invalid --to: --from and --to are the same id")
 
     roster = advisors.canonical_advisors()
-    if old not in roster:
-        raise ValueError(
-            f'--from "{old}" is not a canonical advisor.\n'
-            f"Known advisors: {', '.join(roster)}"
-        )
+    # `old` is verified below, AFTER the scan, not here. The guard's purpose is to
+    # catch a typo, and roster membership is the wrong proxy for that: a CODE-side
+    # identity change retires the old id from the roster BEFORE its data catches up
+    # (forge → forge-chro left 130 artifacts naming an id the roster no longer knew),
+    # so a membership test refuses precisely the migration this command exists for.
+    # An id that owns artifacts on disk is not a typo, whether or not it is still hired.
     if new in roster:
         raise FileExistsError(f'--to "{new}" already exists in the roster')
 
@@ -406,6 +407,12 @@ def plan(old: str, new: str) -> RenamePlan:
                 # policy, and SAID so: a file that vanishes from the report is
                 # indistinguishable from one the planner never saw.
                 p.inert.append(f)
+
+    if old not in roster and not (p.moves or p.edits or p.drops or p.skipped or p.inert):
+        raise ValueError(
+            f'--from "{old}" is not a canonical advisor, and nothing on disk names it.\n'
+            f"Known advisors: {', '.join(roster)}"
+        )
 
     _check_collisions(p)
     return p

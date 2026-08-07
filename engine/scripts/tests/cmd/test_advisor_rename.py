@@ -454,3 +454,37 @@ def test_apply_reports_the_same_counts_the_dry_run_promised(tmp_path):
     dry_counts = json.loads(dry.stdout.split("SUMMARY ", 1)[1].splitlines()[0])
     wet_counts = json.loads(wet.stdout.split("SUMMARY ", 1)[1].splitlines()[0])
     assert dry_counts == wet_counts, "dry-run promised a different plan than apply performed"
+
+
+def test_migrates_an_id_already_retired_from_the_roster(tmp_path):
+    """A CODE-side identity change retires the old id BEFORE its data catches up.
+
+    `forge` → `forge-chro` renamed the shipped agent-def, so `forge` stopped being
+    canonical while 130 artifacts still named it. A `--from` guard that asks "is
+    this in the current roster" then refuses exactly the migration it exists to
+    enable. The guard's real question is "does this id exist at all" — and an id
+    owning artifacts on disk is not a typo.
+    """
+    _instance(tmp_path)
+    (tmp_path / ".claude" / "agents" / f"{OLD}.md").unlink()   # retired from the roster
+
+    r = _rename("--from", OLD, "--to", NEW, tmp=tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert "MOVE" in r.stdout
+
+    wet = _rename("--from", OLD, "--to", NEW, "--apply", "--confirm", tmp=tmp_path)
+    assert wet.returncode == 0, wet.stderr
+    moved = tmp_path / "agent-memory" / "advisors" / "sessions" / f"2026-08-06-{NEW}-neon.md"
+    assert moved.is_file()
+    assert f"advisor: {NEW}" in moved.read_text()
+
+
+def test_a_typo_owning_nothing_is_still_refused(tmp_path):
+    """The relaxation must not swallow the guard: an id with no artifacts anywhere
+    is a typo, and it is refused whether or not it is in the roster."""
+    _instance(tmp_path)
+    before = _snapshot(tmp_path)
+    r = _rename("--from", "nobdy-cto", "--to", NEW, "--apply", "--confirm", tmp=tmp_path)
+    assert r.returncode == 1, r.stdout
+    assert "not a canonical advisor" in r.stderr
+    assert _snapshot(tmp_path) == before
