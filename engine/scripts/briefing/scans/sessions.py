@@ -7,6 +7,7 @@ sorts basenames descending, takes top 3, formats as markdown links.
 from __future__ import annotations
 
 from briefing.scans import ScanCtx
+from enginelib.advisors import files_for_advisor
 
 _PLACEHOLDER = "_(no prior sessions recorded)_"
 
@@ -22,8 +23,7 @@ def build(ctx: ScanCtx) -> str:
     if not sess_dir.is_dir():
         return _PLACEHOLDER
 
-    pattern = f"*-{ctx.advisor}-*.md"
-    matches = list(sess_dir.glob(pattern))
+    matches = files_for_advisor(sess_dir, ctx.advisor, field="advisor")
     if not matches:
         return _PLACEHOLDER
 

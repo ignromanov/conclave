@@ -42,6 +42,68 @@ def _agent_ids(agents_dir: Path) -> set[str]:
     return ids
 
 
+def advisor_label(advisor: str) -> str:
+    """The GitHub label for *advisor* — `advisor:<id>`, per github-issues-protocol.md.
+
+    One function so the write side and the read side cannot drift. They did: the
+    write paths labelled `advisor:kai-cto` while two read paths queried
+    `advisor:kai` (`advisor.split("-")[0]`). GitHub matches labels exactly, so
+    every hyphenated advisor had a permanently empty issue queue and no error
+    anywhere said so.
+    """
+    return f"advisor:{advisor}"
+
+
+def files_for_advisor(directory: Path, advisor: str, *, field: str) -> list[Path]:
+    """Records under *directory* that belong to *advisor*, sorted by path.
+
+    Ownership is read from the frontmatter *field* (`advisor:` for sessions,
+    `by:` for decisions) — NOT from the filename. The glob `*-<advisor>-*.md`
+    that every call site used to run answers an id change with an empty list
+    instead of an error, so a rename silently emptied the reflexion buffer and
+    the briefing's session list with nothing reporting a fault.
+
+    The filename stays a FALLBACK for records written before the field existed,
+    so legacy data behaves exactly as it did. A field, when present, always wins:
+    a file whose name says one advisor and whose field says another belongs to
+    the field's advisor.
+    """
+    if not directory.is_dir():
+        return []
+    out: list[Path] = []
+    for f in sorted(directory.glob("*.md")):
+        owner = _frontmatter_value(f, field)
+        if owner is None:
+            if f"-{advisor}-" in f.name:
+                out.append(f)
+        elif owner == advisor:
+            out.append(f)
+    return out
+
+
+def _frontmatter_value(path: Path, key: str) -> str | None:
+    """The value of *key* in the first frontmatter block, or None if absent.
+
+    Line-based on purpose — mirrors enginelib.frontmatter, and importing it here
+    would be circular. The opening fence is the FIRST `---` line anywhere: some
+    records (feedback) open with an HTML comment above their frontmatter.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    in_fm = False
+    for line in text.splitlines():
+        if line.strip() == "---":
+            if in_fm:
+                break
+            in_fm = True
+            continue
+        if in_fm and line.startswith(f"{key}:"):
+            return line[len(key) + 1:].strip().strip('"').strip("'")
+    return None
+
+
 def canonical_advisors() -> list[str]:
     """Sorted union of advisor ids across three sources, team.-normalized, deduped:
     legacy skills_dir()/team.*/SKILL.md (minus lifecycle), plugin agents/*.md,

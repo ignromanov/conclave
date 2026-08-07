@@ -309,9 +309,12 @@ def _step1c_reflexion(advisor: str, root: Path) -> list[str]:
     if not sessions_dir.is_dir():
         return []
 
-    pattern = f"*-{advisor}-*.md"
+    from enginelib.advisors import files_for_advisor
+
     session_files = sorted(
-        sessions_dir.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True
+        files_for_advisor(sessions_dir, advisor, field="advisor"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
     )[:3]
 
     reflexions: list[str] = []
