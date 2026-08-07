@@ -31,13 +31,23 @@ def _strip_team(name: str) -> str:
 
 
 def _agent_ids(agents_dir: Path) -> set[str]:
-    """Advisor ids from <agents_dir>/*.md: strip a leading team., drop exec-*."""
+    """Advisor ids from <agents_dir>/*.md: strip a leading team., drop executors.
+
+    Executors come in two spellings — `exec-<name>-<role>` and the pre-standard
+    dotted form. Dropping only the first counted every executor on an instance
+    that predates the hyphen standard as an advisor.
+
+    `is_file()` follows the link: the project's agents dir is a symlink layer
+    over the DATA tree, so retiring an advisor can leave a dangling link behind.
+    """
     ids: set[str] = set()
     if not agents_dir.is_dir():
         return ids
     for md in agents_dir.glob("*.md"):
+        if not md.is_file():
+            continue
         stem = _strip_team(md.stem)
-        if stem.startswith("exec-"):
+        if stem.startswith(("exec-", "exec.")):
             continue
         ids.add(stem)
     return ids
