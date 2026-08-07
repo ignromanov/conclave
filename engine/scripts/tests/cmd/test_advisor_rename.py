@@ -97,6 +97,10 @@ def _instance(tmp: Path) -> dict[str, Path]:
         json.dumps({"feedback_id": "fb-1", "agent": OLD, "item_id": "i1"}) + "\n"
         + json.dumps({"feedback_id": "fb-2", "agent": OTHER, "item_id": "i1"}) + "\n",
     )
+    p["ops_decision"] = _w(
+        tmp / "ops" / "decisions" / f"2026-08-06-{OLD}-topology.md",
+        f"---\nslug: topology\ndate: 2026-08-06\nby: {OLD}\nstatus: active\n---\n\nBody.\n",
+    )
     p["handoff"] = _w(
         tmp / "ops" / "handoffs" / f"2026-08-07-{OLD}-rename-command.md",
         f"# Handoff\n\n> **From**: {OLD} | **To**: forge\n",
@@ -522,3 +526,143 @@ def test_still_refuses_a_target_that_owns_memory(tmp_path):
     r = _rename("--from", OLD, "--to", OTHER, "--apply", "--confirm", tmp=tmp_path)
     assert r.returncode == 2, r.stdout
     assert _snapshot(tmp_path) == before
+
+
+def test_cross_cutting_decisions_are_history_too(tmp_path):
+    """`ops/decisions/` holds cross-cutting Y-statements keyed by `by:`, and the
+    briefing reads them alongside the advisor's own decisions
+    (briefing/scans/decisions.py:39). The classifier knew only
+    `agent-memory/advisors/decisions/`, so a renamed advisor's cross-cutting
+    record kept pointing at the retired id. Surfaced by the `unclassified`
+    bucket on a real instance, which is what that bucket is for."""
+    _instance(tmp_path)
+    r = _rename("--from", OLD, "--to", NEW, "--apply", "--confirm", tmp=tmp_path)
+    assert r.returncode == 0, r.stderr
+    moved = tmp_path / "ops" / "decisions" / f"2026-08-06-{NEW}-topology.md"
+    assert moved.is_file(), "cross-cutting decision not renamed"
+    assert f"by: {NEW}" in moved.read_text()
+
+
+# ---------------------------------------------------------------------------
+# A filename has positions (measured on conclave-self, forge → forge-chro)
+#
+# The fixture above uses a LONG id that never occurs inside a slug, so a blanket
+# token replace looked correct for the whole first round. A short id that is also
+# a vocabulary word of the repo — `forge`, `sage`, `iris` — appears in topics,
+# event descriptions and sender segments, and a blanket replace corrupts every
+# one of them. These four shapes are real paths from this instance.
+# ---------------------------------------------------------------------------
+
+SHORT = "nova"
+SHORT_NEW = "nova-cto"
+
+
+def _short_instance(tmp: Path) -> None:
+    """A minimal instance whose id also occurs INSIDE slugs."""
+    _w(tmp / ".claude" / "agents" / f"{SHORT}.md", f"---\nname: {SHORT}\n---\n")
+    _w(tmp / ".claude" / "agents" / f"{OTHER}.md", f"---\nname: {OTHER}\n---\n")
+    _w(
+        tmp / ".claude" / "skills" / f"conclave-{SHORT}" / "SKILL.md",
+        f"---\nname: conclave-{SHORT}\n---\n",
+    )
+    # owner is the id → the owner segment moves
+    _w(
+        tmp / "agent-memory" / "advisors" / "sessions" / f"2026-08-06-{SHORT}-{SHORT}-rename.md",
+        f"---\nadvisor: {SHORT}\n---\n\nBody.\n",
+    )
+    # owner is somebody else; the id is the TOPIC
+    _w(
+        tmp / "ops" / "decisions" / f"2026-07-06-{OTHER}-{SHORT}-discovery-split.md",
+        f"---\nby: {OTHER}\n---\n\nBody.\n",
+    )
+    # no date prefix at all; the id is part of an event description
+    _w(
+        tmp / "ops" / "feedback" / "nominations" / f"study-phase-py-advisor-{SHORT}-printed.md",
+        "---\nfeedback_id: fb-1\n---\n\nBody.\n",
+    )
+    # recipient segment AND slug text in one name
+    _w(
+        tmp / "agent-memory" / "advisors" / "mentions" / SHORT / "open"
+        / f"2026-07-03-0311-{OTHER}-to-{SHORT}-{SHORT}-it-3-hardcode.md",
+        f"---\nfrom: {OTHER}\nto: {SHORT}\nstatus: open\n---\n\nBody.\n",
+    )
+    # a topic DIRECTORY that merely starts with the id
+    _w(
+        tmp / "ops" / "feedback" / f"{SHORT}-audit" / "2026-08-06-notes.md",
+        f"---\nfeedback_id: fb-2\n---\n\nRaised with {SHORT} during the audit.\n",
+    )
+    # ANOTHER advisor whose id merely starts with ours, named in the `<owner>-<slug>` shape
+    _w(
+        tmp / "ops" / "feedback" / "2026-08-07" / f"{SHORT}chain-2026-08-06-x.md",
+        f"---\nfeedback_id: fb-3\nagent: {SHORT}chain\n---\n\nEscalated to {SHORT}.\n",
+    )
+
+
+@pytest.fixture
+def short_applied(tmp_path):
+    _short_instance(tmp_path)
+    r = _rename("--from", SHORT, "--to", SHORT_NEW, "--apply", "--confirm", tmp=tmp_path)
+    assert r.returncode == 0, r.stderr
+    return tmp_path
+
+
+def test_history_owner_segment_moves_but_the_slug_does_not(short_applied):
+    """`<date>-<owner>-<slug>.md`: only the owner segment names the advisor."""
+    d = short_applied / "agent-memory" / "advisors" / "sessions"
+    assert (d / f"2026-08-06-{SHORT_NEW}-{SHORT}-rename.md").is_file(), sorted(p.name for p in d.iterdir())
+
+
+def test_history_topic_is_not_an_owner(short_applied):
+    """The owner here is someone else; the id sits in the topic and must not move."""
+    d = short_applied / "ops" / "decisions"
+    assert (d / f"2026-07-06-{OTHER}-{SHORT}-discovery-split.md").is_file(), sorted(
+        p.name for p in d.iterdir()
+    )
+
+
+def test_history_undated_name_moves_only_when_the_id_leads_it(short_applied):
+    """A feedback nomination is `<event-description>.md` — no owner position at all."""
+    d = short_applied / "ops" / "feedback" / "nominations"
+    assert (d / f"study-phase-py-advisor-{SHORT}-printed.md").is_file(), sorted(
+        p.name for p in d.iterdir()
+    )
+
+
+def test_history_mention_moves_the_recipient_not_the_slug(short_applied):
+    """`<date>-<time>-<from>-to-<to>-<slug>.md` — the recipient moves, the slug stays.
+
+    A blanket replace produced `...-to-nova-cto-nova-cto-it-3-...`, silently
+    rewriting words that were never an identity.
+    """
+    d = short_applied / "agent-memory" / "advisors" / "mentions" / SHORT_NEW / "open"
+    assert d.is_dir(), "recipient directory not renamed"
+    assert (d / f"2026-07-03-0311-{OTHER}-to-{SHORT_NEW}-{SHORT}-it-3-hardcode.md").is_file(), sorted(
+        p.name for p in d.iterdir()
+    )
+
+
+def test_history_directory_is_an_identity_only_when_it_is_the_id(short_applied):
+    """`mentions/<id>/` names an owner; `feedback/<id>-audit/` names a topic.
+
+    Treating a directory like a filename would move both, because the filename
+    rule accepts the id at offset 0 followed by a hyphen — which is exactly what
+    a topic directory looks like."""
+    d = short_applied / "ops" / "feedback"
+    assert (d / f"{SHORT}-audit").is_dir(), sorted(p.name for p in d.iterdir())
+
+
+def test_history_owner_position_still_requires_a_token_boundary(short_applied):
+    """`novachain-<slug>.md` belongs to `novachain`, not to `nova`.
+
+    It enters the scan on a PROSE mention of the shorter id, so nothing else
+    stops it: without the boundary check the offset-0 rule splices our new id
+    into another advisor's record."""
+    d = short_applied / "ops" / "feedback" / "2026-08-07"
+    assert (d / f"{SHORT}chain-2026-08-06-x.md").is_file(), sorted(p.name for p in d.iterdir())
+
+
+def test_config_paths_still_use_whole_token_replacement(short_applied):
+    """Config names the advisor mid-token by design (`conclave-<id>`), and there
+    the blanket rewrite is the correct one. The position rule is HISTORY-only."""
+    assert (short_applied / ".claude" / "skills" / f"conclave-{SHORT_NEW}" / "SKILL.md").is_file()
+    assert (short_applied / ".claude" / "agents" / f"{SHORT_NEW}.md").is_file()

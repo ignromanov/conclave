@@ -62,6 +62,49 @@ def token_re(word: str) -> re.Pattern[str]:
     return re.compile(rf"(?<![a-z0-9]){re.escape(word)}(?![a-z0-9])")
 
 
+# A history filename is not a bag of tokens — it has POSITIONS. The shapes:
+#   <date>-<owner>-<slug>.md              sessions, decisions, handoffs
+#   <date>-<time>-<from>-to-<to>-<slug>.md  mentions
+#   <owner>-<slug>.md                     feedback records
+# Only the owner / sender / recipient segments are an identity. Everything after
+# them is prose that happens to be hyphenated, and a whole-token replace rewrites
+# it too: on this instance `2026-07-06-sage-cto-sage-forge-discovery-…` (owner
+# `sage-cto`, topic `forge`) and `…-advisor-to-forge-forge-it-3-…` (recipient,
+# then the same word as slug text) were both corrupted by it. The defect was
+# invisible for a whole round because the first migration renamed
+# `engineering-data` — long enough never to occur inside a slug.
+_DATE_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}-")
+_DATE_TIME_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{4}-")
+_WORD_CHAR = re.compile(r"[a-z0-9]")
+
+
+def _id_positions(part: str, old: str, *, is_name: bool) -> list[int]:
+    """Offsets in *part* where *old* stands in an identity position.
+
+    A directory is an identity only when it IS the id (`mentions/<id>/`), so a
+    topic directory never moves.
+    """
+    if not is_name:
+        return [0] if part == old else []
+    starts = {0}
+    for rx in (_DATE_PREFIX, _DATE_TIME_PREFIX):
+        m = rx.match(part)
+        if m:
+            starts.add(m.end())
+    starts.update(m.end() for m in re.finditer("-to-", part))
+    return sorted(
+        i for i in starts
+        if part.startswith(old, i) and not _WORD_CHAR.match(part, i + len(old))
+    )
+
+
+def _rewrite_positions(part: str, old: str, new: str, *, is_name: bool) -> str:
+    out = part
+    for i in reversed(_id_positions(part, old, is_name=is_name)):
+        out = out[:i] + new + out[i + len(old):]
+    return out
+
+
 @dataclass(frozen=True)
 class Move:
     src: Path
@@ -161,7 +204,11 @@ def _classify(path: Path, data_root: Path, claude_dirs: list[Path]) -> str:
         ("agent-memory", "advisors", "audits"),
     ):
         return HISTORY
-    if parts[:2] in (("ops", "feedback"), ("ops", "handoffs")):
+    # ops/decisions/ holds cross-cutting Y-statements keyed by `by:`, which the
+    # briefing reads beside the advisor's own decisions (briefing/scans/decisions.py).
+    # Knowing only agent-memory/advisors/decisions/ left them pointing at the retired
+    # id. Found by the `unclassified` bucket on a real instance, not by design.
+    if parts[:2] in (("ops", "feedback"), ("ops", "handoffs"), ("ops", "decisions")):
         return HISTORY
     if rel.as_posix() == "agent-memory/hot.md" or rel.name in (
         "role-manifest.yaml", "roster.yaml",
@@ -386,7 +433,7 @@ def plan(old: str, new: str) -> RenamePlan:
             if cls in (PROTECTED, UNCLASSIFIED):
                 p.skipped.append((cls, f))
                 continue
-            dst = _renamed_path(f, root, rx, new)
+            dst = _renamed_path(f, root, rx, new, cls, old)
             if cls == REGEN:
                 p.drops.append(Drop(f, "auto-generated — regenerated on next session"))
                 continue
@@ -437,14 +484,16 @@ def _owns_memory(advisor_id: str, data_root: Path) -> bool:
     freshly-created-or-renamed identity has and nothing more, so counting it would
     make every target look occupied. Memory is what cannot be merged.
     """
-    rx = token_re(advisor_id)
     roots = [
         data_root / "agent-memory" / "advisors" / d
         for d in ("sessions", "decisions", "mentions", "audits")
     ] + [data_root / "ops" / "feedback", data_root / "ops" / "handoffs"]
     for root in roots:
         for f in _iter_files(root):
-            if rx.search(f.as_posix()):
+            # Positional, for the same reason the rename is: a record whose TOPIC
+            # is the target id does not make that id an owner of memory, and
+            # reading it as one would refuse a legitimate migration.
+            if _renamed_path(f, root, token_re(advisor_id), "", HISTORY, advisor_id) != f:
                 return True
             text = _read(f)
             if text is None:
@@ -469,9 +518,21 @@ def _field_values(text: str) -> list[str]:
     return out
 
 
-def _renamed_path(f: Path, root: Path, rx: re.Pattern[str], new: str) -> Path:
+def _renamed_path(f: Path, root: Path, rx: re.Pattern[str], new: str, cls: str, old: str) -> Path:
+    """Where *f* lands after the rename.
+
+    CONFIG keeps the whole-token replace: it names the advisor mid-token on
+    purpose (`conclave-<id>/`, `exec-<id>.md`), and there every occurrence IS the
+    identity. HISTORY is position-aware — see `_id_positions`.
+    """
     rel = f.relative_to(root)
-    return root.joinpath(*(rx.sub(new, part) for part in rel.parts))
+    if cls != HISTORY:
+        return root.joinpath(*(rx.sub(new, part) for part in rel.parts))
+    last = len(rel.parts) - 1
+    return root.joinpath(*(
+        _rewrite_positions(part, old, new, is_name=(i == last))
+        for i, part in enumerate(rel.parts)
+    ))
 
 
 def _check_collisions(p: RenamePlan) -> None:
