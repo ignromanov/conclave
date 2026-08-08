@@ -1,7 +1,8 @@
 ---
-description: |
-  DEPRECATED redirect. Superseded by team.forge (spec 049) at the cutover.
-  Triggers for "hire", "create advisor", "нанять" route to team.forge / `/conclave:forge`.
+description: >-
+  Deprecated redirect kept so old references still resolve. Hiring an advisor now happens in
+  /conclave:forge, which also handles evolving and auditing the roster. Use /conclave:forge
+  instead.
 ---
 
 # team.hire — DEPRECATED

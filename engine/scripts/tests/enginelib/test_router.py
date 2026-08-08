@@ -1,6 +1,6 @@
 import pytest
 
-from enginelib import router
+from enginelib import paths, router
 
 
 def _seed_template(tmp_path, monkeypatch):
@@ -26,6 +26,29 @@ def test_scaffold_writes_router(tmp_path, monkeypatch):
     assert "name: conclave-iris-cpo" in body
     assert "iris-cpo" in body and "/conclave:start" in body
     assert info == {"id": "iris-cpo", "skill": str(p)}
+
+
+def test_scaffold_resolves_without_a_project_root(tmp_path, monkeypatch):
+    """No DATA root anywhere: the agent-def lookup must degrade, not raise.
+
+    A fresh CI checkout has no `.conclave/`, so `repo_root()`'s upward walk finds
+    nothing and `project_agents_dir()` raises. The caller already supplied
+    `skills_root`, which is the only directory this path needs — an unresolvable
+    project dir means "no agent-def there", not a crash.
+
+    Every other scaffold test passes locally either way, because the walk finds the
+    maintainer's checkout through its gitignored orphan `ops/` tree (#87). This one
+    states the requirement independently of that accident.
+    """
+    _seed_template(tmp_path, monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(RuntimeError):  # precondition: the CI condition holds here
+        paths.repo_root()
+    skills_root = tmp_path / ".claude" / "skills"
+    info = router.scaffold_router("iris-cpo", skills_root=skills_root)
+    skill = skills_root / "conclave-iris-cpo" / "SKILL.md"
+    assert info == {"id": "iris-cpo", "skill": str(skill)}
+    assert skill.is_file()
 
 
 def test_scaffold_rejects_bad_id(tmp_path, monkeypatch):

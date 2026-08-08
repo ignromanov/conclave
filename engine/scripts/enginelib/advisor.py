@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from enginelib import advisors, paths, roster, router, snapshot
+from enginelib import advisors, frontmatter, paths, roster, router, snapshot
 
 
 @dataclass
@@ -31,6 +31,18 @@ class AdvisorOpts:
     name: str = ""
     emoji: str = ""
     tone: str = ""
+    description: str = ""
+
+
+def stub_description(emoji: str, role: str, tone: str) -> str:
+    """The identity line a hire produces when nobody supplied one.
+
+    `role` and `tone` cannot yield "what will this advisor help me with" —
+    that is elicited knowledge, not a derivation, and hire.md Phase 1 already
+    asks for it. This keeps create() callable without one and gives the
+    description gate a recognisable stub to reject before it ships.
+    """
+    return f"{emoji} {role} advisor — {tone}"
 
 
 def create(opts: AdvisorOpts) -> dict:
@@ -69,6 +81,7 @@ def create(opts: AdvisorOpts) -> dict:
     agents_dir.mkdir(parents=True, exist_ok=True)
 
     # 7. Render template via str.replace (DECISION 4 — fixes 097 C-4 & escaping bug)
+    description = opts.description.strip() or stub_description(emoji, opts.role, tone)
     template = (paths.templates_dir() / "agent-frontmatter.md").read_text(encoding="utf-8")
     rendered = (
         template
@@ -79,13 +92,20 @@ def create(opts: AdvisorOpts) -> dict:
         .replace("${EMOJI}", emoji)
         .replace("${TONE_HINT}", tone)
         .replace("${TONE}", tone)
+        .replace("${DESCRIPTION}", frontmatter.as_block(description))
     )
     snapshot.snapshot_write(agent_file, rendered)
 
     # 8. Scaffold the /conclave-<id> invocation router alongside the agent-def
     # (project-side; agents_dir.parent == .claude, so .claude/skills stays
     # consistent with the resolved base without re-resolving env).
-    router_info = router.scaffold_router(id_, skills_root=agents_dir.parent / "skills")
+    # The router and the agent-def project the SAME identity string: two surfaces,
+    # one source. Passing it here (rather than letting the router re-read the file
+    # it was just handed) keeps them equal by construction, which is what the
+    # description gate asserts.
+    router_info = router.scaffold_router(
+        id_, skills_root=agents_dir.parent / "skills", description=description
+    )
     skill_file = Path(router_info["skill"])
 
     # 8.5. Provision memory/personality.md (#55). The briefing personality_path

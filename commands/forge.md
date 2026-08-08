@@ -1,16 +1,9 @@
 ---
-description: |
-  Use when user wants to manage the advisor model: hire new advisors, evolve existing
-  (personality, responsibilities, toolbox), refactor lifecycle skills (team.start/done/etc),
-  change agent-model architecture (memory format, shared rules), or audit advisor drift.
-
-  Triggers: "hire advisor", "нанять", "create advisor", "evolve <advisor>",
-  "refactor team.<x>", "tune all advisors", "audit advisors", "проверь consistency",
-  "переместить память", "обновить обязанности", "upgrade <advisor>",
-  "model-version", "overlay", or when the user describes any mutation
-  to the advisor model or its shared infrastructure.
-
-  Routes to: hire (create), evolve (mutate), audit (detect drift).
+description: >-
+  Changes the advisory team itself — hires a new advisor, reworks an existing one's
+  responsibilities, personality or toolbox, refactors the session lifecycle, and audits the
+  roster for drift. Use for any change to how advisors work; not for what they work on, which
+  belongs to the domain advisor for that area.
 version: 1.0.0
 ---
 

@@ -1,6 +1,10 @@
 ---
 name: exec-iris-test
-description: Quality-gate executor — dispatch to run lint/type/test/build/coverage/acceptance pipeline plus 3-mode visual review (spec / production-parity / mobile-UX) and receive a structured verdict
+description: >-
+  🌈 Runs the quality gate — lint, types, tests, build, coverage and acceptance, plus a
+  three-mode visual review against spec, production parity and mobile UX — and returns a
+  structured pass/fail verdict. Use when work is written and someone must decide whether it
+  holds. Not for writing the fix; it grades, it does not author.
 wraps: team-reviewer + team-debugger
 tier: executor
 chosen-name: iris

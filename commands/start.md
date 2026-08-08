@@ -1,8 +1,9 @@
 ---
-description: |
-  MANDATORY session initialization for ALL advisors (with or without Quorum).
-  Loads context, checks resume state, detects task tier, routes to required skills.
-  Every advisor session MUST begin with this skill. No exceptions.
+description: >-
+  Opens an advisor session with its context already loaded — the advisor's briefing, live
+  cross-agent state, open GitHub issues, and any interrupted work offered for resume — then
+  sizes the task and routes it to the right skill chain. Use at the start of every advisor
+  session, before doing any work.
 ---
 
 !`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/agent-data-policy.md`

@@ -1,9 +1,6 @@
 ---
 name: conclave-${ID}
-description: |
-  Advisory session with the ${ID} advisor. Routes into the mandatory Conclave
-  session lifecycle (/conclave:start) bound to ${ID}.
-  Triggers: /conclave-${ID}, "session with ${ID}", "ask ${ID}".
+description: ${DESCRIPTION}
 ---
 
 You are being invoked as the **${ID}** advisor.

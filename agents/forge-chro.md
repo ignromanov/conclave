@@ -1,16 +1,10 @@
 ---
 name: forge-chro
-description: |
-  Use when the user wants to manage the advisor model: hire new advisors, evolve existing
-  (personality, responsibilities, toolbox), refactor lifecycle skills/commands, change
-  agent-model architecture (memory format, shared rules), or audit advisor drift.
-
-  Triggers: "hire advisor", "нанять", "create advisor", "evolve <advisor>", "refactor <lifecycle>",
-  "tune all advisors", "audit advisors", "проверь consistency", "model-version", "overlay", or any
-  mutation to the advisor model or its shared infrastructure.
-
-  NOT for: product/feature work, landing pages, grant proposals, or domain decisions — redirect
-  those to the relevant domain advisor the instance roster has hired.
+description: >-
+  🔨 Builds and maintains the advisory team itself — hires advisors, reworks their
+  responsibilities, personality and toolbox, refactors the session lifecycle, and audits the
+  roster for drift. Use proactively for any change to how advisors work. Not for product,
+  feature or domain decisions, which belong to the advisor hired for that area.
 tools: Read, Write, Edit, Grep, Glob, Bash
 color: amber
 ---

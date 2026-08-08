@@ -6,10 +6,11 @@ plugin updates). I/O-free core: reads template, writes file; no print/argparse/e
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
 
-from enginelib import advisors, paths, snapshot
+from enginelib import advisors, frontmatter, paths, snapshot
 
 # The placeholder a fresh mint carries; `engine model bump` replaces it.
 _MINTED_VERSION = "0.0.0"
@@ -38,14 +39,53 @@ def _is_enriched(text: str) -> bool:
     return False
 
 
+def _description_from_agent_def(advisor_id: str, skills_root: Path) -> str:
+    """Read the advisor's identity from its agent-def, for the standalone path.
+
+    `advisor.create()` passes the identity in directly. `engine advisor
+    scaffold-router` has only an id, so it recovers the same string from the
+    agent-def written beside the skills dir — the router must never invent a
+    second identity, and a description built from the id alone is exactly the
+    plumbing stub this whole change removes.
+    """
+    for agents_dir in _agent_def_dirs(skills_root):
+        text = frontmatter.fm_get_block(agents_dir / f"{advisor_id}.md", "description")
+        if text:
+            return text
+    return ""
+
+
+def _agent_def_dirs(skills_root: Path) -> Iterator[Path]:
+    """Directories that can hold an advisor's agent-def, caller's own first.
+
+    Lazy on purpose. `project_agents_dir()` resolves the DATA root, which a fresh
+    checkout does not have — building both candidates as a tuple ran that resolver
+    even when `skills_root` already held the file, and made an absent DATA root
+    fatal instead of merely empty. A project root that will not resolve means "no
+    agent-def over there", which ends the search; it is not this function's error
+    to raise.
+    """
+    yield skills_root.parent / "agents"
+    try:
+        yield paths.project_agents_dir()
+    except RuntimeError:
+        return
+
+
 def scaffold_router(
-    advisor_id: str, *, skills_root: Path | None = None, force: bool = False
+    advisor_id: str,
+    *,
+    skills_root: Path | None = None,
+    force: bool = False,
+    description: str | None = None,
 ) -> dict:
     """Render advisor-router.md to <skills_root>/conclave-<id>/SKILL.md.
 
     skills_root defaults to paths.project_skills_dir(). Idempotent for bare
     first-mint stubs (overwrites). Refuses to clobber an *enriched* wrapper
     (#58) unless force=True — returns {..., "skipped": "enriched"} instead.
+    `description` is the advisor's identity; when omitted it is recovered from
+    the agent-def so both surfaces carry one string.
     Returns {"id": advisor_id, "skill": <path str>}. Raises ValueError on bad id.
     """
     advisors.validate_advisor_id(advisor_id)
@@ -61,8 +101,13 @@ def scaffold_router(
         and _is_enriched(skill_file.read_text(encoding="utf-8"))
     ):
         return {"id": advisor_id, "skill": str(skill_file), "skipped": "enriched"}
+    identity = description if description is not None else _description_from_agent_def(
+        advisor_id, root
+    )
     template = (paths.templates_dir() / "advisor-router.md").read_text(encoding="utf-8")
-    rendered = template.replace("${ID}", advisor_id)
+    rendered = template.replace("${ID}", advisor_id).replace(
+        "${DESCRIPTION}", frontmatter.as_block(identity)
+    )
     skill_dir.mkdir(parents=True, exist_ok=True)
     snapshot.snapshot_write(skill_file, _insert_forge_block(rendered, advisor_id))
     return {"id": advisor_id, "skill": str(skill_file)}

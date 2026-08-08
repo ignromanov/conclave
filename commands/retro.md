@@ -1,5 +1,8 @@
 ---
-description: Lightweight 3-question retrospective at sprint or session boundaries. Logs to agent-memory/advisors/retros/.
+description: >-
+  Runs a three-question retrospective — what worked, what did not, what to try next — and
+  appends it to the retro log. Use at a session or sprint boundary when the team wants the
+  lesson recorded rather than re-learned. Takes about ten minutes.
 tier: lifecycle
 created: 2026-05-07
 ---

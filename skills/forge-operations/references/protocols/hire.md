@@ -81,10 +81,28 @@ executor has NO biographical voice well (its identity IS its behavioral contract
 ```bash
 python -m engine advisor create \
   --id <id> --name <name> --role "<role>" \
-  --color <color> --emoji <emoji> --tone "<tone>"
+  --color <color> --emoji <emoji> --tone "<tone>" \
+  --description "<identity — see below>"
 ```
 
-Mints a flat agent-def at `agents/<id>.md` with `name: <id>` (no `team.` prefix). Returns JSON `{"id": ..., "agent": ...}`.
+Mints a flat agent-def at `agents/<id>.md` with `name: <id>` (no `team.` prefix), and the
+matching `/conclave-<id>` router carrying the **same** `--description`. Returns JSON
+`{"id": ..., "agent": ..., "router": ...}`.
+
+**`--description` is where Phase 1's Focus answer lands.** It was collected and then dropped for
+every hire before this: role and tone cannot yield "what will this advisor help me with", so
+omitting it mints a stub the description gate rejects. Write one line, third person, in this
+order — the `/` menu is designed around a one-line summary, so the first clause has to carry it:
+
+1. what this advisor covers (the Focus answer, concrete domains, not a title);
+2. `Use when …` — the situations that should route here;
+3. `Not for …` — what goes elsewhere, naming the advisor it goes to.
+
+Keep it under ~350 characters (the field's hard limit is 1,024; the installed-plugin median is
+~240). Do not append a `Triggers:` list — it restates the command name, and none of the 239
+third-party skills surveyed do it. State the boundary against the advisors already on the
+roster: an advisor whose description does not distinguish it from its neighbours is one the
+operator cannot choose between.
 
 ### 3a.5 — Voice schema (4-axis) requirement
 

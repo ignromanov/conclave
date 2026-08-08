@@ -1,9 +1,8 @@
 ---
-description: |
-  Weekly cadence triage pipeline for the facilitator role + Forge. Five-step pipeline: dedup digest,
-  classify clusters, write status/owner back to review files, open GH Issues for
-  accepted items, archive resolved reviews. Run when /conclave:start signals "Triage due".
-  Monthly: zombie pass for items open > 90 days.
+description: >-
+  Works through the backlog of accumulated work reviews — groups duplicates, decides what is
+  accepted, rejected or deferred, opens GitHub issues for the accepted items, and archives what
+  is resolved. Use when /conclave:start reports that triage is due.
 ---
 
 !`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/feedback-protocol.md`
