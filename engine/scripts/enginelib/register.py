@@ -76,6 +76,15 @@ class ExecutorOpts:
     tools: str = ""
 
 
+# The colours the harness renders for a subagent. Source: the `color` row of the subagent
+# frontmatter reference (https://code.claude.com/docs/en/sub-agents). Anything else is accepted
+# by YAML and dropped at render time, which is how seven shipped agents ended up sharing the
+# same absence of a colour while appearing to be distinctly labelled.
+VALID_AGENT_COLORS: frozenset[str] = frozenset(
+    {"red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan"}
+)
+
+
 class EmojiCollisionError(Exception):
     """Raised when the requested emoji is reserved or already used by another agent."""
 
@@ -110,6 +119,10 @@ def create_executor(
         raise ValueError("missing --emoji")
     if not opts.color:
         raise ValueError("missing --color")
+    if opts.color not in VALID_AGENT_COLORS:
+        raise ValueError(
+            f"invalid --color: {opts.color} (must be one of {', '.join(sorted(VALID_AGENT_COLORS))})"
+        )
     if opts.role not in {"dev", "test"}:
         raise ValueError(f"invalid role: {opts.role} (must be dev|test)")
 

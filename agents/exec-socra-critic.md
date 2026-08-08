@@ -10,7 +10,7 @@ model: sonnet
 tier: executor
 chosen-name: socra
 emoji: 🔍
-color: indigo
+color: red
 created: 2026-06-06
 ---
 

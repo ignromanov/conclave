@@ -10,7 +10,7 @@ model: sonnet
 tier: executor
 chosen-name: themis
 emoji: ⚖️
-color: amber
+color: blue
 created: 2026-06-06
 ---
 

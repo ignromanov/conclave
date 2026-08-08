@@ -194,6 +194,67 @@ def test_template_forbids_progress_narration():
     )
 
 
+# ── #109 Task 2 — colours the harness actually renders, one per agent ─────────
+
+# The authoritative set, transcribed from the subagent frontmatter reference
+# (https://code.claude.com/docs/en/sub-agents, `color` row). Hardcoded HERE on purpose: a test
+# that imported the value it checks would pass against a wrong constant. Everything else —
+# the enginelib constant, the palette pool, the shipped defs — is checked against this.
+_HARNESS_COLORS = frozenset(
+    {"red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan"}
+)
+_PALETTE = (
+    _REPO_ROOT / "skills" / "forge-operations" / "references" / "color-palette.md"
+)
+
+
+def _palette_pool() -> set[str]:
+    """The colours color-palette.md offers, parsed from the line under the pool heading."""
+    lines = _read(_PALETTE).splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith("## Available colors"):
+            for candidate in lines[i + 1:]:
+                if candidate.strip():
+                    return {c.strip() for c in candidate.split(",") if c.strip()}
+    raise AssertionError("color-palette.md has no '## Available colors' pool line")
+
+
+def test_enginelib_colour_constant_matches_the_harness():
+    from enginelib.register import VALID_AGENT_COLORS
+
+    assert set(VALID_AGENT_COLORS) == _HARNESS_COLORS
+
+
+def test_palette_pool_matches_the_harness():
+    """The pool offered at hire must be the pool the harness renders.
+
+    It was not: the pool listed 16 values, 8 of which (teal, indigo, magenta, amber, lime,
+    emerald, rose, slate) the harness does not accept — and every shipped agent had been
+    assigned one of those.
+    """
+    assert _palette_pool() == _HARNESS_COLORS
+
+
+def test_agent_colours_are_valid_and_distinct():
+    """Every def in agents/ carries a renderable colour, and no two share one."""
+    seen: dict[str, str] = {}
+    agent_defs = sorted(_AGENTS.glob("*.md"))
+    assert agent_defs, "no agent defs found under agents/"
+    assert len(agent_defs) <= len(_HARNESS_COLORS), (
+        f"{len(agent_defs)} agent defs but only {len(_HARNESS_COLORS)} renderable colours — "
+        f"distinctness is no longer achievable in this directory. Re-scope the rule to a tier "
+        f"before adding another def; do not silently drop the assertion."
+    )
+    for md in agent_defs:
+        colour = _frontmatter_field(_read(md), "color")
+        assert colour in _HARNESS_COLORS, (
+            f"{md.name}: color: {colour!r} is not one of {sorted(_HARNESS_COLORS)} — "
+            f"the harness ignores it, so the agent renders with no colour at all"
+        )
+        assert colour not in seen, f"{md.name} and {seen[colour]} both claim color: {colour}"
+        seen[colour] = md.name
+
+
 # ── #61 — executor naming-standard guard (drift-proof, catches hire/rename drift) ─
 
 

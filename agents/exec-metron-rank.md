@@ -10,7 +10,7 @@ model: sonnet
 tier: executor
 chosen-name: metron
 emoji: 📐
-color: amber
+color: orange
 created: 2026-06-06
 ---
 

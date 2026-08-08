@@ -28,7 +28,7 @@ def _agents_dir() -> Path:
 # 1. Missing --chosen-name → exit ≠ 0, "chosen-name" in stderr
 # ---------------------------------------------------------------------------
 def test_missing_chosen_name(ai_root):
-    r = run_engine("register", "executor", "--role", "dev", "--emoji", "🦊", "--color", "teal")
+    r = run_engine("register", "executor", "--role", "dev", "--emoji", "🦫", "--color", "green")
     assert r.returncode != 0
     assert "chosen-name" in r.stderr
 
@@ -39,7 +39,7 @@ def test_missing_chosen_name(ai_root):
 def test_emoji_collision_reserved(ai_root):
     r = run_engine(
         "register", "executor",
-        "--chosen-name", "atlas", "--role", "dev", "--emoji", "🔷", "--color", "teal",
+        "--chosen-name", "atlas", "--role", "dev", "--emoji", "🔷", "--color", "green",
     )
     assert r.returncode != 0
     assert "collision" in r.stderr or "reserved" in r.stderr
@@ -51,7 +51,7 @@ def test_emoji_collision_reserved(ai_root):
 def test_invalid_role(ai_root):
     r = run_engine(
         "register", "executor",
-        "--chosen-name", "atlas", "--role", "banana", "--emoji", "🦊", "--color", "teal",
+        "--chosen-name", "atlas", "--role", "banana", "--emoji", "🦫", "--color", "green",
     )
     assert r.returncode != 0
     assert "role" in r.stderr
@@ -66,7 +66,7 @@ def test_happy_path(ai_root):
     r = run_engine(
         "register", "executor",
         "--chosen-name", "atlas", "--role", "dev",
-        "--emoji", "🦊", "--color", "teal",
+        "--emoji", "🦫", "--color", "green",
     )
     assert r.returncode == 0
     agent_def = _agents_dir() / "exec-atlas-dev.md"
@@ -87,12 +87,12 @@ def test_idempotent(ai_root):
     run_engine(
         "register", "executor",
         "--chosen-name", "atlas", "--role", "dev",
-        "--emoji", "🦊", "--color", "teal",
+        "--emoji", "🦫", "--color", "green",
     )
     r = run_engine(
         "register", "executor",
         "--chosen-name", "atlas", "--role", "dev",
-        "--emoji", "🦊", "--color", "teal",
+        "--emoji", "🦫", "--color", "green",
     )
     assert r.returncode == 0
     hits = list(_agents_dir().glob("exec-atlas-dev.md"))
@@ -106,7 +106,7 @@ def test_dry_run(ai_root):
     r = run_engine(
         "register", "executor",
         "--chosen-name", "atlas", "--role", "dev",
-        "--emoji", "🦊", "--color", "teal",
+        "--emoji", "🦫", "--color", "green",
         "--dry-run",
     )
     assert r.returncode == 0
@@ -152,6 +152,21 @@ def test_scaffold_emits_a_real_tool_scope(ai_root):
 
 
 # ---------------------------------------------------------------------------
+# 7c. Spec 109 Task 2 — a colour the harness cannot render is rejected at hire.
+#     Every shipped agent had one (teal, violet, sky, indigo, amber): YAML accepts the
+#     value, the renderer drops it, and the agent shows up unlabelled. Caught here, the
+#     hire fails loudly instead of producing an agent that looks configured.
+# ---------------------------------------------------------------------------
+def test_invalid_colour_is_rejected(ai_root):
+    r = run_engine(
+        "register", "executor",
+        "--chosen-name", "atlas", "--role", "dev", "--emoji", "🦫", "--color", "teal",
+    )
+    assert r.returncode != 0
+    assert "color" in r.stderr and "teal" in r.stderr
+
+
+# ---------------------------------------------------------------------------
 # 8. --wraps is gone from the CLI surface too (an accepted-but-ignored flag is
 #    worse than a removed one: it lets a caller believe it did something).
 # ---------------------------------------------------------------------------
@@ -173,7 +188,7 @@ def test_create_path_emits_naming_standard(ai_root):
     r = run_engine(
         "register", "executor",
         "--chosen-name", "atlas", "--role", "dev",
-        "--emoji", "🦊", "--color", "teal",
+        "--emoji", "🦫", "--color", "green",
     )
     assert r.returncode == 0
     agent_def = _agents_dir() / "exec-atlas-dev.md"
@@ -195,7 +210,7 @@ def test_create_path_emits_naming_standard(ai_root):
 def test_chosen_name_with_spaces(ai_root):
     r = run_engine(
         "register", "executor",
-        "--chosen-name", "has spaces", "--role", "dev", "--emoji", "🦊", "--color", "teal",
+        "--chosen-name", "has spaces", "--role", "dev", "--emoji", "🦫", "--color", "green",
     )
     assert r.returncode != 0
 
@@ -206,6 +221,6 @@ def test_chosen_name_with_spaces(ai_root):
 def test_chosen_name_with_slash(ai_root):
     r = run_engine(
         "register", "executor",
-        "--chosen-name", "has/slash", "--role", "dev", "--emoji", "🦊", "--color", "teal",
+        "--chosen-name", "has/slash", "--role", "dev", "--emoji", "🦫", "--color", "green",
     )
     assert r.returncode != 0

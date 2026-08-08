@@ -10,7 +10,7 @@ model: sonnet
 tier: executor
 chosen-name: iris
 emoji: 🌈
-color: violet
+color: yellow
 created: 2026-05-07
 ---
 

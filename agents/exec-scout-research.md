@@ -10,7 +10,7 @@ model: sonnet
 tier: executor
 chosen-name: scout
 emoji: 🔭
-color: sky
+color: cyan
 created: 2026-06-06
 ---
 

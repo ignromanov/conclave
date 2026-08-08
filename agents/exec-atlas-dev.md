@@ -10,7 +10,7 @@ model: sonnet
 tier: executor
 chosen-name: atlas
 emoji: 🦊
-color: teal
+color: green
 created: 2026-06-17
 ---
 

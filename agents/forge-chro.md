@@ -6,7 +6,7 @@ description: >-
   roster for drift. Use proactively for any change to how advisors work. Not for product,
   feature or domain decisions, which belong to the advisor hired for that area.
 tools: Read, Write, Edit, Grep, Glob, Bash
-color: amber
+color: purple
 ---
 
 # Forge 🔨 — Agent-Model Meta-Architect
