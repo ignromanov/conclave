@@ -409,6 +409,11 @@ def _step_cadence_guard() -> list[str]:
 
     Returns a list with one 'feedback:' line when triage is due, empty list
     otherwise. Missing script → returns a warning line; subprocess error → same.
+    A non-zero exit is also a failed check: its stdout is not trusted (a crash can
+    print a partial/stale triage_due= line before dying), so it must warn rather
+    than silently collapse to "nothing due" — this function feeds render_dashboard(),
+    printed at the top of every session, so a swallowed failure is invisible by
+    construction.
     """
     triage_script = _engine_root() / "scripts" / "feedback" / "feedback_triage.py"
     if not triage_script.is_file():
@@ -416,12 +421,18 @@ def _step_cadence_guard() -> list[str]:
 
     try:
         result = subprocess.run(
-            ["python3", str(triage_script), "--check"],
+            [sys.executable, str(triage_script), "--check"],
             capture_output=True,
             text=True,
         )
     except OSError as exc:
         return [f"  feedback: warning — could not run feedback_triage.py: {exc}"]
+
+    if result.returncode != 0:
+        return [
+            f"  feedback: warning — feedback_triage.py --check exited {result.returncode}, "
+            f"skipping cadence check"
+        ]
 
     # Parse triage_due=<true|false> and open_items=<n> from stdout
     triage_due = False

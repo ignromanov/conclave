@@ -26,6 +26,7 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
 # Interpreter floor, enforced before the first thing that can fail below it — here, `roster`,
@@ -44,6 +45,13 @@ if sys.version_info < (3, 11):  # noqa: UP036 — see engine/__main__.py
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
 import roster  # noqa: E402  (lib/ is not a package; path-inserted above)
+
+# enginelib lives one level up from lifecycle/ — the same insert lib/roster.py
+# performs (relative to its own location) for itself; repeated here so this
+# module's import of enginelib does not rely on import order against `import
+# roster` above.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from enginelib.paths import iter_advisor_skills  # noqa: E402
 
 # Engine lifecycle/forge skills are CODE, not advisors — exclude them when deriving
 # the advisor set from the DATA-root team.* registry.
@@ -64,18 +72,22 @@ def _data_root() -> str:
 
 
 def canonical_advisors() -> set[str]:
-    """Derive the advisor set from the on-disk registry (DATA-root .claude/skills/team.*),
+    """Derive the advisor set from the on-disk registry (DATA-root .claude/skills/),
     minus engine lifecycle/forge skills. Empty when the registry is absent — callers
-    treat empty as 'no enforcement' (degrade to permissive, not reject-all)."""
-    skills_dir = os.path.join(_data_root(), ".claude", "skills")
-    advisors: set[str] = set()
-    if os.path.isdir(skills_dir):
-        for name in os.listdir(skills_dir):
-            if name.startswith("team.") and os.path.isdir(os.path.join(skills_dir, name)):
-                stem = name[len("team."):]
-                if stem not in _LIFECYCLE_SKILLS:
-                    advisors.add(stem)
-    return advisors
+    treat empty as 'no enforcement' (degrade to permissive, not reject-all).
+
+    Reads through enginelib.paths.iter_advisor_skills, the shared #54 discovery
+    helper that dual-reads both the current `conclave-<id>` skill-dir layout and
+    the legacy `team.<id>` one. The direct `team.`-prefix os.listdir() scan this
+    replaced went blind the moment an advisor migrated to `conclave-<id>` (PRs
+    #95/#97) — which is every advisor on a modern instance.
+    """
+    skills_base = Path(_data_root()) / ".claude" / "skills"
+    return {
+        bare
+        for bare, _skill_md in iter_advisor_skills(skills_base)
+        if bare not in _LIFECYCLE_SKILLS
+    }
 
 # Board coordinates come from roster.yaml (per-instance config), not hardcoded.
 PROJECT_NUM = int(roster.get("github.board_number", "0") or 0)

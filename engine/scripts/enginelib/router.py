@@ -6,6 +6,7 @@ plugin updates). I/O-free core: reads template, writes file; no print/argparse/e
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
 
@@ -47,11 +48,28 @@ def _description_from_agent_def(advisor_id: str, skills_root: Path) -> str:
     second identity, and a description built from the id alone is exactly the
     plumbing stub this whole change removes.
     """
-    for agents_dir in (skills_root.parent / "agents", paths.project_agents_dir()):
+    for agents_dir in _agent_def_dirs(skills_root):
         text = frontmatter.fm_get_block(agents_dir / f"{advisor_id}.md", "description")
         if text:
             return text
     return ""
+
+
+def _agent_def_dirs(skills_root: Path) -> Iterator[Path]:
+    """Directories that can hold an advisor's agent-def, caller's own first.
+
+    Lazy on purpose. `project_agents_dir()` resolves the DATA root, which a fresh
+    checkout does not have — building both candidates as a tuple ran that resolver
+    even when `skills_root` already held the file, and made an absent DATA root
+    fatal instead of merely empty. A project root that will not resolve means "no
+    agent-def over there", which ends the search; it is not this function's error
+    to raise.
+    """
+    yield skills_root.parent / "agents"
+    try:
+        yield paths.project_agents_dir()
+    except RuntimeError:
+        return
 
 
 def scaffold_router(
