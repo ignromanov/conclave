@@ -56,6 +56,27 @@ def test_the_report_names_the_allowed_roles(tmp_path):
     assert "cdpo" in r.stdout, r.stdout
 
 
+def test_the_legacy_team_prefix_is_not_part_of_the_id(tmp_path):
+    """`team.<id>.md` is the pre-103 filename convention; the id is what follows.
+
+    Measured on the VoidPay instance, whose five advisors all conform and were
+    all reported as broken because the audit judged the filename."""
+    _agents(tmp_path, "team.kai-cto", "team.nexus-ceo", "team.quorum")
+    r = _audit(tmp_path)
+    assert "kai-cto" not in r.stdout, r.stdout
+    assert "nexus-ceo" not in r.stdout, r.stdout
+    assert "quorum" in r.stdout, "the one id that really lacks a role must survive"
+    assert r.returncode != 0, r.stdout
+
+
+def test_the_legacy_dot_executor_form_is_still_an_executor(tmp_path):
+    """Executors were `exec.<name>-<role>` before the hyphen standard. Skipping
+    only `exec-` reported six of VoidPay's executors as broken advisors."""
+    _agents(tmp_path, "sage-cto", "exec.scout", "exec.atlas-dev", "exec.judge")
+    r = _audit(tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
 def test_a_dangling_symlink_is_not_an_advisor(tmp_path):
     """The project's `.claude/agents/` is a symlink layer over the DATA tree.
     Retiring an advisor deletes the target and can leave the link behind, and a

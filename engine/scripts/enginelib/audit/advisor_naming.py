@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from enginelib.advisors import ADVISOR_ROLES, is_valid_advisor_id
+from enginelib.advisors import ADVISOR_ROLES, _agent_ids, is_valid_advisor_id
 from enginelib.audit import Findings
 
 
@@ -30,15 +30,13 @@ def run(agents_dir: Path) -> Findings:
     if not agents_dir.is_dir():
         return findings
 
-    # `is_file()` follows the link: the project's agents dir is a symlink layer
-    # over the DATA tree, so retiring an advisor deletes the target and can leave
-    # the link behind. A glob still sees it, and the audit told the operator to
-    # migrate the memory of a file that does not exist.
-    offenders = sorted(
-        md.stem
-        for md in agents_dir.glob("*.md")
-        if md.is_file() and not md.stem.startswith("exec-") and not is_valid_advisor_id(md.stem)
-    )
+    # Read the roster through the engine's own resolver rather than globbing the
+    # directory again. Its second copy of "which files here name an advisor" had
+    # already drifted: it judged `team.<id>.md` — the pre-103 FILENAME of an id
+    # that conforms perfectly well — as broken, and missed that the dotted
+    # `exec.` form is an executor. On an instance predating both conventions it
+    # reported sixteen findings, none of them true.
+    offenders = sorted(i for i in _agent_ids(agents_dir) if not is_valid_advisor_id(i))
     if not offenders:
         return findings
 
