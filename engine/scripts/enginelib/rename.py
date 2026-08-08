@@ -43,6 +43,27 @@ _SLUG_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _ID_FIELDS = ("advisor", "by", "from", "to", "agent", "resolved_by", "resolved-by",
               "hired-by", "owner", "requested_by")
 
+# The subset of _ID_FIELDS that names a record's OWNER — who wrote it, not who it
+# is about or who it was sent to. A record carrying one of these has already
+# answered "whose is this?", and the answer outranks anything the filename implies.
+_OWNER_FIELDS = ("advisor", "by", "owner", "agent", "from")
+
+# Ids that are also the engine's own vocabulary. For these, a whole-token rewrite
+# of CONFIG is wrong by construction: `--advisor sage-cto`, "the sage-cto advisor"
+# and `engine advisor create` all contain the word without naming this advisor, and
+# no token rule separates them from the one occurrence that does.
+#
+# This is not a stylistic worry. `advisor` is the id `/conclave:init` scaffolds every
+# fresh instance with, so the first rename a consumer ever runs is the one that
+# rewrites the session_init invocation of every OTHER advisor they have hired.
+# Identity is therefore taken from the places that prove it — a `conclave-<id>` path,
+# an id-valued frontmatter key, the value after a CLI flag — and every remaining
+# occurrence is reported for review instead of guessed at.
+_COMMON_NOUN_IDS = frozenset({
+    "advisor", "executor", "agent", "session", "decision",
+    "handoff", "mention", "feedback", "briefing", "roster",
+})
+
 # Frontmatter keys that EMBED an id inside a derived identifier. Left as-is by
 # policy (they are the record's own past identity), but reported so the operator
 # sees what will no longer match its filename.
@@ -113,19 +134,82 @@ def _rewrite_config(text: str, old: str, new: str) -> tuple[str, int]:
     return token_re(old).sub(repl, text), count
 
 
-def _id_positions(part: str, old: str, *, is_name: bool) -> list[int]:
+# The three shapes in config that PROVE an occurrence is this advisor rather than
+# the engine's word for one. Everything outside them is reported, never guessed.
+_CONFIG_IDENTITY_PREFIX = re.compile(r"(?<![a-z0-9])(conclave-|team\.|exec-)$")
+_CONFIG_IDENTITY_KEY = re.compile(r"^[ \t-]*([a-z][a-z0-9_-]*):[ \t]*$")
+_CONFIG_FLAG_VALUE = re.compile(r"--[a-z][a-z0-9-]*[ \t]+$")
+
+
+def _rewrite_config_narrow(text: str, old: str, new: str) -> tuple[str, int]:
+    """Rewrite only the occurrences of *old* that provably name this advisor.
+
+    Used when the id is also the engine's own vocabulary (`_COMMON_NOUN_IDS`),
+    where the blanket rewrite corrupts unrelated files. The three provable shapes:
+
+      `conclave-<id>` / `team.<id>` / `exec-<id>`   a router or agent-def name
+      `<key>: <id>`                                 an id-valued key
+      `--<flag> <id>`                               the VALUE after a CLI flag,
+                                                    never the flag's own name
+    """
+    count = 0
+
+    def repl(m: re.Match[str]) -> str:
+        nonlocal count
+        start, end = m.span()
+        line_start = text.rfind("\n", 0, start) + 1
+        before = text[line_start:start]
+        after = text[end:]
+        provable = (
+            _CONFIG_IDENTITY_PREFIX.search(before) is not None
+            or (_CONFIG_IDENTITY_KEY.fullmatch(before) is not None
+                and after[:after.find("\n") if "\n" in after else len(after)].strip() == "")
+            or _CONFIG_FLAG_VALUE.search(before) is not None
+        )
+        if not provable:
+            return m.group(0)
+        count += 1
+        return new
+
+    return token_re(old).sub(repl, text), count
+
+
+def _config_rewriter(old: str):
+    """The config rewrite appropriate to *old* — narrow for a common-noun id."""
+    return _rewrite_config_narrow if old in _COMMON_NOUN_IDS else _rewrite_config
+
+
+def _config_review_lines(text: str, old: str, new: str) -> list[str]:
+    """`line-number: text` for every config occurrence the narrow rewrite left alone."""
+    kept, _ = _config_rewriter(old)(text, old, new)
+    rx = token_re(old)
+    return [
+        f"L{i}: {line.strip()[:100]}"
+        for i, line in enumerate(kept.splitlines(), start=1)
+        if rx.search(line)
+    ]
+
+
+def _id_positions(part: str, old: str, *, is_name: bool, owner_is_other: bool = False) -> list[int]:
     """Offsets in *part* where *old* stands in an identity position.
 
     A directory is an identity only when it IS the id (`mentions/<id>/`), so a
     topic directory never moves.
+
+    *owner_is_other* drops the OWNER offsets — leading, and just past a date
+    prefix — because the record's own frontmatter names a different author. The
+    recipient offset after `-to-` survives it: in a mention the sender and the
+    recipient are two identities, and only the sender is the owner.
     """
     if not is_name:
         return [0] if part == old else []
-    starts = {0}
-    for rx in (_DATE_PREFIX, _DATE_TIME_PREFIX):
-        m = rx.match(part)
-        if m:
-            starts.add(m.end())
+    starts: set[int] = set()
+    if not owner_is_other:
+        starts.add(0)
+        for rx in (_DATE_PREFIX, _DATE_TIME_PREFIX):
+            m = rx.match(part)
+            if m:
+                starts.add(m.end())
     starts.update(m.end() for m in re.finditer("-to-", part))
     return sorted(
         i for i in starts
@@ -133,9 +217,11 @@ def _id_positions(part: str, old: str, *, is_name: bool) -> list[int]:
     )
 
 
-def _rewrite_positions(part: str, old: str, new: str, *, is_name: bool) -> str:
+def _rewrite_positions(part: str, old: str, new: str, *, is_name: bool,
+                       owner_is_other: bool = False) -> str:
     out = part
-    for i in reversed(_id_positions(part, old, is_name=is_name)):
+    for i in reversed(_id_positions(part, old, is_name=is_name,
+                                    owner_is_other=owner_is_other)):
         out = out[:i] + new + out[i + len(old):]
     return out
 
@@ -178,6 +264,7 @@ class RenamePlan:
     skipped: list[tuple[str, Path]] = field(default_factory=list)   # (class, path)
     inert: list[Path] = field(default_factory=list)   # matched, no action earned
     notes: list[Note] = field(default_factory=list)
+    reviews: list[Note] = field(default_factory=list)  # common-noun config, by hand
 
     def counts(self) -> dict[str, int]:
         return {
@@ -187,6 +274,7 @@ class RenamePlan:
             "protected": sum(1 for c, _ in self.skipped if c == PROTECTED),
             "unclassified": sum(1 for c, _ in self.skipped if c == UNCLASSIFIED),
             "prose-only": len(self.inert),
+            "review": len(self.reviews),
         }
 
 
@@ -472,7 +560,8 @@ def plan(old: str, new: str) -> RenamePlan:
             if cls in (PROTECTED, UNCLASSIFIED):
                 p.skipped.append((cls, f))
                 continue
-            dst = _renamed_path(f, root, rx, new, cls, old)
+            owner = _owner_field(text) if (cls == HISTORY and text is not None) else None
+            dst = _renamed_path(f, root, rx, new, cls, old, owner=owner)
             if cls == REGEN:
                 p.drops.append(Drop(f, "auto-generated — regenerated on next session"))
                 continue
@@ -482,10 +571,14 @@ def plan(old: str, new: str) -> RenamePlan:
                 continue
             acted = dst != f
             if cls == CONFIG:
-                _, n = _rewrite_config(text, old, new)
+                _, n = _config_rewriter(old)(text, old, new)
                 if n:
                     p.edits.append(Edit(dst, cls, "token", f"{old} → {new} ×{n}"))
                     acted = True
+                if old in _COMMON_NOUN_IDS:
+                    for detail in _config_review_lines(text, old, new):
+                        p.reviews.append(Note(dst, detail))
+                        acted = True
             elif f.name.endswith(".jsonl"):
                 _, details = _rewrite_jsonl(text, old, new)
                 for d in details:
@@ -557,21 +650,48 @@ def _field_values(text: str) -> list[str]:
     return out
 
 
-def _renamed_path(f: Path, root: Path, rx: re.Pattern[str], new: str, cls: str, old: str) -> Path:
+def _renamed_path(f: Path, root: Path, rx: re.Pattern[str], new: str, cls: str, old: str,
+                  *, owner: str | None = None) -> Path:
     """Where *f* lands after the rename.
 
     CONFIG keeps the whole-token replace: it names the advisor mid-token on
     purpose (`conclave-<id>/`, `exec-<id>.md`), and there every occurrence IS the
     identity. HISTORY is position-aware — see `_id_positions`.
+
+    *owner* is the record's declared author, when it has one. A decision BY
+    another advisor ABOUT this one opens the id in owner position
+    (`2026-08-07-advisor-identity-registry.md`) and is not this advisor's record;
+    position alone moves it and rewrites someone else's history.
     """
     rel = f.relative_to(root)
     if cls != HISTORY:
         return root.joinpath(*(rx.sub(new, part) for part in rel.parts))
     last = len(rel.parts) - 1
+    owner_is_other = owner is not None and owner != old
     return root.joinpath(*(
-        _rewrite_positions(part, old, new, is_name=(i == last))
+        _rewrite_positions(part, old, new, is_name=(i == last),
+                           owner_is_other=owner_is_other)
         for i, part in enumerate(rel.parts)
     ))
+
+
+def _owner_field(text: str) -> str | None:
+    """The record's declared author, or None when it declares no owner.
+
+    None means "fall back to the filename", which is what records written before
+    these fields existed rely on. A field, when present, always wins — the rule
+    `advisors.files_for_advisor` already applies on the read side, and the two
+    disagreeing is how a rename moved a record it did not own.
+    """
+    lines = [ln.rstrip("\r\n") for ln in text.splitlines()]
+    span = _frontmatter_span(lines)
+    if span is None:
+        return None
+    for i in range(span[0], span[1]):
+        for key in _OWNER_FIELDS:
+            if lines[i].startswith(f"{key}:"):
+                return lines[i][len(key) + 1:].strip().strip('"').strip("'") or None
+    return None
 
 
 def _check_collisions(p: RenamePlan) -> None:
@@ -612,7 +732,7 @@ def apply(p: RenamePlan) -> dict[str, int]:
         if path.name.endswith(".jsonl"):
             new_text, _ = _rewrite_jsonl(text, p.old, p.new)
         elif any(e.kind == "token" for e in p.edits if e.path == path):
-            new_text, _ = _rewrite_config(text, p.old, p.new)
+            new_text, _ = _config_rewriter(p.old)(text, p.old, p.new)
         else:
             new_text, _ = _rewrite_fields(text, p.old, p.new)
         if new_text != text:
@@ -681,6 +801,14 @@ def render(p: RenamePlan, *, applied: bool) -> list[str]:
     if p.inert:
         out.append(f"prose-only ({len(p.inert)}) — names the id in body text, untouched")
         out += [f"  KEEP   {show(i)}" for i in p.inert]
+        out.append("")
+
+    if p.reviews:
+        out.append(
+            f"review-by-hand ({len(p.reviews)}) — {p.old!r} is also the engine's own word; "
+            f"these occurrences are not provably this advisor"
+        )
+        out += [f"  REVIEW {show(n.path)}  {n.detail}" for n in p.reviews]
         out.append("")
 
     if p.notes:
