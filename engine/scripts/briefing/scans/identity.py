@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from briefing.scans import ScanCtx
 
-_PLACEHOLDER = "_(personality.md not yet written — advisor should run /team.forge to seed)_"
+# The remedy must name a command that exists. `/team.forge` never shipped under
+# that name and the `team.` prefix is retired entirely, so the one line an advisor
+# sees when its persona is missing pointed at nothing it could run.
+_PLACEHOLDER = "_(personality.md not yet written — run /conclave:forge to seed it)_"
 
 
 def build(ctx: ScanCtx) -> str:

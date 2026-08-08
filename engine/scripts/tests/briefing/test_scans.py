@@ -57,7 +57,26 @@ class TestIdentity:
     def test_missing_file_returns_placeholder(self, tmp_path):
         ctx = make_ctx(tmp_path)
         result = identity.build(ctx)
-        assert result == "_(personality.md not yet written — advisor should run /team.forge to seed)_"
+        assert result == "_(personality.md not yet written — run /conclave:forge to seed it)_"
+
+    def test_placeholder_names_a_command_that_exists(self, tmp_path):
+        """Pinning the exact string proves it is stable, not that it is useful — it
+        pinned `/team.forge` just as firmly for as long as no such command existed.
+        Resolve whatever command the placeholder names against the shipped set, so
+        the assertion survives a reword and fails on a phantom.
+
+        The commands dir is derived from this file's own location rather than
+        engine_root(): inside a worktree CONCLAVE_ENGINE_ROOT still points at the
+        main checkout (#86), so a shipped-asset lookup would read the wrong tree.
+        """
+        import re
+
+        result = identity.build(make_ctx(tmp_path))
+        named = re.findall(r"/conclave:([a-z-]+)", result)
+        assert named, f"placeholder names no /conclave: command: {result}"
+        commands = Path(__file__).resolve().parents[4] / "commands"
+        missing = [n for n in named if not (commands / f"{n}.md").is_file()]
+        assert not missing, f"placeholder names non-existent command(s) {missing} in {commands}"
 
     def test_no_frontmatter_returns_body(self, tmp_path):
         ctx = make_ctx(tmp_path)
