@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import textwrap
 import time
 from pathlib import Path
@@ -555,7 +556,9 @@ class TestCadenceGuard:
         os.utime(marker, (old_time, old_time))
         return marker
 
-    def _make_feedback_script(self, root: Path, *, triage_due: bool, open_items: int = 5) -> Path:
+    def _make_feedback_script(
+        self, root: Path, *, triage_due: bool, open_items: int = 5, exit_code: int = 0
+    ) -> Path:
         """Scaffold a fake feedback_triage.py that prints the expected --check output."""
         scripts = root / "engine" / "scripts"
         feedback_dir = scripts / "feedback"
@@ -567,8 +570,8 @@ class TestCadenceGuard:
             f"if '--check' in sys.argv:\n"
             f"    print('triage_due={due_str}')\n"
             f"    print('open_items={open_items}')\n"
-            f"    sys.exit(0)\n"
-            f"sys.exit(0)\n",
+            f"    sys.exit({exit_code})\n"
+            f"sys.exit({exit_code})\n",
             encoding="utf-8",
         )
         return script
@@ -616,6 +619,57 @@ class TestCadenceGuard:
         lines = session_init._step_cadence_guard()
         # Either no feedback: line (silently skipped) OR a warning — must not raise
         assert isinstance(lines, list)
+
+    def test_nonzero_exit_empty_stdout_emits_warning_not_silence(self, tmp_path, monkeypatch):
+        """Non-zero exit + empty stdout must surface a warning, not collapse to "nothing due".
+
+        Reproduces the defect: result.returncode was never inspected, so a script that
+        exits non-zero (e.g. the interpreter-floor guard firing under a stale system
+        python3) produced no triage_due= line, and the guard silently returned [] —
+        indistinguishable from "checked, nothing due".
+        """
+        root = _make_root(tmp_path)
+        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        scripts = root / "engine" / "scripts"
+        feedback_dir = scripts / "feedback"
+        feedback_dir.mkdir(parents=True, exist_ok=True)
+        script = feedback_dir / "feedback_triage.py"
+        script.write_text("import sys\nsys.exit(1)\n", encoding="utf-8")
+        lines = session_init._step_cadence_guard()
+        assert lines, "a failed check must be reported, never silently equal to []"
+        assert any("warning" in ln.lower() for ln in lines)
+
+    def test_nonzero_exit_with_parseable_line_still_warns(self, tmp_path, monkeypatch):
+        """Non-zero exit invalidates a parsed triage_due= line, even if one is present.
+
+        A script that exits non-zero has signalled it did not complete correctly;
+        trusting partial/incidental stdout from a failed run would let a crash masquerade
+        as a real answer. The guard must warn rather than report "triage due" or "not due".
+        """
+        root = _make_root(tmp_path)
+        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        self._make_feedback_script(root, triage_due=True, open_items=7, exit_code=1)
+        lines = session_init._step_cadence_guard()
+        assert any("warning" in ln.lower() for ln in lines)
+        assert not any(ln.startswith("  feedback: triage due") for ln in lines)
+
+    def test_uses_sys_executable_not_bare_python3(self, tmp_path, monkeypatch):
+        """The invoked interpreter must be sys.executable, matching the sibling subprocess
+        calls in this file — not a bare 'python3' that may resolve to a pre-floor interpreter
+        off PATH."""
+        root = _make_root(tmp_path)
+        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        self._make_feedback_script(root, triage_due=False, open_items=0)
+        captured = {}
+        real_run = subprocess.run
+
+        def fake_run(cmd, *args, **kwargs):
+            captured["cmd"] = cmd
+            return real_run(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(session_init.subprocess, "run", fake_run)
+        session_init._step_cadence_guard()
+        assert captured["cmd"][0] == sys.executable
 
 
 # ---------------------------------------------------------------------------
