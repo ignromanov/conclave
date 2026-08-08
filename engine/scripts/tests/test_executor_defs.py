@@ -135,6 +135,20 @@ def test_executor_frontmatter_is_canonical():
         )
 
 
+def test_executor_description_is_a_folded_block():
+    """`description: >-`, never a bare scalar.
+
+    Two of six were bare when 109 was planned. Every executor description contains at least one
+    colon (`Use when: …`, `🔍 Attacks a proposal …: …`), and a colon in a bare YAML scalar is a
+    parse break — one that surfaces as the agent failing to load, not as a diff you notice.
+    """
+    for md in _executor_defs():
+        value = _frontmatter_field(_read(md), "description")
+        assert value == ">-", (
+            f"{md.name}: description must be a folded block (`description: >-`), got {value!r}"
+        )
+
+
 def test_executor_model_declared_sonnet():
     """`model:` is declared in the file, not only typed by a well-behaved dispatcher.
 
