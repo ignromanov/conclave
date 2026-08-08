@@ -15,8 +15,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from enginelib.duties.duty import Duty, load_duty
-from enginelib.duties.model import Manifest, Norm
+from enginelib.duties.derive import derive, load_duties
+from enginelib.duties.duty import Duty
+from enginelib.duties.model import AgentKind, Manifest, Norm
 from enginelib.duties.validate import Finding, compose
 
 
@@ -26,6 +27,10 @@ class Projection:
     norms: list[Norm] = field(default_factory=list)
     duties: list[Duty] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
+    derived: Manifest = field(default_factory=lambda: Manifest(version=1))
+    """What the agent's duty files contributed to the namespace. Carried out so the caller
+    can validate against the SAME derivation the projection composed — deriving a second
+    time beside the call is how the registry starts showing one thing and enforcing another."""
 
 
 def project_agent(
@@ -33,28 +38,27 @@ def project_agent(
     agent_manifest: Manifest,
     agent_id: str,
     duties_dir: Path,
+    kind: AgentKind = "advisor",
 ) -> Projection:
-    """Compose base + agent and collect the agent's duty files.
+    """Compose base + agent + the norms derived from the agent's own duty files.
 
     A duty carrying findings is still projected. Refusing to render it would hide every
     other duty the agent holds behind one bad file — the opposite of surfacing the problem.
+
+    Derivation is composed in here rather than beside here: `check_discharge` composes the
+    same three, so what the projection shows and what the check enforces cannot diverge.
     """
-    composed = compose([base, agent_manifest])
-    duties: list[Duty] = []
-    findings: list[Finding] = []
+    duties = load_duties(duties_dir)
+    findings: list[Finding] = [f for duty in duties for f in duty.findings]
+    derived = derive(duties, agent_id, kind)
+    composed = compose([base, agent_manifest, derived])
 
-    if duties_dir.is_dir():
-        for path in sorted(duties_dir.glob("*.md")):
-            duty = load_duty(path)
-            duties.append(duty)
-            findings.extend(duty.findings)
-
-    duties.sort(key=lambda d: d.id)
     return Projection(
         agent_id=agent_id,
         norms=composed.for_role(agent_id),
         duties=duties,
         findings=findings,
+        derived=derived,
     )
 
 
@@ -71,8 +75,12 @@ def render_projection(agent_id: str, projection: Projection) -> str:
     ]
 
     if projection.duties:
+        force = {n.mission: n.type for n in projection.norms}
         for duty in projection.duties:
-            lines.append(f"{duty.id}: {duty.description}")
+            # Composed force, not declared force — a duty cannot declare its own (P2 §0), so
+            # this tag is the only place the reader learns whether the duty is actually owed.
+            # `advice` is the floor: every duty derives one, so the lookup cannot miss.
+            lines.append(f"{duty.id} [{force.get(duty.mission, 'advice')}]: {duty.description}")
     else:
         lines.append("_none — this agent has written no duties yet._")
 

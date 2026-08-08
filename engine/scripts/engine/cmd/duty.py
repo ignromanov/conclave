@@ -53,10 +53,42 @@ def _load_manifest(path: Path | None) -> Manifest:
 
 
 def _base_manifests() -> list[Manifest]:
-    from enginelib.paths import duty_roster_dir
+    """The engine base, plus the instance's operator-owned norms.
+
+    The instance file is loaded by DEFAULT, not behind `--manifest`: `commands/done.md`
+    invokes `duty discharge` with no flags, so a norms file reachable only by flag would be
+    unreachable from the one place the check actually runs.
+    """
+    from enginelib.paths import duty_roster_dir, instance_norms_path
 
     base = duty_roster_dir()
-    return [_load_manifest(base / "missions.base.yaml"), _load_manifest(base / "norms.base.yaml")]
+    return [
+        _load_manifest(base / "missions.base.yaml"),
+        _load_manifest(base / "norms.base.yaml"),
+        _load_manifest(instance_norms_path()),
+    ]
+
+
+def _merged_base() -> Manifest:
+    """The base manifests as ONE manifest.
+
+    The core takes (base, agent_manifest) — two slots. The adapter has three base files, so
+    passing them by index (`manifests[0]`, `manifests[-1]`) silently drops everything in
+    between. That was harmless while both engine bases shipped empty; it stops being harmless
+    the moment the instance norms file joins them, since that file is the entire point of P2.
+    """
+    merged = Manifest(version=1)
+    for m in _base_manifests():
+        merged.roles.extend(m.roles)
+        merged.missions.extend(m.missions)
+        merged.norms.extend(m.norms)
+    return merged
+
+
+def _kind(args: argparse.Namespace) -> str:
+    """Which abstract tier the derived role inherits. `kind:advisor` and `kind:executor` are
+    a partition (validate.py), so getting this wrong makes base norms miss the agent."""
+    return "executor" if args.executor else "advisor"
 
 
 def _agent_paths(advisor: str, executor: str | None) -> tuple[str, Path, Path]:
@@ -80,9 +112,14 @@ def _validate(args: argparse.Namespace) -> int:
     from enginelib.duties.validate import validate
 
     agent_id, duties_dir, _ = _agent_paths(args.advisor, args.executor)
-    manifests = _base_manifests() + [_load_manifest(Path(args.manifest) if args.manifest else None)]
-    findings = validate(manifests)
-    findings += project_agent(manifests[0], manifests[-1], agent_id, duties_dir).findings
+    base = _merged_base()
+    agent_manifest = _load_manifest(Path(args.manifest) if args.manifest else None)
+    projection = project_agent(base, agent_manifest, agent_id, duties_dir, _kind(args))
+    # Validate against the projection's OWN derivation. An operator norm naming a duty is a
+    # reference to a mission the duty file declares — validating without it would report
+    # `unknown-mission` for the one-line norm P2 exists to make possible.
+    findings = validate([base, agent_manifest, projection.derived])
+    findings += projection.findings
     return _emit(findings)
 
 
@@ -91,8 +128,8 @@ def _project(args: argparse.Namespace) -> int:
     from enginelib.paths import ensure_dir
 
     agent_id, duties_dir, out_dir = _agent_paths(args.advisor, args.executor)
-    manifests = _base_manifests() + [_load_manifest(Path(args.manifest) if args.manifest else None)]
-    projection = project_agent(manifests[0], manifests[-1], agent_id, duties_dir)
+    agent_manifest = _load_manifest(Path(args.manifest) if args.manifest else None)
+    projection = project_agent(_merged_base(), agent_manifest, agent_id, duties_dir, _kind(args))
 
     out = ensure_dir(out_dir) / "COMPUTED-DUTIES.md"
     out.write_text(render_projection(agent_id, projection), encoding="utf-8")
@@ -134,9 +171,10 @@ def _discharge(args: argparse.Namespace) -> int:
     """
     from enginelib.duties.discharge import check_discharge
 
-    agent_id, _, home = _agent_paths(args.advisor, args.executor)
-    manifests = _base_manifests() + [_load_manifest(Path(args.manifest) if args.manifest else None)]
-    r = check_discharge(manifests[0], manifests[-1], agent_id, home, session_id=args.session)
+    agent_id, duties_dir, home = _agent_paths(args.advisor, args.executor)
+    agent_manifest = _load_manifest(Path(args.manifest) if args.manifest else None)
+    r = check_discharge(_merged_base(), agent_manifest, agent_id, home, session_id=args.session,
+                        duties_dir=duties_dir, kind=_kind(args))
 
     for mission in r.discharged:
         print(f"discharged: {mission}")
@@ -147,7 +185,12 @@ def _discharge(args: argparse.Namespace) -> int:
     for mission in r.unevaluated:
         print(f"UNEVALUATED: {mission} — condition not answered this session")
     print(f"=== Summary: {len(r.discharged)} discharged, {len(r.deferred)} deferred, "
-          f"{len(r.unevaluated)} unevaluated ===")
+          f"{len(r.unevaluated)} unevaluated (of {r.norms_in_force} obligations) ===")
+    if not r.norms_in_force:
+        # An empty registry is a state, not a failure — but it must be a *stated* state.
+        # Without this line the run is textually identical to one that owed two things and
+        # discharged both, and "clean" would mean "nothing was ever checked".
+        print("no norms in force — nothing is owed to check against")
     return 0 if r.is_clean else 2
 
 

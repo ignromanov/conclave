@@ -20,8 +20,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from enginelib.duties.derive import derive, load_duties
 from enginelib.duties.ledger import read_entries
-from enginelib.duties.model import Manifest
+from enginelib.duties.model import AgentKind, Manifest
 from enginelib.duties.validate import compose
 
 
@@ -33,6 +34,9 @@ class DischargeResult:
     deferred: list[str] = field(default_factory=list)
     condition_unmet: list[str] = field(default_factory=list)
     unevaluated: list[str] = field(default_factory=list)
+    norms_in_force: int = 0
+    """How many obligations were checked. The denominator: without it, `0 deferred` reads the
+    same whether the agent owed nothing or owed everything and did it all."""
 
     @property
     def is_clean(self) -> bool:
@@ -47,8 +51,15 @@ def check_discharge(
     agent_dir: Path,
     *,
     session_id: str,
+    duties_dir: Path | None = None,
+    kind: AgentKind = "advisor",
 ) -> DischargeResult:
-    composed = compose([base, agent_manifest])
+    """`duties_dir` is what makes a written duty reachable here at all: the agent's own
+    duties derive advice norms, which an operator norm can then elevate to an obligation.
+    Omit it and only the manifests are in play — the pre-P2 behaviour, kept so callers that
+    genuinely have no duty files (the unit tests below) need not invent one."""
+    duties = load_duties(duties_dir)
+    composed = compose([base, agent_manifest, derive(duties, agent_id, kind)])
     obligations = [n for n in composed.for_role(agent_id) if n.type == "obligation"]
 
     this_session = {
@@ -57,7 +68,8 @@ def check_discharge(
         if e.session_id == session_id
     }
 
-    result = DischargeResult(agent_id=agent_id, session_id=session_id)
+    result = DischargeResult(agent_id=agent_id, session_id=session_id,
+                             norms_in_force=len(obligations))
     for norm in obligations:
         outcome = this_session.get(norm.mission)
         if outcome == "discharged":

@@ -66,7 +66,7 @@ def test_project_writes_computed_duties_for_an_advisor(tmp_path):
     out = tmp_path / "agent-memory" / "advisors" / "sage-cto" / "COMPUTED-DUTIES.md"
     assert out.exists(), r.stdout
     text = out.read_text()
-    assert "d_close_session: Files session artifacts before exit." in text
+    assert "d_close_session [advice]: Files session artifacts before exit." in text
     assert "file the decision and session records" not in text, "body leaked into projection"
 
 
@@ -81,7 +81,7 @@ def test_project_writes_computed_duties_for_an_executor(tmp_path):
     assert r.returncode == 0, r.stderr
     out = tmp_path / "agent-memory" / "executors" / "iris-test" / "COMPUTED-DUTIES.md"
     assert out.exists(), r.stdout
-    assert "d_close_session:" in out.read_text()
+    assert "d_close_session [advice]:" in out.read_text()
 
 
 def test_advisor_home_uses_the_conclave_prefix(tmp_path):
@@ -91,7 +91,8 @@ def test_advisor_home_uses_the_conclave_prefix(tmp_path):
     r = _run("project", "--advisor", "sage-cto", tmp=tmp_path)
     assert r.returncode == 0, r.stderr
     out = tmp_path / "agent-memory" / "advisors" / "sage-cto" / "COMPUTED-DUTIES.md"
-    assert "d_close_session:" in out.read_text(), "duties under conclave- were not found"
+    assert "d_close_session [advice]:" in out.read_text(), \
+        "duties under conclave- were not found"
 
 
 def test_broken_duty_surfaces_as_a_nonzero_exit(tmp_path):
@@ -159,6 +160,119 @@ def test_discharge_is_clean_when_nothing_is_owed(tmp_path):
     r = _run("discharge", "--advisor", "sage-cto", "--session", "s1", tmp=tmp_path)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "0 deferred" in r.stdout
+
+
+def _norms_file(tmp: Path, body: str) -> Path:
+    """The operator-owned norms file, at its canonical DATA location."""
+    import textwrap
+    d = tmp / "roster"
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / "norms.yaml"
+    p.write_text(textwrap.dedent(body).strip() + "\n", encoding="utf-8")
+    return p
+
+
+def _duty_file(tmp: Path, advisor: str = "sage-cto") -> Path:
+    p = _advisor_duties(tmp, advisor) / "d_close_session.md"
+    p.write_text(CLEAN_DUTY, encoding="utf-8")
+    return p
+
+
+def test_an_operator_norm_binds_a_duty_without_an_explicit_manifest(tmp_path):
+    """`commands/done.md` invokes `duty discharge` with no `--manifest`. A norms file the
+    one production caller cannot reach is the same vacuum in a new location."""
+    _duty_file(tmp_path)
+    _norms_file(tmp_path, """
+        version: 1
+        norms:
+          - {type: obligation, role: sage-cto, mission: d_close_session}
+    """)
+
+    r = _run("discharge", "--advisor", "sage-cto", "--session", "s1", tmp=tmp_path)
+    assert r.returncode == 2, f"the elevated duty was not owed: {r.stdout}{r.stderr}"
+    assert "DEFERRED: d_close_session" in r.stdout, r.stdout
+
+
+def test_one_norm_line_is_the_whole_cost_of_elevating_a_duty(tmp_path):
+    """The ergonomics contract (plan §0.4). A norms file holding ONLY the `norms:` line —
+    no `roles:`, no `missions:` — must validate clean, because derivation declares both.
+
+    If this goes red, elevation costs three hand-written YAML blocks and the operator stops
+    elevating. The mechanism would still work and nobody would use it.
+    """
+    _duty_file(tmp_path)
+    _norms_file(tmp_path, """
+        version: 1
+        norms:
+          - {type: obligation, role: sage-cto, mission: d_close_session}
+    """)
+
+    r = _run("validate", "--advisor", "sage-cto", tmp=tmp_path)
+    assert r.returncode == 0, f"a one-line norm did not validate: {r.stdout}{r.stderr}"
+    assert "unknown-mission" not in r.stdout and "unknown-role" not in r.stdout, r.stdout
+
+
+def test_every_verb_runs_clean_with_no_norms_file(tmp_path):
+    """A fresh instance has no norms file. That is the normal state, not a broken one."""
+    for verb in ("validate", "project", "discharge"):
+        args = ["--advisor", "sage-cto"] + (["--session", "s1"] if verb == "discharge" else [])
+        r = _run(verb, *args, tmp=tmp_path)
+        assert r.returncode == 0, f"{verb} failed with no norms file: {r.stdout}{r.stderr}"
+
+
+def test_a_duty_alone_is_advice_and_owes_nothing(tmp_path):
+    """The other half of §0: without an operator norm the duty derives advice, and advice is
+    not owed. A check that marked every self-written duty delinquent would fire always, and a
+    signal that always fires is one nobody reads."""
+    _duty_file(tmp_path)
+    r = _run("discharge", "--advisor", "sage-cto", "--session", "s1", tmp=tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "DEFERRED" not in r.stdout, r.stdout
+
+
+def test_discharge_states_its_denominator(tmp_path):
+    """A numerator with no denominator cannot be read.
+
+    `0 discharged, 0 deferred, 0 unevaluated` is printed both when the agent owed nothing and
+    when it owed two things and did both. Those are opposite states and they must not render
+    the same. The vacuous run says so in words; the satisfied run carries its total.
+    """
+    import textwrap
+    manifest = tmp_path / "m.yaml"
+    manifest.write_text(textwrap.dedent("""
+        version: 1
+        roles:
+          - {id: sage-cto, kind: advisor, inherits: ["kind:advisor"]}
+        missions:
+          - {id: m_one, goal: The first thing owed.}
+          - {id: m_two, goal: The second thing owed.}
+        norms:
+          - {type: obligation, role: sage-cto, mission: m_one}
+          - {type: obligation, role: sage-cto, mission: m_two}
+    """).strip(), encoding="utf-8")
+
+    vacuous = _run("discharge", "--advisor", "sage-cto", "--session", "s1", tmp=tmp_path)
+    assert vacuous.returncode == 0, vacuous.stdout + vacuous.stderr
+    assert "no norms in force" in vacuous.stdout, (
+        f"an empty registry must state that it is empty: {vacuous.stdout}")
+
+    for mission in ("m_one", "m_two"):
+        _run("record", "--advisor", "sage-cto", "--duty", mission,
+             "--session", "s1", "--outcome", "discharged", tmp=tmp_path)
+    satisfied = _run("discharge", "--advisor", "sage-cto", "--session", "s1",
+                     "--manifest", str(manifest), tmp=tmp_path)
+    assert satisfied.returncode == 0, satisfied.stdout + satisfied.stderr
+    assert "of 2 obligations" in satisfied.stdout, (
+        f"a satisfied run must carry its total: {satisfied.stdout}")
+    assert "no norms in force" not in satisfied.stdout, (
+        "two obligations were in force — the empty-registry line must not appear")
+
+    assert _summary_line(vacuous.stdout) != _summary_line(satisfied.stdout), (
+        "owing nothing and having discharged everything render identically")
+
+
+def _summary_line(stdout: str) -> str:
+    return next((ln for ln in stdout.splitlines() if ln.startswith("=== Summary")), "")
 
 
 def test_discharge_exit_code_is_warning_not_error_when_owed(tmp_path):
