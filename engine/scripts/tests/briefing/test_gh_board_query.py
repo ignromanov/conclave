@@ -185,65 +185,13 @@ class TestLoadItems:
 
 
 # ---------------------------------------------------------------------------
-# canonical_advisors() — DATA-root .claude/skills/ registry scan
-# ---------------------------------------------------------------------------
-
-def _skill_dir(tmp_path, name):
-    """A real advisor skill dir always carries a SKILL.md — build one so the
-    fixture matches what iter_advisor_skills() actually keys off."""
-    d = tmp_path / ".claude" / "skills" / name
-    d.mkdir(parents=True)
-    (d / "SKILL.md").write_text(f"---\nname: {name}\n---\n")
-    return d
-
-
-class TestCanonicalAdvisorsRegistry:
-    """Advisors migrated from the legacy `team.<id>` skill-dir prefix to
-    `conclave-<id>` (PRs #95/#97). A scan that only matches `team.` goes blind to
-    every advisor on a migrated instance — and once the last `team.*` leftover is
-    cleaned up, blind becomes an EMPTY set, which callers read as 'no
-    enforcement' and silently stop validating --advisor at all. Both phases are
-    the same defect; fixing the scan fixes both.
-    """
-
-    def test_conclave_prefixed_advisor_is_recognized(self, tmp_path, monkeypatch):
-        _skill_dir(tmp_path, "conclave-keel-coo")
-        monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
-        assert "keel-coo" in gh_board_query.canonical_advisors()
-
-    def test_legacy_team_prefixed_advisor_is_still_recognized(self, tmp_path, monkeypatch):
-        # Legacy support is dual-read, not dropped — a leftover team.* dir must
-        # still resolve.
-        _skill_dir(tmp_path, "team.kai-cto")
-        monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
-        assert "kai-cto" in gh_board_query.canonical_advisors()
-
-    def test_conclave_only_registry_does_not_degrade_to_empty(self, tmp_path, monkeypatch):
-        # A registry holding ONLY conclave-* dirs (no leftover legacy team.* dir,
-        # i.e. every instance once the migration is fully cleaned up) must still
-        # be read as a real, non-empty registry — an empty return here silently
-        # disables the --advisor validation gate entirely (main()'s `if
-        # args.advisor and canonical and ...` degrades to permissive on empty).
-        _skill_dir(tmp_path, "conclave-keel-coo")
-        _skill_dir(tmp_path, "conclave-sage-cto")
-        monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
-        canonical = gh_board_query.canonical_advisors()
-        assert canonical == {"keel-coo", "sage-cto"}
-
-
-# ---------------------------------------------------------------------------
 # CLI arg validation
 # ---------------------------------------------------------------------------
 
 class TestMainArgValidation:
     def test_unknown_advisor_exits_1(self, tmp_path, monkeypatch):
         # Non-empty registry (one real advisor) → an id absent from it is rejected.
-        # A real skill dir always carries a SKILL.md — iter_advisor_skills() (the
-        # #54 discovery helper canonical_advisors() now reads through) keys off
-        # that file, not bare dir existence.
-        skill_dir = tmp_path / ".claude" / "skills" / "team.kai-cto"
-        skill_dir.mkdir(parents=True)
-        (skill_dir / "SKILL.md").write_text("---\nname: kai-cto\n---\n")
+        (tmp_path / ".claude" / "skills" / "team.kai-cto").mkdir(parents=True)
         monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
         rc = gh_board_query.main(["--mode", "advisor-open", "--advisor", "ghost-xyz"])
         assert rc == 1

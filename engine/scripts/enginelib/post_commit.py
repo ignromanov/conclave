@@ -30,9 +30,8 @@ def run_briefing_regen(changed_files: list[str]) -> int:
     Returns number of failures (0 = all OK).
     """
     from briefing.regen import advisors_from_commit_diff, regen_advisors
-    from enginelib.advisors import canonical_advisors
     diff_output = "\n".join(changed_files)
-    advisors = advisors_from_commit_diff(diff_output, canonical_advisors())
+    advisors = advisors_from_commit_diff(diff_output)
     if not advisors:
         return 0
     return regen_advisors(advisors)

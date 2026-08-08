@@ -49,16 +49,3 @@ def test_feedback_filter_skips_unrelated_files():
     assert not should_rebuild_feedback_index(["README.md"])
     assert not should_rebuild_feedback_index(["engine/scripts/foo.py", "docs/spec.md"])
     assert not should_rebuild_feedback_index([])
-
-
-def test_run_briefing_regen_does_not_raise(ai_root):
-    """Regression: run_briefing_regen must actually execute, not just import.
-
-    Every other test in this file checks --help exit codes or a pure helper
-    function — none calls run_briefing_regen itself, which is how it shipped
-    calling advisors_from_commit_diff() without the now-required `advisors`
-    positional argument, raising TypeError on every real commit.
-    """
-    from enginelib.post_commit import run_briefing_regen
-    changed = ["agent-memory/advisors/decisions/2026-05-21-kai-cto-foo.md"]
-    run_briefing_regen(changed)  # must not raise

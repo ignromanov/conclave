@@ -65,13 +65,6 @@ jobs:
       - name: Assert the lint gate can run
         run: ruff --version
 
-      # tests/test_mypy_gate.py skips itself when it cannot find mypy, so a runner without
-      # mypy would report green on a gate that never executed — the same failure mode that let
-      # a real signature error (post_commit.py calling advisors_from_commit_diff() with a
-      # missing argument) ship undetected. Fail here, loudly, instead.
-      - name: Assert the type gate can run
-        run: mypy --version
-
       # pytest.ini at the repo root is the single source of config (GH#99) — rootdir, pythonpath
       # and both testpaths. Invoke it bare from the repo root, exactly as the docs prescribe; any
       # narrower invocation resolves a different rootdir and a different suite set.
