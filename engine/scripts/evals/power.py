@@ -22,6 +22,13 @@ from __future__ import annotations
 import math
 import random
 import statistics
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # Type-only: runner pulls in the whole eval harness (arms, fixture, snapshot, subprocess),
+    # and this module is pure arithmetic. Under `from __future__ import annotations` the name is
+    # never needed at runtime.
+    from evals.runner import Trial
 
 Z_ALPHA_2 = 1.959963985  # two-sided 95%
 Z_POWER = {0.80: 0.8416212336, 0.90: 1.2815515655}
@@ -159,7 +166,9 @@ def per_principle_deltas(
     a large divergence between them is itself a finding about the trap suite — not grounds to trust
     the filtered number more.
     """
-    by_key: dict[tuple[str, int, str], object] = {
+    # `Trial`, not `object`: the loop below reads .aware and .violated off these values, and an
+    # `object` annotation discards exactly the information that makes those reads checkable.
+    by_key: dict[tuple[str, int, str], Trial] = {
         (t.trap_id, t.rep, t.arm): t for t in trials
     }
     out: dict[str, dict] = {}
@@ -191,7 +200,9 @@ def per_principle_deltas(
             continue
 
         delta, lo, hi = paired_bootstrap_ci(pairs, iters=iters, seed=seed)
-        b, c, p = mcnemar_exact_p(pairs)
+        # Named mcnemar_* rather than b/c/p: `b` is the matched-partner trial in the loop above,
+        # and reusing it here for a discordant-pair count made one name mean two things.
+        mcnemar_b, mcnemar_c, mcnemar_p = mcnemar_exact_p(pairs)
         out[trap_id] = {
             "n_pairs": len(pairs),
             "dropped_verbalised": dropped,
@@ -200,9 +211,9 @@ def per_principle_deltas(
             "lo": lo,
             "hi": hi,
             # A second, independent read that cannot be made degenerate by a resampling bug.
-            "mcnemar_b": b,
-            "mcnemar_c": c,
-            "mcnemar_p": p,
+            "mcnemar_b": mcnemar_b,
+            "mcnemar_c": mcnemar_c,
+            "mcnemar_p": mcnemar_p,
             # The base rate is reported beside every delta: a trap nobody violates in the control
             # arm produces a null regardless of charter quality (spec 104 §11.1).
             "base_rate": statistics.fmean(c_ for _, _, c_ in pairs),

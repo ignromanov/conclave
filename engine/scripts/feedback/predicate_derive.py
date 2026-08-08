@@ -40,6 +40,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeGuard
 
 from feedback_verify import _contained, _resolve, classify_predicate
 
@@ -65,7 +66,9 @@ class Derivation:
     reason: str
 
 
-def _is_symbol(section: str | None) -> bool:
+def _is_symbol(section: str | None) -> TypeGuard[str]:
+    """TypeGuard, not bool: the None-rejection below is the whole point of the guard, and a
+    plain bool leaves callers dereferencing `section` under a check the checker cannot see."""
     if not section:
         return False
     return bool(_IDENT_RE.match(section)) and ("_" in section or section != section.lower())
