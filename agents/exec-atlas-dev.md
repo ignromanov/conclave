@@ -1,6 +1,10 @@
 ---
 name: exec-atlas-dev
-description: "Implementation executor (atlas) — dispatch for dev tasks: write code, build features, apply fixes; wraps team-implementer and returns the diff plus test results for the assigned task."
+description: >-
+  🦊 Writes the code — builds features, applies fixes, and returns the diff plus test results
+  for one assigned task. Use when an advisor has decided what to build and needs it implemented.
+  Not for deciding what to build, judging whether the result is good enough, or editing anything
+  outside the task scope.
 wraps: team-implementer  # e.g., team-implementer, team-reviewer, team-debugger
 tier: executor
 chosen-name: atlas

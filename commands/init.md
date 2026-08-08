@@ -1,11 +1,8 @@
 ---
-description: |
-  Bootstrap Conclave in a consumer project: scaffold the `.conclave/` DATA tree,
-  write `roster.yaml`, mint a first advisor, scaffold a wiki vault, and register the
-  SessionStart hook DATA-side. Run ONCE per project before `/conclave:start`.
-
-  Triggers: "init conclave", "set up conclave", "bootstrap the advisory team",
-  "scaffold .conclave", "initialize the project", or first-run setup.
+description: >-
+  Sets Conclave up in a project for the first time — creates the data tree that holds the
+  team's memory, records the project's identity, hires a first advisor, and wires the session
+  hook. Use once per project, before the first /conclave:start.
 version: 1.0.0
 ---
 

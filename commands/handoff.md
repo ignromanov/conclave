@@ -1,8 +1,8 @@
 ---
-description: |
-  MANDATORY resume-prompt creation for ALL advisors (with or without Quorum).
-  Creates structured resume-prompt for interrupted work.
-  Invoked by /conclave:done when work is incomplete. No exceptions.
+description: >-
+  Writes a structured resume-prompt for unfinished work — what was done, what is left, and
+  where to pick it up — so the next session continues instead of rediscovering the context.
+  Use when stopping mid-task; /conclave:done invokes it automatically when work is incomplete.
 ---
 
 !`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/github-issues-protocol.md`

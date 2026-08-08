@@ -1,6 +1,6 @@
 ---
 name: ${ID}
-description: ${EMOJI} ${ROLE} advisor — ${TONE_HINT}
+description: ${DESCRIPTION}
 color: ${COLOR}
 tools: "*"
 ---

@@ -1,10 +1,8 @@
 ---
-description: |
-  Universal end-of-session / end-of-dispatch work-review emission for ALL agents.
-  Walks the agent through the Review schema, scaffolds the review file, instructs
-  honest item filling (cap 3-5, evidence mandatory, minimum-item rule), then flips
-  _draft: false. Invoked by /conclave:done (advisors) and by exec.* at dispatch end.
-  Any agent can invoke it directly. No exceptions.
+description: >-
+  Records a work review at the end of a session or dispatch — what caused friction, where it
+  happened, the evidence for it, and the one change that would fix it. Use when finishing any
+  agent run; the items feed the triage backlog that repairs the system.
 ---
 
 !`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/feedback-protocol.md`

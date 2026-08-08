@@ -1,9 +1,8 @@
 ---
-description: |
-  MANDATORY work routing for ALL advisors (with or without Quorum).
-  Detects mode (Quick Answer/Working Session/Meeting/Execution),
-  task type, and tier. Routes to appropriate workflow skill.
-  Every advisor session MUST invoke this after /conclave:start. No exceptions.
+description: >-
+  Decides how the current request should be handled — a quick answer, a working session, a
+  meeting, or executing an existing plan — binds it to a matching open GitHub issue, and hands
+  off to the workflow that fits. Use right after /conclave:start, once the request is known.
 ---
 
 !`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/github-issues-protocol.md`

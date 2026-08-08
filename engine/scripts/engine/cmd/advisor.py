@@ -21,6 +21,7 @@ def _create(args) -> int:
         name=args.name or "",
         emoji=args.emoji or "",
         tone=args.tone or "",
+        description=args.description or "",
     )
     try:
         info = advisor.create(opts)
@@ -81,6 +82,12 @@ def register(sub) -> None:
     c.add_argument("--name", default="", help="Display name (defaults to --id).")
     c.add_argument("--emoji", default="", help="Emoji glyph (default 🧭).")
     c.add_argument("--tone", default="", help="Tone hint (default pragmatic).")
+    c.add_argument(
+        "--description", default="",
+        help="Identity: what this advisor covers and what it is not for. "
+             "Shown in the / menu and read by the model when routing. "
+             "Omitted → a stub the description gate rejects.",
+    )
     c.set_defaults(func=_create)
 
     r = vsub.add_parser("scaffold-router", help="Scaffold the /conclave-<id> router skill.")

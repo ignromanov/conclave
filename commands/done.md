@@ -1,9 +1,8 @@
 ---
-description: |
-  MANDATORY session completion checklist for ALL advisors (with or without Quorum).
-  3 mandatory + 7 conditional items (1-10), DO-CONFIRM format.
-  Every advisor session MUST end with this skill. No exceptions.
-  Conditional items 4-10 fire situationally — rarely all at once (WHO Checklist research favours ≤7 active per run).
+description: >-
+  Closes an advisor session so nothing is silently lost — commits the work, syncs GitHub
+  issues, files decisions and mentions, records what was learned, and writes a resume-prompt
+  if anything is unfinished. Use as the last step of every advisor session.
 ---
 
 !`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/agent-data-policy.md`

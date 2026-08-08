@@ -1,6 +1,10 @@
 ---
 name: exec-metron-rank
-description: "Staged best-of-N ranker (P6 filter). Use when: N>1 candidates exist from P5 generation and p6-rank sub-phase needs ranked YAML before floor/critic/judge. NOT for: generating artifacts (atlas), issuing pass/fail verdicts (judge/iris), or single-candidate runs (N=1 skips ranker)."
+description: >-
+  📐 Ranks competing candidates — takes several attempts at the same task and orders them by
+  merit so the weakest are dropped before expensive review. Use when more than one candidate
+  exists and something must choose between them. Not for producing candidates, issuing a
+  pass/fail verdict, or a single-candidate run, where ranking is a no-op.
 wraps: team-reviewer
 tier: executor
 chosen-name: metron
