@@ -9,9 +9,12 @@ import re
 from pathlib import Path
 
 from enginelib.paths import (
+    advisor_skill_dir,
+    forge_dir,
     iter_advisor_skills,
     plugin_agents_dir,
     project_agents_dir,
+    project_skills_dir,
     skills_dir,
 )
 
@@ -225,6 +228,37 @@ def is_canonical_advisor(name: str = "", *, allow_lifecycle: bool = False) -> bo
 # Forge is a META-advisor: a valid lifecycle target but not a domain advisor,
 # so it is excluded from registry-driven enumeration (Forge invariant #7).
 META_ADVISORS = frozenset({"forge-chro"})
+
+
+def personality_path(advisor_id: str, skills_base: Path | None = None) -> Path:
+    """Where to READ *advisor_id*'s personality.md from.
+
+    A hired advisor's persona is instance data: `advisor create` mints the router
+    into the project skills dir and hire-time enrichment writes the persona beside
+    it. A META advisor's is not. Forge ships with the engine under the SKILL's name
+    (`skills/forge-operations/memory/personality.md`), not the advisor's id, and no
+    instance ever writes a `conclave-<meta-id>/memory/personality.md` — so
+    anchoring both kinds on the project dir asked for a file nothing creates, and
+    every consumer's Forge briefing rendered the 'not yet written' placeholder.
+
+    The project copy wins whenever it exists, so an instance that enriches its own
+    Forge is never overridden by the shipped default, and a domain advisor without
+    a persona still resolves to its own empty path — inheriting Forge's voice would
+    be worse than an honest placeholder. When neither exists the project path is
+    returned, which is also the right answer for a caller about to write one.
+
+    This is a read-side resolver only; `advisor create` still writes beside the
+    router it just minted.
+    """
+    base = skills_base if skills_base is not None else project_skills_dir()
+    own = (
+        advisor_skill_dir(advisor_id, base, artifact="memory/personality.md")
+        / "memory" / "personality.md"
+    )
+    if own.is_file() or advisor_id not in META_ADVISORS:
+        return own
+    shipped = forge_dir() / "memory" / "personality.md"
+    return shipped if shipped.is_file() else own
 
 
 def with_meta(roster: set[str]) -> set[str]:
