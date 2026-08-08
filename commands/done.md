@@ -183,6 +183,13 @@ Complete `/conclave:feedback` before continuing. The gate is the
    you, which is exactly why an unanswered conditional is surfaced instead of assumed in
    either direction.
 
+   **Writing a duty does not create a debt.** A self-written duty is *advice*: it appears in
+   `COMPUTED-DUTIES.md` tagged `[advice]` and nothing is owed for it. Only a norm in the
+   operator-owned `.conclave/roster/norms.yaml` elevates one to `[obligation]`, and only
+   obligations are checked here. That split is deliberate — an agent that could declare its
+   own duties binding could equally soften them, and the check exists to catch exactly that
+   agent (spec 091 P2 §0).
+
    ```bash
    # one per duty that activated
    # outcome ∈ discharged | deferred | skipped | errored | condition-unmet
