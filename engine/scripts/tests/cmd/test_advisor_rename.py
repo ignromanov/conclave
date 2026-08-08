@@ -714,3 +714,50 @@ def test_config_paths_still_use_whole_token_replacement(short_applied):
     the blanket rewrite is the correct one. The position rule is HISTORY-only."""
     assert (short_applied / ".claude" / "skills" / f"conclave-{SHORT_NEW}" / "SKILL.md").is_file()
     assert (short_applied / ".claude" / "agents" / f"{SHORT_NEW}.md").is_file()
+
+
+# ---------------------------------------------------------------------------
+# A COMMON-NOUN id — identity by FIELD, never by token or position
+#
+# Both cases below are the same root: `advisor` is short, topical, and the
+# engine's own word for the role. The id every fresh instance is scaffolded
+# with is therefore the one id a token/position rule cannot resolve — so the
+# first rename a consumer ever runs is the one that corrupts their instance.
+# ---------------------------------------------------------------------------
+
+def test_history_owner_field_outranks_the_filename_position(tmp_path):
+    """A cross-cutting decision BY another advisor, ABOUT this one.
+
+    The filename opens the id in owner position, but `by:` names someone else:
+    the id is the record's TOPIC. `advisors.files_for_advisor` already settles
+    this — "a field, when present, always wins" — and the planner did not ask.
+    """
+    _instance(tmp_path)
+    topic = _w(
+        tmp_path / "ops" / "decisions" / f"2026-08-07-{OLD}-identity-registry.md",
+        f"---\nby: {OTHER}\n---\n\nHow {OLD} ids are resolved.\n",
+    )
+    r = _rename("--from", OLD, "--to", NEW, "--apply", "--confirm", tmp=tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert topic.is_file(), "moved a record owned by another advisor"
+    assert f"by: {OTHER}" in topic.read_text(), "rewrote another advisor's owner field"
+
+
+def test_a_common_noun_id_is_not_token_rewritten_in_another_advisors_config(tmp_path):
+    """In sage-cto's own router every `advisor` is the noun or the CLI flag.
+
+    None of them is this identity, and the blanket token rewrite turns a live
+    `--advisor sage-cto` into a flag that does not exist.
+    """
+    _w(tmp_path / ".claude" / "agents" / "advisor.md", "---\nname: advisor\n---\n")
+    other = _w(
+        tmp_path / ".claude" / "skills" / "conclave-sage-cto" / "SKILL.md",
+        "---\nname: conclave-sage-cto\n---\n\n"
+        "You are being invoked as the **sage-cto** advisor.\n"
+        "pass `--advisor sage-cto` to session-init\n",
+    )
+    r = _rename("--from", "advisor", "--to", "keel-coo", "--apply", "--confirm", tmp=tmp_path)
+    assert r.returncode == 0, r.stderr
+    body = other.read_text()
+    assert "--advisor sage-cto" in body, "rewrote a CLI flag name"
+    assert "the **sage-cto** advisor" in body, "rewrote the common noun"
