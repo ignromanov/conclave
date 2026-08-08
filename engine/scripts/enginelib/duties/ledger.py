@@ -6,8 +6,8 @@ can compute `dead` / `erroneous` / `stale` from.
 
 Two properties are load-bearing:
 
-  - **Append-only.** Never rewrite, never prune (never-silent-delete, VISION §6). A rewrite
-    would erase exactly the history the sweep reads.
+  - **Only ever extended.** New entries go on the end; nothing is rewritten or pruned. A
+    rewrite would erase exactly the history the sweep reads.
   - **Honest outcomes.** `errored`, `skipped` and `condition-unmet` are recorded as readily
     as `discharged`. A ledger holding only successes would let a duty that fails every time
     read as healthy — the unhappy outcomes carry the diagnostic value.

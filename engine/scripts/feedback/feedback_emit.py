@@ -86,10 +86,10 @@ def _reopen_matches(root: Path, meta: dict) -> list[str]:
     already exists at that fingerprint (an ordinary open dup is not a regression).
 
     Makes Constitution VI's reversal path real (093 Component E, closes #89). Never
-    resurrects the archived record — the recurrence is recorded on THIS new item, so
-    never-silent-delete is honored (the archive is not mutated). Archive shards store
-    whole reviews ({items:[...]}); the fingerprint is recomputed per item exactly as
-    feedback_index does.
+    resurrects the archived record — the recurrence is recorded on THIS new item, and
+    the archive itself is left untouched. Archive shards store whole reviews
+    ({items:[...]}); the fingerprint is recomputed per item exactly as feedback_index
+    does.
 
     Abstains on a file-level-only match (#59). Without `location.section` the fingerprint
     buckets an entire file+category, so any two script-defects in the same file collide

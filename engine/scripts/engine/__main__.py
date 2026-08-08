@@ -105,6 +105,15 @@ def _build_parser() -> argparse.ArgumentParser:
     doctor.register(sub)
     from engine.cmd import duty
     duty.register(sub)
+    try:
+        # Excluded from the eval fixture (evals/fixture.py EXCLUDED_PREFIXES) so a trial cannot
+        # read the apparatus scoring it. A fixture build must therefore leave this import failing
+        # and the noun absent, not crash the dispatcher.
+        from engine.cmd import eval as eval_cmd  # noqa: A004 — CLI noun, not the builtin
+    except ImportError:
+        pass
+    else:
+        eval_cmd.register(sub)
     return p
 
 

@@ -1,9 +1,9 @@
 """test_duties_ledger.py — the session-end duty ledger (spec 091 §4).
 
 The ledger is what turns the duty model from documentation into something with teeth: it is
-the only record that a duty was ever acted on. Its two hard properties are append-only
-(never-silent-delete, VISION §6) and honest outcomes — a ledger that only records successes
-would make the §5 health sweep compute `dead` for duties that error every time.
+the only record that a duty was ever acted on. Its two hard properties are that entries are
+only ever added and never rewritten, and honest outcomes — a ledger that only records
+successes would make the §5 health sweep compute `dead` for duties that error every time.
 
 Hermetic: tmp_path only.
 """
@@ -48,8 +48,8 @@ def test_unknown_outcome_is_rejected(tmp_path):
 
 
 def test_append_preserves_earlier_entries(tmp_path):
-    """Append-only. A rewrite that dropped history would erase exactly the evidence the
-    health sweep reads (never-silent-delete, VISION §6)."""
+    """Entries are only ever added. A rewrite that dropped history would erase exactly the
+    evidence the health sweep reads."""
     append_entry(tmp_path, duty_id="d_a", session_id="s1", outcome="discharged")
     append_entry(tmp_path, duty_id="d_b", session_id="s1", outcome="deferred")
     append_entry(tmp_path, duty_id="d_a", session_id="s2", outcome="errored")

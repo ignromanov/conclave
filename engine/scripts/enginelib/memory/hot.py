@@ -26,7 +26,7 @@ _SECTION_MAP = {
 _TEMPLATE = """\
 # Hot — live memory
 
-> ≤500 words. Append-only via scripts; compaction on overflow. Read at /team.start, written at /team.done + on file-decision/mention.
+> ≤500 words. Only scripts write here, and only by appending; compaction on overflow. Read at /team.start, written at /team.done + on file-decision/mention.
 
 ## Now
 
