@@ -5,6 +5,8 @@ description: >-
   for one assigned task. Use when an advisor has decided what to build and needs it implemented.
   Not for deciding what to build, judging whether the result is good enough, or editing anything
   outside the task scope.
+tools: Read, Write, Edit, Grep, Glob, Bash
+model: sonnet
 tier: executor
 chosen-name: atlas
 emoji: 🦊

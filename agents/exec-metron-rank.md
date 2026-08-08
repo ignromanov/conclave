@@ -5,6 +5,8 @@ description: >-
   merit so the weakest are dropped before expensive review. Use when more than one candidate
   exists and something must choose between them. Not for producing candidates, issuing a
   pass/fail verdict, or a single-candidate run, where ranking is a no-op.
+tools: Read, Grep, Bash
+model: sonnet
 tier: executor
 chosen-name: metron
 emoji: 📐

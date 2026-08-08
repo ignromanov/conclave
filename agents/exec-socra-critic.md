@@ -5,12 +5,13 @@ description: >-
   candidate and records the refutations for the judge to weigh. Read-only. Use when a decision
   looks sound and someone should try to break it first. Not for producing the work, fixing what
   it finds, or pronouncing the final verdict.
+tools: Read, Grep, Bash, WebSearch
+model: sonnet
 tier: executor
 chosen-name: socra
 emoji: 🔍
 color: indigo
 created: 2026-06-06
-tools: Read, Grep, Bash, WebSearch
 ---
 
 # exec.socra-critic (socra 🔍)

@@ -73,6 +73,7 @@ class ExecutorOpts:
     role: str
     emoji: str
     color: str
+    tools: str = ""
 
 
 class EmojiCollisionError(Exception):
@@ -112,7 +113,13 @@ def create_executor(
     if opts.role not in {"dev", "test"}:
         raise ValueError(f"invalid role: {opts.role} (must be dev|test)")
 
-    # 2. Reserved-emoji collision (bash: grep -A1 "## Reserved emojis" | tail -1)
+    # 2. Tool scope. A subagent whose `tools:` entries resolve to nothing fails to launch, so
+    #    this must never fall through to the free-text placeholder collapse below.
+    tools = opts.tools or (
+        "Read, Write, Edit, Grep, Glob, Bash" if opts.role == "dev" else "Read, Grep, Glob, Bash"
+    )
+
+    # 3. Reserved-emoji collision (bash: grep -A1 "## Reserved emojis" | tail -1)
     palette_lines = (paths.forge_references_dir() / "color-palette.md").read_text(encoding="utf-8").splitlines()
     reserved_line = ""
     for i, line in enumerate(palette_lines):
@@ -125,7 +132,7 @@ def create_executor(
             f"emoji collision: {opts.emoji} is reserved (see color-palette.md)"
         )
 
-    # 3. Personality collision (bash: find skills_dir -maxdepth 2 -name personality.md)
+    # 4. Personality collision (bash: find skills_dir -maxdepth 2 -name personality.md)
     # -maxdepth 2 finds skills/<dir>/personality.md but NOT skills/<dir>/memory/personality.md
     # (depth 3). Faithful bash quirk: memory/personality.md is missed — preserve it.
     for pmd in paths.skills_dir().glob("*/personality.md"):
@@ -135,7 +142,7 @@ def create_executor(
                     f"emoji collision: {opts.emoji} is used by another agent"
                 )
 
-    # 4. Target paths
+    # 5. Target paths
     #    agent-def stem uses the hyphenated `exec-<name>-<role>` (flat agents/ dir needs
     #    the `exec-` prefix to disambiguate from advisor defs); memory slug is the bare
     #    `<name>-<role>` (the executors/ parent already scopes it — no surface-prefix).
@@ -144,11 +151,11 @@ def create_executor(
     agent_def = paths.plugin_agents_dir() / f"{slug}.md"
     memory_dir = paths.repo_root() / "agent-memory" / "executors" / mem_slug
 
-    # 5. Dry-run: validate only, no writes
+    # 6. Dry-run: validate only, no writes
     if dry_run:
         return agent_def, memory_dir
 
-    # 6. Create directories
+    # 7. Create directories
     agent_def.parent.mkdir(parents=True, exist_ok=True)
     memory_dir.mkdir(parents=True, exist_ok=True)
 
@@ -162,6 +169,7 @@ def create_executor(
     rendered = rendered.replace("{{role}}", opts.role)
     rendered = rendered.replace("{{emoji}}", opts.emoji)
     rendered = rendered.replace("{{color}}", opts.color)
+    rendered = rendered.replace("{{tools}}", tools)
     rendered = rendered.replace("{{YYYY-MM-DD}}", today)
     rendered = rendered.replace("{{Name}}", opts.chosen_name)
     rendered = rendered.replace("{{Emoji}}", opts.emoji)

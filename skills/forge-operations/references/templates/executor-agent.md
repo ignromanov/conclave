@@ -1,6 +1,8 @@
 ---
 name: exec-{{chosen-name}}-{{role}}
 description: {{role-specific dispatch trigger description — when to invoke this executor}}
+tools: {{tools}}
+model: sonnet
 tier: executor
 chosen-name: {{chosen-name}}
 emoji: {{emoji}}

@@ -133,6 +133,25 @@ def test_scaffold_declares_no_agent_teams_dependency(ai_root):
 
 
 # ---------------------------------------------------------------------------
+# 7b. Spec 109 Task 1 — the scaffold emits a real `tools:` scope, never a placeholder.
+#     `{{tools}}` falling through to the free-text collapse would render
+#     `tools: TBD by self-introduction`, and a subagent whose tool entries resolve to
+#     nothing fails to launch — a scaffold defect that only shows up at dispatch.
+# ---------------------------------------------------------------------------
+def test_scaffold_emits_a_real_tool_scope(ai_root):
+    r = run_engine(
+        "register", "executor",
+        "--chosen-name", "scout", "--role", "dev", "--emoji", "🦁", "--color", "green",
+    )
+    assert r.returncode == 0
+    body = (_agents_dir() / "exec-scout-dev.md").read_text()
+    tools_line = next(ln for ln in body.splitlines() if ln.startswith("tools:"))
+    assert "TBD" not in tools_line, f"scaffold left a placeholder: {tools_line!r}"
+    assert "Read" in tools_line and "Bash" in tools_line, tools_line
+    assert "model: sonnet" in body, "scaffold must declare the sonnet default in frontmatter"
+
+
+# ---------------------------------------------------------------------------
 # 8. --wraps is gone from the CLI surface too (an accepted-but-ignored flag is
 #    worse than a removed one: it lets a caller believe it did something).
 # ---------------------------------------------------------------------------

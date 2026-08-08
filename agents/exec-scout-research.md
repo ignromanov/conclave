@@ -5,12 +5,13 @@ description: >-
   the scope of the question, and returns ranked options with citations. Read-only. Use when an
   advisor needs grounded facts rather than a guess. Not for writing code, issuing verdicts, or
   making the decision itself.
+tools: Read, Grep, Glob, WebSearch, WebFetch, Bash
+model: sonnet
 tier: executor
 chosen-name: scout
 emoji: 🔭
 color: sky
 created: 2026-06-06
-tools: Read, Grep, Glob, WebSearch, WebFetch, Bash
 ---
 
 # exec.scout-research
