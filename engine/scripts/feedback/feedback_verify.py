@@ -31,6 +31,19 @@ NOMINATE_FREQ = "every-dispatch"
 NOMINATE_SEVS = {"high", "critical"}
 
 
+def _required(value: str | None, field_name: str, kind: str) -> str:
+    """Make `Predicate._shape`'s guarantee visible to the type checker.
+
+    Every field read below is optional on the model but mandatory for its `kind` — the
+    validator in schema.py already refuses to construct a Predicate without it. Raising here
+    rather than asserting keeps the refusal alive under `python -O`, on a path that decides
+    whether a feedback item may be auto-closed.
+    """
+    if value is None:
+        raise ValueError(f"Predicate(kind={kind!r}) is missing required field {field_name!r}")
+    return value
+
+
 def _resolve(root: Path, rel: str) -> Path:
     p = Path(rel)
     return p if p.is_absolute() else root / rel
@@ -58,7 +71,8 @@ def classify_predicate(pred: Predicate, root: Path) -> str:
       fail: it is surfaced to the operator, because "cannot confirm" and "not done yet"
       are different facts (spec 105 §1 correction — the 2 predicates the 103 move rotted).
     """
-    rel = pred.path if pred.kind == "file-absent" else pred.file
+    rel = (_required(pred.path, "path", pred.kind) if pred.kind == "file-absent"
+           else _required(pred.file, "file", pred.kind))
     target = _resolve(root, rel)
     if not _contained(root, target):
         return "broken"  # escapes project root — refuse, never evaluate (T6)
@@ -70,7 +84,7 @@ def classify_predicate(pred: Predicate, root: Path) -> str:
     if not target.is_file():
         return "broken"  # oracle file gone — cannot confirm; distinct from "not done"
     text = target.read_text(errors="replace")
-    present = re.search(pred.pattern, text) is not None
+    present = re.search(_required(pred.pattern, "pattern", pred.kind), text) is not None
     if pred.kind == "grep-absent":
         return "pass" if not present else "fail"
     if pred.kind == "file-contains":
@@ -168,7 +182,10 @@ def sweep(rows: list[dict], root: Path, limit: int = 40) -> SweepResult:
             })
         if row.get("status") != "accepted":
             continue
-        key = (row.get("feedback_id"), row.get("item_id"))
+        # `or ""` keeps the key at the (str, str) shape SweepResult declares. A row missing
+        # either id is already corrupt; it used to enter the result as (None, None) and reach
+        # the issue-closing path as the string "None".
+        key: tuple[str, str] = (row.get("feedback_id") or "", row.get("item_id") or "")
         vraw = row.get("verify")
         if vraw:
             # cheap + deterministic → never capped

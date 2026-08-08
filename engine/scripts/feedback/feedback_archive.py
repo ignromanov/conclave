@@ -202,8 +202,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Archived {feedback_id} → {arch_file.name}")
 
     if errors:
-        for e in errors:
-            print(e, file=sys.stderr)
+        # not `e`: the name is bound by an `except ... as e` earlier in this function, and Python
+        # deletes it at the end of that block — reusing it here reads as resurrecting a dead name.
+        for err in errors:
+            print(err, file=sys.stderr)
         return 1
 
     print(f"Done: {archived_count} review(s) archived.")
