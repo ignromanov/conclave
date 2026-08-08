@@ -9,7 +9,7 @@ Advisor names include the full 'team.' prefix (the SKILL dir name).
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 # Bare lifecycle/meta skill ids — infrastructure, not advisors. Excluded from
@@ -73,7 +73,6 @@ class ExecutorOpts:
     role: str
     emoji: str
     color: str
-    wraps: str = field(default="")
 
 
 class EmojiCollisionError(Exception):
@@ -113,10 +112,7 @@ def create_executor(
     if opts.role not in {"dev", "test"}:
         raise ValueError(f"invalid role: {opts.role} (must be dev|test)")
 
-    # 2. WRAPS default
-    wraps = opts.wraps or ("team-implementer" if opts.role == "dev" else "team-reviewer")
-
-    # 3. Reserved-emoji collision (bash: grep -A1 "## Reserved emojis" | tail -1)
+    # 2. Reserved-emoji collision (bash: grep -A1 "## Reserved emojis" | tail -1)
     palette_lines = (paths.forge_references_dir() / "color-palette.md").read_text(encoding="utf-8").splitlines()
     reserved_line = ""
     for i, line in enumerate(palette_lines):
@@ -129,7 +125,7 @@ def create_executor(
             f"emoji collision: {opts.emoji} is reserved (see color-palette.md)"
         )
 
-    # 4. Personality collision (bash: find skills_dir -maxdepth 2 -name personality.md)
+    # 3. Personality collision (bash: find skills_dir -maxdepth 2 -name personality.md)
     # -maxdepth 2 finds skills/<dir>/personality.md but NOT skills/<dir>/memory/personality.md
     # (depth 3). Faithful bash quirk: memory/personality.md is missed — preserve it.
     for pmd in paths.skills_dir().glob("*/personality.md"):
@@ -139,7 +135,7 @@ def create_executor(
                     f"emoji collision: {opts.emoji} is used by another agent"
                 )
 
-    # 5. Target paths
+    # 4. Target paths
     #    agent-def stem uses the hyphenated `exec-<name>-<role>` (flat agents/ dir needs
     #    the `exec-` prefix to disambiguate from advisor defs); memory slug is the bare
     #    `<name>-<role>` (the executors/ parent already scopes it — no surface-prefix).
@@ -148,11 +144,11 @@ def create_executor(
     agent_def = paths.plugin_agents_dir() / f"{slug}.md"
     memory_dir = paths.repo_root() / "agent-memory" / "executors" / mem_slug
 
-    # 6. Dry-run: validate only, no writes
+    # 5. Dry-run: validate only, no writes
     if dry_run:
         return agent_def, memory_dir
 
-    # 7. Create directories
+    # 6. Create directories
     agent_def.parent.mkdir(parents=True, exist_ok=True)
     memory_dir.mkdir(parents=True, exist_ok=True)
 
@@ -164,7 +160,6 @@ def create_executor(
     rendered = tmpl
     rendered = rendered.replace("{{chosen-name}}", opts.chosen_name)
     rendered = rendered.replace("{{role}}", opts.role)
-    rendered = rendered.replace("{{plugin-agent-type}}", wraps)
     rendered = rendered.replace("{{emoji}}", opts.emoji)
     rendered = rendered.replace("{{color}}", opts.color)
     rendered = rendered.replace("{{YYYY-MM-DD}}", today)

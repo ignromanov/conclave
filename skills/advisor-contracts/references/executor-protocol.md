@@ -54,7 +54,7 @@ The stable slug is `<chosen-name>-<role>`; each surface adds its own prefix:
 ## Agent-def protocol
 
 Each executor agent-def (`agents/exec-<chosen-name>-<role>.md`) must:
-1. Declare `wraps:` frontmatter pointing to the agent-teams plugin agent type
+1. Declare `tools:` frontmatter — the executor's tool scope stated, never inferred from silence
 2. Include `## Identity` block + an inline `## Voice` section (persona anchor — the roster
    convention is inline voice; NO separate `personality.md`)
 3. Include `## Dispatch protocol` describing how callers invoke the executor

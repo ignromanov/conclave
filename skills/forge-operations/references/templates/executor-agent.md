@@ -1,7 +1,6 @@
 ---
 name: exec-{{chosen-name}}-{{role}}
 description: {{role-specific dispatch trigger description — when to invoke this executor}}
-wraps: {{plugin-agent-type}}  # e.g., team-implementer, team-reviewer, team-debugger
 tier: executor
 chosen-name: {{chosen-name}}
 emoji: {{emoji}}
@@ -20,7 +19,6 @@ created: {{YYYY-MM-DD}}
 | **Name** | {{Name}} {{Emoji}} |
 | **Tier** | Executor |
 | **Role** | {{Role description}} |
-| **Wraps** | `{{plugin-agent-type}}` |
 | **Memory** | `.conclave/agent-memory/executors/{{chosen-name}}-{{role}}/MEMORY.md` (≤50 lines, append-only) |
 
 ## Voice (persona anchor — inline, fill via self-introduction)

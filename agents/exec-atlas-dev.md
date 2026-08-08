@@ -5,7 +5,6 @@ description: >-
   for one assigned task. Use when an advisor has decided what to build and needs it implemented.
   Not for deciding what to build, judging whether the result is good enough, or editing anything
   outside the task scope.
-wraps: team-implementer  # e.g., team-implementer, team-reviewer, team-debugger
 tier: executor
 chosen-name: atlas
 emoji: 🦊
@@ -24,8 +23,9 @@ created: 2026-06-17
 | **Name** | atlas 🦊 |
 | **Tier** | Executor |
 | **Role** | dev worker |
-| **Wraps** | `team-implementer` |
 | **Memory** | `.conclave/agent-memory/executors/atlas-dev/MEMORY.md` (≤50 lines, append-only) |
+
+*Design provenance: the role shape was derived from `agent-teams:team-implementer`; Conclave never invokes it — this executor is dispatched directly as `conclave:exec-atlas-dev`.*
 
 ## When dispatched
 
