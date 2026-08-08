@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 from enginelib.duties.ledger import OUTCOMES
-from enginelib.duties.model import Manifest
+from enginelib.duties.model import AgentKind, Manifest
 from enginelib.duties.validate import Finding
 
 
@@ -85,7 +85,7 @@ def _merged_base() -> Manifest:
     return merged
 
 
-def _kind(args: argparse.Namespace) -> str:
+def _kind(args: argparse.Namespace) -> AgentKind:
     """Which abstract tier the derived role inherits. `kind:advisor` and `kind:executor` are
     a partition (validate.py), so getting this wrong makes base norms miss the agent."""
     return "executor" if args.executor else "advisor"

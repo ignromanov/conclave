@@ -35,7 +35,9 @@ _WORD = re.compile(r"[a-z0-9][a-z0-9_:-]*")
 
 #: Where force is elevated. A duty names what it covers; only this operator-owned file can
 #: turn that into something owed. Named in the finding so the refusal also says where to go.
-NORMS_FILE = ".conclave/roster/norms.yaml"
+#: Instance-relative on purpose — the DATA root is named by the consumer, not by the engine,
+#: so a literal `.conclave/` here would be this instance's layout shipped as everyone's.
+NORMS_FILE = "roster/norms.yaml (in your instance's DATA tree)"
 
 
 @dataclass

@@ -22,8 +22,8 @@ context:
      exists because the body is what gets edited and the description is what gets forgotten.
 
      A duty says what it covers. It does NOT say how much force it carries: `type:` is
-     rejected here. A self-written duty is advice; only an operator norm in
-     `.conclave/roster/norms.yaml` makes one binding. -->
+     rejected here. A self-written duty is advice; only an operator norm in your instance's
+     `roster/norms.yaml` makes one binding. -->
 
 When a decision is made that a later reader could not reconstruct from the diff alone,
 record it: what was chosen, what was rejected, and the constraint that decided between
