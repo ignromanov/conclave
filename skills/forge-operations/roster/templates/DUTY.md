@@ -4,6 +4,8 @@ description: >-
   Records the decision behind a non-obvious change. Use when a decision is made, an
   alternative is rejected, or rationale is requested.
 goal: Leave a record of why, not only of what.
+# mission: m_record_decisions   # what this duty covers; defaults to `id` when omitted
+# condition: the change is non-obvious   # prose, evaluated in context — omit for unconditional
 context:
   triggers: [decision-made, alternative-rejected, rationale-requested]
 ---
@@ -17,7 +19,11 @@ context:
          [capabilities]. Use when [trigger A], [trigger B] mentioned.
 
      The validator flags a description sharing no content words with this body — that check
-     exists because the body is what gets edited and the description is what gets forgotten. -->
+     exists because the body is what gets edited and the description is what gets forgotten.
+
+     A duty says what it covers. It does NOT say how much force it carries: `type:` is
+     rejected here. A self-written duty is advice; only an operator norm in your instance's
+     `roster/norms.yaml` makes one binding. -->
 
 When a decision is made that a later reader could not reconstruct from the diff alone,
 record it: what was chosen, what was rejected, and the constraint that decided between

@@ -221,6 +221,13 @@ def templates_dir() -> Path: return forge_templates_dir()
 # spec 091: the engine-owned duty base. Derived from forge_dir() rather than from a
 # source-relative offset, so CONCLAVE_ENGINE_ROOT keeps working when CODE is a plugin
 # install rather than this checkout.
+# spec 091 P2: the operator-owned norms file. DATA, not CODE — a self-evolving agent rewrites
+# its own skill and duty files, so the one artifact that decides what is BINDING must live
+# where the agent's own edits do not reach.
+def instance_roster_dir() -> Path: return repo_root() / "roster"
+def instance_norms_path() -> Path: return instance_roster_dir() / "norms.yaml"
+
+
 def duty_roster_dir() -> Path: return forge_dir() / "roster"
 def duty_schema_dir() -> Path: return duty_roster_dir() / "schema"
 def duty_template_path() -> Path: return duty_roster_dir() / "templates" / "DUTY.md"

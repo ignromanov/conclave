@@ -66,11 +66,38 @@ def test_projection_is_one_line_per_duty(tmp_path):
     assert all(ln.count("\n") == 0 for ln in body_lines)
 
 
-def test_projection_uses_duty_id_colon_description_shape(tmp_path):
+def test_projection_uses_duty_id_force_colon_description_shape(tmp_path):
+    """P2 adds the force tag. Before it, the projection listed what EXISTS and the reader had
+    to cross-reference a second section to learn what was OWED."""
     duties = _duties(tmp_path, DUTY_A)
     text = render_projection("sage-cto", project_agent(_base(), Manifest(version=1, roles=[CTO]),
                                                        "sage-cto", duties))
-    assert "d_close_session: Files session artifacts before exit." in text
+    assert "d_close_session [advice]: Files session artifacts before exit." in text
+
+
+def test_an_elevated_duty_reads_as_an_obligation(tmp_path):
+    """The force shown is the COMPOSED one, so the line changes when the operator elevates it
+    — that is the whole reason the tag is worth its characters."""
+    operator = Manifest(version=1, roles=[CTO], norms=[
+        Norm(type="obligation", role="sage-cto", mission="d_close_session")])
+    text = render_projection("sage-cto", project_agent(_base(), operator, "sage-cto",
+                                                       _duties(tmp_path, DUTY_A)))
+    assert "d_close_session [obligation]:" in text
+    assert "d_close_session [advice]:" not in text
+
+
+def test_the_force_tag_does_not_buy_a_second_line(tmp_path):
+    """Over-injection is §3's named top failure. The tag is inline or it is not worth having:
+    one line per duty, no bodies, no YAML — asserted here again because this is the test that
+    would notice the tag arriving as its own block."""
+    duties = _duties(tmp_path, DUTY_A, DUTY_B)
+    text = render_projection("sage-cto", project_agent(_base(), Manifest(version=1, roles=[CTO]),
+                                                       "sage-cto", duties))
+    duty_lines = [ln for ln in text.splitlines() if ln.startswith("d_")]
+    assert len(duty_lines) == 2, duty_lines
+    assert all("[" in ln and ln.index("[") < ln.index(":") for ln in duty_lines), duty_lines
+    assert "file the decision and session records" not in text
+    assert "  - " not in text
 
 
 def test_projection_never_contains_duty_bodies(tmp_path):

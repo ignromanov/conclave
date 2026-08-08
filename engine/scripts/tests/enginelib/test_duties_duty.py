@@ -120,6 +120,57 @@ def test_clean_duty_has_no_findings(tmp_path):
     assert load_duty(_write(tmp_path, VALID)).findings == []
 
 
+# --- P2: a duty declares what it covers, never how much force it carries --------------
+
+def test_mission_defaults_to_the_duty_id(tmp_path):
+    """`discharge.py:62` already keys the ledger by duty id and looks it up as
+    `norm.mission`. The default makes that assumption explicit instead of implicit."""
+    d = load_duty(_write(tmp_path, VALID))
+    assert d.mission == "d_close_session"
+
+
+def test_explicit_mission_is_kept(tmp_path):
+    text = VALID.replace("goal: Leave no session unrecorded.",
+                         "goal: Leave no session unrecorded.\nmission: m_session_close")
+    d = load_duty(_write(tmp_path, text))
+    assert d.mission == "m_session_close"
+
+
+@pytest.mark.parametrize("declared", ["obligation", "advice", "permission"])
+def test_a_duty_may_not_declare_its_own_force(tmp_path, declared):
+    """§0 in executable form. **Do not delete this test quietly.**
+
+    If a duty could set its own `type`, the agent the discharge check exists to catch would
+    hold the key to its own lock — an edit softening `obligation` to `advice` would surface
+    nowhere. Force is elevated only by the operator-owned norms file, so the finding must
+    name that file rather than merely refusing the field.
+    """
+    text = VALID.replace("goal: Leave no session unrecorded.",
+                         f"goal: Leave no session unrecorded.\ntype: {declared}")
+    d = load_duty(_write(tmp_path, text))
+    codes = [f.code for f in d.findings]
+    assert "duty-declares-force" in codes, codes
+    finding = next(f for f in d.findings if f.code == "duty-declares-force")
+    assert "roster/norms.yaml" in finding.message, finding.message
+
+
+def test_condition_is_carried_through_as_prose(tmp_path):
+    text = VALID.replace("goal: Leave no session unrecorded.",
+                         "goal: Leave no session unrecorded.\ncondition: the session mutated files")
+    d = load_duty(_write(tmp_path, text))
+    assert d.condition == "the session mutated files"
+    assert d.findings == [], [f.code for f in d.findings]
+
+
+def test_blank_condition_is_rejected(tmp_path):
+    """Mirrors `Norm._condition_not_blank`: absent means unconditional, blank means someone
+    meant to write one and did not. One rule, asserted in both homes."""
+    text = VALID.replace("goal: Leave no session unrecorded.",
+                         'goal: Leave no session unrecorded.\ncondition: "   "')
+    d = load_duty(_write(tmp_path, text))
+    assert "blank-condition" in [f.code for f in d.findings], [f.code for f in d.findings]
+
+
 # --- the shipped scaffold must satisfy its own validator ------------------------------
 
 def test_shipped_template_passes_its_own_validator():
