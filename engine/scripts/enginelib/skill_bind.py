@@ -1,9 +1,15 @@
 """enginelib/skill_bind.py — write a verified skill into an agent-def's `skills:` list.
 
-Spec 112 §2.1. This is the carrier that makes a bound skill real: the harness preloads the
-listed skills' **full content** into the subagent at startup, so a skill named here is in
-context before the agent decides anything — which is the whole point, given that an
-available-but-uninvoked skill measured identically to no skill at all.
+Spec 112 §2.1 intended this as the carrier that makes a bound skill real: the harness was to
+preload the listed skills' **full content** into the subagent at startup, putting the skill in
+context before the agent decides anything — the point being that an available-but-uninvoked
+skill measured identically to no skill at all.
+
+**§6b measured that carrier inert.** An agent whose def carried the key ~16 h before session
+start reported the skill's body ABSENT, tools none, with an unbound control also ABSENT. The
+harness's own agent frontmatter reference lists five fields and `skills` is not one of them.
+Falsified for project-level defs; the plugin-shipped arm is untested. This module is therefore
+correct about the *file* it produces and says nothing, any more, about what the harness loads.
 
 I/O-free core: a pure text transform. The adapter resolves which repository the def lives in
 (executor defs are CODE, advisor defs are project-side) and does the write.

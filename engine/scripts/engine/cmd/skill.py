@@ -310,7 +310,7 @@ def register(sub) -> None:
 
     b = vsub.add_parser(
         "bind",
-        help="Add a verified skill to an agent-def's skills: list (preloaded at dispatch).",
+        help="Add a verified skill to an agent-def's skills: list (written, not proven loaded — 112 §6b).",
     )
     b.add_argument("--agent", required=True, help="Agent-def stem, e.g. exec-techne-skills.")
     b.add_argument("--skill", required=True, help="Skill id; must resolve via `engine skill verify`.")

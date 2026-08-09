@@ -1,8 +1,11 @@
 """tests/enginelib/test_skill_bind.py — binding a skill into an agent-def (spec 112 T3).
 
-`skills:` is what makes a bound skill real: the harness preloads the skill's full content into
-the subagent at startup. Editing frontmatter by hand is how rosters get corrupted, so the edit
-is a pure text transform tested here and a thin file write in the adapter.
+`skills:` was meant to be what makes a bound skill real — the harness preloading the skill's
+full content into the subagent at startup. Spec 112 §6b measured that ABSENT for a project-level
+def, so what these tests pin is the file, not the load: a well-formed, idempotent, phantom-refusing
+key. Editing frontmatter by hand is how rosters get corrupted, so the edit is a pure text transform
+tested here and a thin file write in the adapter. No test below asserts the harness reads it —
+that claim needs a dispatch, and a dispatch is not a unit test.
 """
 from __future__ import annotations
 

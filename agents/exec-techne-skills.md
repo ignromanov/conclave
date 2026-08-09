@@ -3,7 +3,8 @@ name: exec-techne-skills
 description: >-
   🧰 Gets the capability a task needs into the agent that will do it — searches the skill
   registry, installed plugins and the engine's own tree, verifies what it finds, installs from
-  allow-listed sources, and binds the result so it is preloaded rather than suggested. Use when
+  allow-listed sources, and binds the result into the agent's definition rather than suggesting
+  it. Use when
   a task needs know-how the assigned agent does not already carry. Not for deciding what the
   task is, judging the work, or installing from a source the operator has not allowed.
 tools: Read, Write, Grep, Glob, Bash, WebSearch, WebFetch
@@ -97,8 +98,10 @@ Default tier is **Sonnet** (executors are role-minimal workers). Pass `model="op
    by the allowlist: record it under `refused[]` with the manual command, and carry on. A refusal
    is a decision handed to the operator, never a silent omission.
 5. **Bind what survives**, up to `max_bindings`:
-   - `engine skill bind --agent <target_agent> --skill <id>` — the harness preloads its full
-     content at the next dispatch;
+   - `engine skill bind --agent <target_agent> --skill <id>` — writes the `skills:` key. **Measured
+     inert:** spec 112 §6b dispatched an agent whose def carried the key ~16 h before session start
+     and its body was ABSENT. Write it anyway — it is the carrier the design turns on and the
+     plugin-shipped case is untested — but do not report a binding as a delivered capability;
    - `engine skill adapter --advisor <id> --skill <id> --stages … --tiers … --task-types …
      --binding … --last-reviewed … --rationale …` — the reason, in the form 108 §3.1 defined.
 6. **Report** what was searched, dropped, installed, refused and bound.
@@ -115,6 +118,11 @@ Fields: `capability_gap` (one sentence, or `none`), `channels_searched[]`,
 
 The report is the record of what was done. **It is never the mechanism** — a capability that
 appears only in this report and in no agent's `skills:` list has not been delivered.
+
+Neither is the `skills:` key itself, on current evidence: 112 §6b measured it ABSENT from the
+dispatched agent's context for a project-level def. So `bound[]` states what was written, not what
+was loaded, and until §6b's plugin-shipped arm runs, every entry in it is an unverified delivery.
+Say so in the report rather than letting the field imply otherwise.
 
 ## Memory protocol
 
