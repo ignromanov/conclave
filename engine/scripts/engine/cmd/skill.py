@@ -113,6 +113,67 @@ def _stocktake(args) -> int:
     return 0
 
 
+def _install(args) -> int:
+    """Install a skill package, but only from an allow-listed source (spec 112 §2.2).
+
+    Exit codes follow the house convention: 2 = malformed request, 3 = refused by policy
+    (the same code an emoji collision returns — blocked, not broken), 0 = installed or
+    dry-run, 1 = the installer itself failed.
+    """
+    import shutil
+    import subprocess
+    import sys
+
+    from enginelib import paths
+    from enginelib.skill_install import (
+        install_command,
+        is_allowed,
+        package_source,
+        parse_allowlist,
+        refusal_message,
+    )
+
+    pkg = args.package
+    args._runlog_verb = "skill-install"
+    args._runlog_args = f"package={pkg}"
+
+    if package_source(pkg) is None:
+        print(
+            f"malformed package: {pkg!r} (expected owner/repo or owner/repo@skill)",
+            file=sys.stderr,
+        )
+        return 2
+
+    allowlist_file = paths.forge_references_dir() / "skill-sources.md"
+    if not allowlist_file.is_file():
+        print(f"no allowlist at {allowlist_file} — refusing everything", file=sys.stderr)
+        return 3
+
+    allowlist = parse_allowlist(allowlist_file.read_text(encoding="utf-8"))
+    if not is_allowed(pkg, allowlist):
+        print(refusal_message(pkg, str(allowlist_file)), file=sys.stderr)
+        return 3
+
+    cmd = install_command(pkg)
+    if args.dry_run:
+        print(f"would install: {' '.join(cmd)}")
+        return 0
+
+    if shutil.which(cmd[0]) is None:
+        print(
+            f"{cmd[0]} CLI not found on PATH — install it, or run: {' '.join(cmd)}",
+            file=sys.stderr,
+        )
+        return 1
+
+    result = subprocess.run(cmd, check=False)
+    if result.returncode != 0:
+        print(f"installer failed ({result.returncode}): {' '.join(cmd)}", file=sys.stderr)
+        return 1
+    print(f"installed: {pkg}")
+    return 0
+
+
 def register(sub) -> None:
     p = sub.add_parser("skill", help="Skill resolution and related operations.")
     vsub = p.add_subparsers(dest="skill_verb", required=True)
@@ -126,6 +187,18 @@ def register(sub) -> None:
              "path or empty, exit 0. Multiple → batch mode: exit 1 if any is a phantom.",
     )
     v.set_defaults(func=_verify)
+
+    i = vsub.add_parser(
+        "install",
+        help="Install a skill package from an allow-listed source (skills/forge-operations/references/skill-sources.md).",
+    )
+    i.add_argument("package", help="Package spec: owner/repo or owner/repo@skill.")
+    i.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the install command and exit 0 without running it.",
+    )
+    i.set_defaults(func=_install)
 
     s = vsub.add_parser("stocktake", help="Quarterly audit of .claude/skills/.")
     mode = s.add_mutually_exclusive_group()
