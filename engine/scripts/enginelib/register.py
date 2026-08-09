@@ -84,6 +84,18 @@ VALID_AGENT_COLORS: frozenset[str] = frozenset(
     {"red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan"}
 )
 
+# Executor roles and the tool scope each gets by default. A subagent whose `tools:` entries
+# resolve to nothing fails to launch, so every role must map to a real list — the scaffold can
+# never fall through to the free-text placeholder collapse in create_executor.
+#   dev    — writes product code
+#   test   — grades it, and must not be able to edit what it grades
+#   skills — spec 112: writes adapter files and drives `engine skill bind`; searches the web
+EXECUTOR_ROLE_TOOLS: dict[str, str] = {
+    "dev": "Read, Write, Edit, Grep, Glob, Bash",
+    "test": "Read, Grep, Glob, Bash",
+    "skills": "Read, Write, Grep, Glob, Bash, WebSearch, WebFetch",
+}
+
 
 class EmojiCollisionError(Exception):
     """Raised when the requested emoji is reserved or already used by another agent."""
@@ -123,14 +135,14 @@ def create_executor(
         raise ValueError(
             f"invalid --color: {opts.color} (must be one of {', '.join(sorted(VALID_AGENT_COLORS))})"
         )
-    if opts.role not in {"dev", "test"}:
-        raise ValueError(f"invalid role: {opts.role} (must be dev|test)")
+    if opts.role not in EXECUTOR_ROLE_TOOLS:
+        raise ValueError(
+            f"invalid role: {opts.role} (must be {'|'.join(sorted(EXECUTOR_ROLE_TOOLS))})"
+        )
 
     # 2. Tool scope. A subagent whose `tools:` entries resolve to nothing fails to launch, so
     #    this must never fall through to the free-text placeholder collapse below.
-    tools = opts.tools or (
-        "Read, Write, Edit, Grep, Glob, Bash" if opts.role == "dev" else "Read, Grep, Glob, Bash"
-    )
+    tools = opts.tools or EXECUTOR_ROLE_TOOLS[opts.role]
 
     # 3. Reserved-emoji collision (bash: grep -A1 "## Reserved emojis" | tail -1)
     palette_lines = (paths.forge_references_dir() / "color-palette.md").read_text(encoding="utf-8").splitlines()
