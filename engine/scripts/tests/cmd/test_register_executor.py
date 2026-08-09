@@ -167,6 +167,42 @@ def test_invalid_colour_is_rejected(ai_root):
 
 
 # ---------------------------------------------------------------------------
+# 7d. Spec 112 T1 — a third role. The skill-acquisition executor writes adapter files
+#     and drives `engine skill bind`, so its default scope includes Write and the web
+#     channels; `dev` and `test` must come out of the widening unchanged, since a
+#     widening that quietly moves an existing branch is a regression in a feature's clothes.
+# ---------------------------------------------------------------------------
+def _scaffold_tools(role: str, name: str, emoji: str) -> str:
+    r = run_engine(
+        "register", "executor",
+        "--chosen-name", name, "--role", role, "--emoji", emoji, "--color", "green",
+    )
+    assert r.returncode == 0, r.stderr
+    body = (_agents_dir() / f"exec-{name}-{role}.md").read_text()
+    return next(ln for ln in body.splitlines() if ln.startswith("tools:"))
+
+
+def test_skills_role_is_accepted(ai_root):
+    line = _scaffold_tools("skills", "techne", "🧰")
+    for tool in ("Read", "Write", "Grep", "Glob", "Bash", "WebSearch", "WebFetch"):
+        assert tool in line, f"skills-role scope missing {tool}: {line!r}"
+
+
+def test_existing_role_scopes_are_unchanged(ai_root):
+    assert _scaffold_tools("dev", "atlas", "🦫") == "tools: Read, Write, Edit, Grep, Glob, Bash"
+    assert _scaffold_tools("test", "argus", "🔬") == "tools: Read, Grep, Glob, Bash"
+
+
+def test_unknown_role_still_rejected(ai_root):
+    r = run_engine(
+        "register", "executor",
+        "--chosen-name", "atlas", "--role", "banana", "--emoji", "🦫", "--color", "green",
+    )
+    assert r.returncode != 0
+    assert "role" in r.stderr
+
+
+# ---------------------------------------------------------------------------
 # 8. --wraps is gone from the CLI surface too (an accepted-but-ignored flag is
 #    worse than a removed one: it lets a caller believe it did something).
 # ---------------------------------------------------------------------------

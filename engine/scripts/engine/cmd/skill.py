@@ -113,6 +113,175 @@ def _stocktake(args) -> int:
     return 0
 
 
+def _install(args) -> int:
+    """Install a skill package, but only from an allow-listed source (spec 112 §2.2).
+
+    Exit codes follow the house convention: 2 = malformed request, 3 = refused by policy
+    (the same code an emoji collision returns — blocked, not broken), 0 = installed or
+    dry-run, 1 = the installer itself failed.
+    """
+    import shutil
+    import subprocess
+    import sys
+
+    from enginelib import paths
+    from enginelib.skill_install import (
+        install_command,
+        is_allowed,
+        package_source,
+        parse_allowlist,
+        refusal_message,
+    )
+
+    pkg = args.package
+    args._runlog_verb = "skill-install"
+    args._runlog_args = f"package={pkg}"
+
+    if package_source(pkg) is None:
+        print(
+            f"malformed package: {pkg!r} (expected owner/repo or owner/repo@skill)",
+            file=sys.stderr,
+        )
+        return 2
+
+    allowlist_file = paths.forge_references_dir() / "skill-sources.md"
+    if not allowlist_file.is_file():
+        print(f"no allowlist at {allowlist_file} — refusing everything", file=sys.stderr)
+        return 3
+
+    allowlist = parse_allowlist(allowlist_file.read_text(encoding="utf-8"))
+    if not is_allowed(pkg, allowlist):
+        print(refusal_message(pkg, str(allowlist_file)), file=sys.stderr)
+        return 3
+
+    cmd = install_command(pkg)
+    if args.dry_run:
+        print(f"would install: {' '.join(cmd)}")
+        return 0
+
+    if shutil.which(cmd[0]) is None:
+        print(
+            f"{cmd[0]} CLI not found on PATH — install it, or run: {' '.join(cmd)}",
+            file=sys.stderr,
+        )
+        return 1
+
+    result = subprocess.run(cmd, check=False)
+    if result.returncode != 0:
+        print(f"installer failed ({result.returncode}): {' '.join(cmd)}", file=sys.stderr)
+        return 1
+    print(f"installed: {pkg}")
+    return 0
+
+
+def _bind(args) -> int:
+    """Write a verified skill into an agent-def's `skills:` list (spec 112 T3).
+
+    Exit codes: 2 = no such agent, 3 = the skill does not resolve (binding a phantom is the
+    defect this codebase keeps re-shipping), 0 = bound, already bound, or dry-run.
+    """
+    import sys
+
+    from enginelib import paths
+    from enginelib.skill import verify
+    from enginelib.skill_bind import BlockSequenceUnsupported, bind_skill
+
+    agent, skill = args.agent, args.skill
+    args._runlog_verb = "skill-bind"
+    args._runlog_args = f"agent={agent} skill={skill}"
+
+    # Two homes, both resolved — executor defs are CODE, hired advisor defs are project-side.
+    # Never concatenate a path here; the two repos move independently.
+    candidates = [
+        paths.plugin_agents_dir() / f"{agent}.md",
+        paths.project_agents_dir() / f"{agent}.md",
+    ]
+    target = next((p for p in candidates if p.is_file()), None)
+    if target is None:
+        print(f"no agent-def named {agent!r}; looked in:", file=sys.stderr)
+        for p in candidates:
+            print(f"  {p}", file=sys.stderr)
+        return 2
+
+    if verify(skill) is None:
+        print(
+            f"phantom skill: {skill!r} does not resolve — not bound.\n"
+            f"  install it first: engine skill install <owner/repo@{skill}>",
+            file=sys.stderr,
+        )
+        return 3
+
+    before = target.read_text(encoding="utf-8")
+    try:
+        after, changed = bind_skill(before, skill)
+    except BlockSequenceUnsupported as e:
+        print(f"{target}: {e}", file=sys.stderr)
+        return 2
+
+    if not changed:
+        print(f"already bound: {skill} → {agent}")
+        return 0
+
+    line = next(ln for ln in after.splitlines() if ln.startswith("skills:"))
+    if args.dry_run:
+        print(f"would write {target}\n  {line}")
+        return 0
+
+    target.write_text(after, encoding="utf-8")
+    print(f"bound: {skill} → {agent} ({target})\n  {line}")
+    return 0
+
+
+def _adapter(args) -> int:
+    """Write a 108 §3.1 adapter file into the advisor's own protocols home (spec 112 T4).
+
+    Exit codes: 2 = the adapter would be invalid, 3 = the skill does not resolve, 0 = written
+    or dry-run.
+    """
+    import sys
+
+    from enginelib import paths
+    from enginelib.adapter import render_adapter
+    from enginelib.skill import verify
+
+    args._runlog_verb = "skill-adapter"
+    args._runlog_args = f"advisor={args.advisor} skill={args.skill}"
+
+    if verify(args.skill) is None:
+        print(f"phantom skill: {args.skill!r} does not resolve — no adapter written", file=sys.stderr)
+        return 3
+
+    def _csv(value: str) -> list[str]:
+        return [v.strip() for v in value.split(",") if v.strip()]
+
+    rel = f"protocols/{args.skill}.md"
+    home = paths.advisor_skill_dir(args.advisor, artifact=rel)
+    target = home / rel
+
+    try:
+        text = render_adapter(
+            skill=args.skill,
+            stages=_csv(args.stages),
+            tiers=_csv(args.tiers),
+            task_types=_csv(args.task_types),
+            binding=args.binding,
+            last_reviewed=args.last_reviewed,
+            rationale=args.rationale,
+        )
+    except ValueError as e:
+        print(f"invalid adapter: {e}", file=sys.stderr)
+        return 2
+
+    if args.dry_run:
+        print(f"would write {target}\n{text}")
+        return 0
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8")
+    print(f"wrote adapter: {target}")
+    return 0
+
+
 def register(sub) -> None:
     p = sub.add_parser("skill", help="Skill resolution and related operations.")
     vsub = p.add_subparsers(dest="skill_verb", required=True)
@@ -126,6 +295,42 @@ def register(sub) -> None:
              "path or empty, exit 0. Multiple → batch mode: exit 1 if any is a phantom.",
     )
     v.set_defaults(func=_verify)
+
+    i = vsub.add_parser(
+        "install",
+        help="Install a skill package from an allow-listed source (skills/forge-operations/references/skill-sources.md).",
+    )
+    i.add_argument("package", help="Package spec: owner/repo or owner/repo@skill.")
+    i.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the install command and exit 0 without running it.",
+    )
+    i.set_defaults(func=_install)
+
+    b = vsub.add_parser(
+        "bind",
+        help="Add a verified skill to an agent-def's skills: list (written, not proven loaded — 112 §6b).",
+    )
+    b.add_argument("--agent", required=True, help="Agent-def stem, e.g. exec-techne-skills.")
+    b.add_argument("--skill", required=True, help="Skill id; must resolve via `engine skill verify`.")
+    b.add_argument("--dry-run", action="store_true", help="Print the resulting line; write nothing.")
+    b.set_defaults(func=_bind)
+
+    a = vsub.add_parser(
+        "adapter",
+        help="Write a 108 §3.1 adapter file declaring when an advisor uses an external skill.",
+    )
+    a.add_argument("--advisor", required=True, help="Advisor id (bare, no prefix).")
+    a.add_argument("--skill", required=True, help="External skill id; must resolve.")
+    a.add_argument("--stages", required=True, help="Comma-separated: clarify,design,spec,plan,implement,verify,deliver.")
+    a.add_argument("--tiers", required=True, help="Comma-separated: quick,work.")
+    a.add_argument("--task-types", required=True, dest="task_types", help="Comma-separated: dev,content,research,review,advisory.")
+    a.add_argument("--binding", required=True, choices=["required", "advisory"])
+    a.add_argument("--last-reviewed", required=True, dest="last_reviewed", metavar="YYYY-MM-DD")
+    a.add_argument("--rationale", required=True, help="Why this advisor uses it, and at what point.")
+    a.add_argument("--dry-run", action="store_true", help="Print the file; write nothing.")
+    a.set_defaults(func=_adapter)
 
     s = vsub.add_parser("stocktake", help="Quarterly audit of .claude/skills/.")
     mode = s.add_mutually_exclusive_group()
