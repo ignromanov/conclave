@@ -9,7 +9,7 @@ Advisor names include the full 'team.' prefix (the SKILL dir name).
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 # Bare lifecycle/meta skill ids — infrastructure, not advisors. Excluded from
@@ -73,7 +73,16 @@ class ExecutorOpts:
     role: str
     emoji: str
     color: str
-    wraps: str = field(default="")
+    tools: str = ""
+
+
+# The colours the harness renders for a subagent. Source: the `color` row of the subagent
+# frontmatter reference (https://code.claude.com/docs/en/sub-agents). Anything else is accepted
+# by YAML and dropped at render time, which is how seven shipped agents ended up sharing the
+# same absence of a colour while appearing to be distinctly labelled.
+VALID_AGENT_COLORS: frozenset[str] = frozenset(
+    {"red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan"}
+)
 
 
 class EmojiCollisionError(Exception):
@@ -110,11 +119,18 @@ def create_executor(
         raise ValueError("missing --emoji")
     if not opts.color:
         raise ValueError("missing --color")
+    if opts.color not in VALID_AGENT_COLORS:
+        raise ValueError(
+            f"invalid --color: {opts.color} (must be one of {', '.join(sorted(VALID_AGENT_COLORS))})"
+        )
     if opts.role not in {"dev", "test"}:
         raise ValueError(f"invalid role: {opts.role} (must be dev|test)")
 
-    # 2. WRAPS default
-    wraps = opts.wraps or ("team-implementer" if opts.role == "dev" else "team-reviewer")
+    # 2. Tool scope. A subagent whose `tools:` entries resolve to nothing fails to launch, so
+    #    this must never fall through to the free-text placeholder collapse below.
+    tools = opts.tools or (
+        "Read, Write, Edit, Grep, Glob, Bash" if opts.role == "dev" else "Read, Grep, Glob, Bash"
+    )
 
     # 3. Reserved-emoji collision (bash: grep -A1 "## Reserved emojis" | tail -1)
     palette_lines = (paths.forge_references_dir() / "color-palette.md").read_text(encoding="utf-8").splitlines()
@@ -164,9 +180,9 @@ def create_executor(
     rendered = tmpl
     rendered = rendered.replace("{{chosen-name}}", opts.chosen_name)
     rendered = rendered.replace("{{role}}", opts.role)
-    rendered = rendered.replace("{{plugin-agent-type}}", wraps)
     rendered = rendered.replace("{{emoji}}", opts.emoji)
     rendered = rendered.replace("{{color}}", opts.color)
+    rendered = rendered.replace("{{tools}}", tools)
     rendered = rendered.replace("{{YYYY-MM-DD}}", today)
     rendered = rendered.replace("{{Name}}", opts.chosen_name)
     rendered = rendered.replace("{{Emoji}}", opts.emoji)

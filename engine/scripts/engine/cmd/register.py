@@ -60,7 +60,7 @@ def _executor(args) -> int:
         role=args.role or "",
         emoji=args.emoji or "",
         color=args.color or "",
-        wraps=args.wraps or "",
+        tools=args.tools or "",
     )
     today = datetime.now(UTC).strftime("%Y-%m-%d")
     try:
@@ -98,6 +98,6 @@ def register(sub) -> None:
     e.add_argument("--role", help="Executor role (dev|test).")
     e.add_argument("--emoji", help="Single emoji glyph (must not collide with reserved).")
     e.add_argument("--color", help="Color name from color-palette.md pool.")
-    e.add_argument("--wraps", default="", help="agent-teams plugin agent type (default: team-implementer for dev, team-reviewer for test).")
+    e.add_argument("--tools", default="", help="Comma-separated tool scope (default: the role's set — dev writes, test reads).")
     e.add_argument("--dry-run", dest="dry_run", action="store_true", help="Validate inputs and exit without writing files.")
     e.set_defaults(func=_executor)

@@ -30,12 +30,60 @@ _TEMPLATE = (
     / "executor-agent.md"
 )
 
-_EXECUTOR_DEFS = ("exec-atlas-dev.md", "exec-iris-test.md")
+# Spec 109 Task 1 — the canonical frontmatter, in order. Harness-recognized fields first
+# (code.claude.com/docs/en/sub-agents), then Conclave's own metadata. Every key is required:
+# an optional key is a key that drifts, and `tools:` absent on the executor with full write
+# access is how the intended boundary went unwritten for two months (109 §1).
+_CANONICAL_KEYS: tuple[str, ...] = (
+    "name", "description", "tools", "model",
+    "tier", "chosen-name", "emoji", "color", "created",
+)
+
+# Derived by glob, never enumerated — a hardcoded list is the coverage hole this repo has
+# now hit six times (most recently a type gate that ran over 82 of 169 files). The count is
+# asserted so that ADDING an executor without revisiting these gates fails loudly.
+_EXPECTED_EXECUTOR_COUNT = 6
+
+
+def _executor_defs() -> list[Path]:
+    defs = sorted(_AGENTS.glob("exec-*.md"))
+    assert len(defs) == _EXPECTED_EXECUTOR_COUNT, (
+        f"executor count changed: found {len(defs)} ({[p.name for p in defs]}), "
+        f"expected {_EXPECTED_EXECUTOR_COUNT}. Update _EXPECTED_EXECUTOR_COUNT and re-check "
+        f"every gate in this file against the new def before bumping the number."
+    )
+    return defs
 
 
 def _read(p: Path) -> str:
     assert p.exists(), f"expected file missing: {p}"
     return p.read_text()
+
+
+def _frontmatter_keys(body: str) -> list[str]:
+    """Top-level YAML keys of the frontmatter block, in file order.
+
+    Folded scalars (`description: >-`) continue on indented lines; only column-0 `key:`
+    lines are top-level, so indentation is the discriminator.
+    """
+    lines = body.splitlines()
+    assert lines and lines[0] == "---", "file does not open with a frontmatter fence"
+    keys: list[str] = []
+    for line in lines[1:]:
+        if line == "---":
+            return keys
+        m = re.match(r"^([A-Za-z][A-Za-z0-9-]*):", line)
+        if m:
+            keys.append(m.group(1))
+    raise AssertionError("unterminated frontmatter block")
+
+
+def _dispatch_line_or_none(body: str) -> str | None:
+    """`_dispatch_line` without the raise — used to MEASURE how many defs carry a block."""
+    for line in body.splitlines():
+        if line.startswith("Agent(") and "subagent_type=" in line:
+            return line
+    return None
 
 
 def _dispatch_line(body: str) -> str:
@@ -51,11 +99,66 @@ def _dispatch_line(body: str) -> str:
 
 
 def test_executor_defs_default_to_sonnet():
-    """Every executor dispatch line defaults model=sonnet (not opus)."""
-    for name in _EXECUTOR_DEFS:
-        line = _dispatch_line(_read(_AGENTS / name))
-        assert 'model="opus"' not in line, f"{name} dispatch still hardcodes opus"
-        assert 'model="sonnet"' in line, f"{name} dispatch missing sonnet default"
+    """Every executor dispatch line defaults model=sonnet (not opus).
+
+    Coverage is measured, not assumed: this gate used to iterate a hardcoded pair and so
+    graded 2 of 6 defs while reading as a roster-wide check. It now globs, and pins how many
+    defs actually carry a dispatch block — exec-socra-critic has none, and that gap must not
+    grow silently.
+    """
+    with_dispatch = [p for p in _executor_defs() if _dispatch_line_or_none(_read(p))]
+    assert len(with_dispatch) == 5, (
+        f"{len(with_dispatch)} of {_EXPECTED_EXECUTOR_COUNT} executor defs carry a dispatch "
+        f"block, expected 5 (exec-socra-critic is the known gap). A def that lost its block "
+        f"silently drops out of this gate — add the block, don't lower the number."
+    )
+    for md in with_dispatch:
+        line = _dispatch_line(_read(md))
+        assert 'model="opus"' not in line, f"{md.name} dispatch still hardcodes opus"
+        assert 'model="sonnet"' in line, f"{md.name} dispatch missing sonnet default"
+
+
+# ── #109 Task 1 — one frontmatter field set, one order ────────────────────────
+
+
+def test_executor_frontmatter_is_canonical():
+    """Same keys, same order, on every executor def.
+
+    Order matters for a read surface: a consumer scanning six files should find `tools:` in
+    the same place each time. Set membership matters more — `tools:` was absent on atlas and
+    metron, so their tool scope was inferred from silence rather than stated.
+    """
+    for md in _executor_defs():
+        keys = _frontmatter_keys(_read(md))
+        assert tuple(keys) == _CANONICAL_KEYS, (
+            f"{md.name}: frontmatter keys {keys} != canonical {list(_CANONICAL_KEYS)}"
+        )
+
+
+def test_executor_description_is_a_folded_block():
+    """`description: >-`, never a bare scalar.
+
+    Two of six were bare when 109 was planned. Every executor description contains at least one
+    colon (`Use when: …`, `🔍 Attacks a proposal …: …`), and a colon in a bare YAML scalar is a
+    parse break — one that surfaces as the agent failing to load, not as a diff you notice.
+    """
+    for md in _executor_defs():
+        value = _frontmatter_field(_read(md), "description")
+        assert value == ">-", (
+            f"{md.name}: description must be a folded block (`description: >-`), got {value!r}"
+        )
+
+
+def test_executor_model_declared_sonnet():
+    """`model:` is declared in the file, not only typed by a well-behaved dispatcher.
+
+    #17 wanted sonnet by default. Leaving that to the caller's dispatch string makes it a
+    step someone has to remember — the exact shape spec 108 measured to be worth nothing.
+    """
+    for md in _executor_defs():
+        assert _frontmatter_field(_read(md), "model") == "sonnet", (
+            f"{md.name}: frontmatter must declare model: sonnet"
+        )
 
 
 def test_executor_template_defaults_to_sonnet():
@@ -103,6 +206,67 @@ def test_template_forbids_progress_narration():
     assert "progress-narration" in body, (
         "executor template missing no-progress-narration rule"
     )
+
+
+# ── #109 Task 2 — colours the harness actually renders, one per agent ─────────
+
+# The authoritative set, transcribed from the subagent frontmatter reference
+# (https://code.claude.com/docs/en/sub-agents, `color` row). Hardcoded HERE on purpose: a test
+# that imported the value it checks would pass against a wrong constant. Everything else —
+# the enginelib constant, the palette pool, the shipped defs — is checked against this.
+_HARNESS_COLORS = frozenset(
+    {"red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan"}
+)
+_PALETTE = (
+    _REPO_ROOT / "skills" / "forge-operations" / "references" / "color-palette.md"
+)
+
+
+def _palette_pool() -> set[str]:
+    """The colours color-palette.md offers, parsed from the line under the pool heading."""
+    lines = _read(_PALETTE).splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith("## Available colors"):
+            for candidate in lines[i + 1:]:
+                if candidate.strip():
+                    return {c.strip() for c in candidate.split(",") if c.strip()}
+    raise AssertionError("color-palette.md has no '## Available colors' pool line")
+
+
+def test_enginelib_colour_constant_matches_the_harness():
+    from enginelib.register import VALID_AGENT_COLORS
+
+    assert set(VALID_AGENT_COLORS) == _HARNESS_COLORS
+
+
+def test_palette_pool_matches_the_harness():
+    """The pool offered at hire must be the pool the harness renders.
+
+    It was not: the pool listed 16 values, 8 of which (teal, indigo, magenta, amber, lime,
+    emerald, rose, slate) the harness does not accept — and every shipped agent had been
+    assigned one of those.
+    """
+    assert _palette_pool() == _HARNESS_COLORS
+
+
+def test_agent_colours_are_valid_and_distinct():
+    """Every def in agents/ carries a renderable colour, and no two share one."""
+    seen: dict[str, str] = {}
+    agent_defs = sorted(_AGENTS.glob("*.md"))
+    assert agent_defs, "no agent defs found under agents/"
+    assert len(agent_defs) <= len(_HARNESS_COLORS), (
+        f"{len(agent_defs)} agent defs but only {len(_HARNESS_COLORS)} renderable colours — "
+        f"distinctness is no longer achievable in this directory. Re-scope the rule to a tier "
+        f"before adding another def; do not silently drop the assertion."
+    )
+    for md in agent_defs:
+        colour = _frontmatter_field(_read(md), "color")
+        assert colour in _HARNESS_COLORS, (
+            f"{md.name}: color: {colour!r} is not one of {sorted(_HARNESS_COLORS)} — "
+            f"the harness ignores it, so the agent renders with no colour at all"
+        )
+        assert colour not in seen, f"{md.name} and {seen[colour]} both claim color: {colour}"
+        seen[colour] = md.name
 
 
 # ── #61 — executor naming-standard guard (drift-proof, catches hire/rename drift) ─

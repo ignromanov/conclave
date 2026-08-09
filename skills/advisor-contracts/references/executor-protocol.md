@@ -54,7 +54,11 @@ The stable slug is `<chosen-name>-<role>`; each surface adds its own prefix:
 ## Agent-def protocol
 
 Each executor agent-def (`agents/exec-<chosen-name>-<role>.md`) must:
-1. Declare `wraps:` frontmatter pointing to the agent-teams plugin agent type
+1. Carry the canonical frontmatter, in this order (pinned by
+   `tests/test_executor_defs.py::test_executor_frontmatter_is_canonical`):
+   `name · description · tools · model · tier · chosen-name · emoji · color · created`.
+   Harness-recognized fields come first; `tools:` is stated, never inferred from silence, and
+   `model: sonnet` lives in the file rather than in a dispatch string someone must remember
 2. Include `## Identity` block + an inline `## Voice` section (persona anchor — the roster
    convention is inline voice; NO separate `personality.md`)
 3. Include `## Dispatch protocol` describing how callers invoke the executor
