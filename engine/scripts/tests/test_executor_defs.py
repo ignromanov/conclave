@@ -39,6 +39,16 @@ _CANONICAL_KEYS: tuple[str, ...] = (
     "tier", "chosen-name", "emoji", "color", "created",
 )
 
+# `skills:` is optional and written by `engine skill bind`, never by hand — a def acquires one
+# when a skill is bound to it and not before. Its POSITION is pinned all the same: the binder
+# inserts after `tools:`, and an order this gate did not know about would fail the def the
+# first time a skill was bound. Full order = required keys with `skills` in its slot.
+_OPTIONAL_KEYS: frozenset[str] = frozenset({"skills"})
+_CANONICAL_ORDER: tuple[str, ...] = (
+    "name", "description", "tools", "skills", "model",
+    "tier", "chosen-name", "emoji", "color", "created",
+)
+
 # Derived by glob, never enumerated — a hardcoded list is the coverage hole this repo has
 # now hit six times (most recently a type gate that ran over 82 of 169 files). The count is
 # asserted so that ADDING an executor without revisiting these gates fails loudly.
@@ -130,9 +140,26 @@ def test_executor_frontmatter_is_canonical():
     """
     for md in _executor_defs():
         keys = _frontmatter_keys(_read(md))
-        assert tuple(keys) == _CANONICAL_KEYS, (
-            f"{md.name}: frontmatter keys {keys} != canonical {list(_CANONICAL_KEYS)}"
+        missing = set(_CANONICAL_KEYS) - set(keys)
+        assert not missing, f"{md.name}: missing required frontmatter keys {sorted(missing)}"
+        unknown = set(keys) - set(_CANONICAL_ORDER)
+        assert not unknown, (
+            f"{md.name}: unknown frontmatter keys {sorted(unknown)} — an ad-hoc key is how "
+            f"frontmatter drifts; add it to the canonical order or move it into the body"
         )
+        assert keys == [k for k in _CANONICAL_ORDER if k in keys], (
+            f"{md.name}: frontmatter order {keys} does not follow {list(_CANONICAL_ORDER)}"
+        )
+
+
+def test_optional_keys_are_the_ones_the_binder_writes():
+    """Guards the gate itself: `skills` is optional because a script adds it, not an author.
+
+    If someone widens _OPTIONAL_KEYS to quiet a failure, this states out loud what optional
+    was ever meant to cover.
+    """
+    assert _OPTIONAL_KEYS == frozenset({"skills"})
+    assert set(_CANONICAL_ORDER) == set(_CANONICAL_KEYS) | _OPTIONAL_KEYS
 
 
 def test_executor_description_is_a_folded_block():

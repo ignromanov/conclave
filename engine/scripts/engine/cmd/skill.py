@@ -174,6 +174,64 @@ def _install(args) -> int:
     return 0
 
 
+def _bind(args) -> int:
+    """Write a verified skill into an agent-def's `skills:` list (spec 112 T3).
+
+    Exit codes: 2 = no such agent, 3 = the skill does not resolve (binding a phantom is the
+    defect this codebase keeps re-shipping), 0 = bound, already bound, or dry-run.
+    """
+    import sys
+
+    from enginelib import paths
+    from enginelib.skill import verify
+    from enginelib.skill_bind import BlockSequenceUnsupported, bind_skill
+
+    agent, skill = args.agent, args.skill
+    args._runlog_verb = "skill-bind"
+    args._runlog_args = f"agent={agent} skill={skill}"
+
+    # Two homes, both resolved — executor defs are CODE, hired advisor defs are project-side.
+    # Never concatenate a path here; the two repos move independently.
+    candidates = [
+        paths.plugin_agents_dir() / f"{agent}.md",
+        paths.project_agents_dir() / f"{agent}.md",
+    ]
+    target = next((p for p in candidates if p.is_file()), None)
+    if target is None:
+        print(f"no agent-def named {agent!r}; looked in:", file=sys.stderr)
+        for p in candidates:
+            print(f"  {p}", file=sys.stderr)
+        return 2
+
+    if verify(skill) is None:
+        print(
+            f"phantom skill: {skill!r} does not resolve — not bound.\n"
+            f"  install it first: engine skill install <owner/repo@{skill}>",
+            file=sys.stderr,
+        )
+        return 3
+
+    before = target.read_text(encoding="utf-8")
+    try:
+        after, changed = bind_skill(before, skill)
+    except BlockSequenceUnsupported as e:
+        print(f"{target}: {e}", file=sys.stderr)
+        return 2
+
+    if not changed:
+        print(f"already bound: {skill} → {agent}")
+        return 0
+
+    line = next(ln for ln in after.splitlines() if ln.startswith("skills:"))
+    if args.dry_run:
+        print(f"would write {target}\n  {line}")
+        return 0
+
+    target.write_text(after, encoding="utf-8")
+    print(f"bound: {skill} → {agent} ({target})\n  {line}")
+    return 0
+
+
 def register(sub) -> None:
     p = sub.add_parser("skill", help="Skill resolution and related operations.")
     vsub = p.add_subparsers(dest="skill_verb", required=True)
@@ -199,6 +257,15 @@ def register(sub) -> None:
         help="Print the install command and exit 0 without running it.",
     )
     i.set_defaults(func=_install)
+
+    b = vsub.add_parser(
+        "bind",
+        help="Add a verified skill to an agent-def's skills: list (preloaded at dispatch).",
+    )
+    b.add_argument("--agent", required=True, help="Agent-def stem, e.g. exec-techne-skills.")
+    b.add_argument("--skill", required=True, help="Skill id; must resolve via `engine skill verify`.")
+    b.add_argument("--dry-run", action="store_true", help="Print the resulting line; write nothing.")
+    b.set_defaults(func=_bind)
 
     s = vsub.add_parser("stocktake", help="Quarterly audit of .claude/skills/.")
     mode = s.add_mutually_exclusive_group()
