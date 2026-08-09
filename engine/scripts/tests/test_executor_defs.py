@@ -52,7 +52,7 @@ _CANONICAL_ORDER: tuple[str, ...] = (
 # Derived by glob, never enumerated — a hardcoded list is the coverage hole this repo has
 # now hit six times (most recently a type gate that ran over 82 of 169 files). The count is
 # asserted so that ADDING an executor without revisiting these gates fails loudly.
-_EXPECTED_EXECUTOR_COUNT = 6
+_EXPECTED_EXECUTOR_COUNT = 7  # 6 → 7 on 2026-08-09: exec-techne-skills (spec 112 T5)
 
 
 def _executor_defs() -> list[Path]:
@@ -117,9 +117,9 @@ def test_executor_defs_default_to_sonnet():
     grow silently.
     """
     with_dispatch = [p for p in _executor_defs() if _dispatch_line_or_none(_read(p))]
-    assert len(with_dispatch) == 5, (
+    assert len(with_dispatch) == 6, (
         f"{len(with_dispatch)} of {_EXPECTED_EXECUTOR_COUNT} executor defs carry a dispatch "
-        f"block, expected 5 (exec-socra-critic is the known gap). A def that lost its block "
+        f"block, expected 6 (exec-socra-critic is the known gap). A def that lost its block "
         f"silently drops out of this gate — add the block, don't lower the number."
     )
     for md in with_dispatch:
