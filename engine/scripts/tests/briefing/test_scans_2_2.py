@@ -5,18 +5,17 @@ tmp_path fixtures + VOIDPAY_AI_ROOT env override are used throughout.
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
 
 from briefing.scans import ScanCtx, drift, project_digest, roadmap, spec_progress
 
-# Skip live-instance tests when no instance root is available (D3).
-_NEEDS_INSTANCE = pytest.mark.skipif(
-    not (os.environ.get("CONCLAVE_AI_ROOT") or os.environ.get("VOIDPAY_AI_ROOT")),
-    reason="needs live instance root",
-)
+# Live-instance tests: gated by the `live_instance` marker, whose conftest fixture points
+# CONCLAVE_AI_ROOT at CONCLAVE_LIVE_INSTANCE_ROOT for marked tests only. The old form gated
+# on CONCLAVE_AI_ROOT itself — a variable the hermetic conftest clears — so it was asking
+# whether hermeticity had been switched off, and the answer was always no (GH#105).
+_NEEDS_INSTANCE = pytest.mark.live_instance
 
 
 # ---------------------------------------------------------------------------
@@ -129,24 +128,9 @@ class TestSpecProgress:
         assert "020" in result
 
     @_NEEDS_INSTANCE
-    def test_real_data_does_not_crash(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Integration smoke: run against real repo without writing anything."""
-        monkeypatch.delenv("VOIDPAY_AI_ROOT", raising=False)
-        from briefing import paths
-        monkeypatch.setattr("briefing.paths._REPO_ROOT_CACHE", None)
-        root = paths.repo_root()
-        ctx = ScanCtx(
-            advisor="kai-cto",
-            short_name="kai",
-            repo_root=root,
-            decisions_dir=root / "agent-memory" / "advisors" / "decisions",
-            sessions_dir=root / "agent-memory" / "advisors" / "sessions",
-            mentions_dir=root / "agent-memory" / "advisors" / "mentions",
-            gh_cache_dir=root / "agent-memory" / "gh-cache",
-            personality_path=root / ".claude" / "skills" / "team.kai-cto" / "memory" / "personality.md",
-            progress_path=root / "progress-summary.md",
-        )
-        result = spec_progress.build(ctx)
+    def test_real_data_does_not_crash(self, live_ctx) -> None:
+        """Integration smoke: run against the live instance without writing anything."""
+        result = spec_progress.build(live_ctx)
         assert isinstance(result, str)
         assert len(result) > 0
 
@@ -190,23 +174,9 @@ class TestRoadmap:
         assert "001" in lines[1]
 
     @_NEEDS_INSTANCE
-    def test_real_data_does_not_crash(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("VOIDPAY_AI_ROOT", raising=False)
-        from briefing import paths
-        monkeypatch.setattr("briefing.paths._REPO_ROOT_CACHE", None)
-        root = paths.repo_root()
-        ctx = ScanCtx(
-            advisor="kai-cto",
-            short_name="kai",
-            repo_root=root,
-            decisions_dir=root / "agent-memory" / "advisors" / "decisions",
-            sessions_dir=root / "agent-memory" / "advisors" / "sessions",
-            mentions_dir=root / "agent-memory" / "advisors" / "mentions",
-            gh_cache_dir=root / "agent-memory" / "gh-cache",
-            personality_path=root / ".claude" / "skills" / "team.kai-cto" / "memory" / "personality.md",
-            progress_path=root / "progress-summary.md",
-        )
-        result = roadmap.build(ctx)
+    def test_real_data_does_not_crash(self, live_ctx) -> None:
+        """Integration smoke: run against the live instance without writing anything."""
+        result = roadmap.build(live_ctx)
         assert isinstance(result, str)
         assert len(result) > 0
 
@@ -274,23 +244,9 @@ class TestDrift:
         assert result == "_(no spec/registry drift detected)_"
 
     @_NEEDS_INSTANCE
-    def test_real_data_does_not_crash(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("VOIDPAY_AI_ROOT", raising=False)
-        from briefing import paths
-        monkeypatch.setattr("briefing.paths._REPO_ROOT_CACHE", None)
-        root = paths.repo_root()
-        ctx = ScanCtx(
-            advisor="kai-cto",
-            short_name="kai",
-            repo_root=root,
-            decisions_dir=root / "agent-memory" / "advisors" / "decisions",
-            sessions_dir=root / "agent-memory" / "advisors" / "sessions",
-            mentions_dir=root / "agent-memory" / "advisors" / "mentions",
-            gh_cache_dir=root / "agent-memory" / "gh-cache",
-            personality_path=root / ".claude" / "skills" / "team.kai-cto" / "memory" / "personality.md",
-            progress_path=root / "progress-summary.md",
-        )
-        result = drift.build(ctx)
+    def test_real_data_does_not_crash(self, live_ctx) -> None:
+        """Integration smoke: run against the live instance without writing anything."""
+        result = drift.build(live_ctx)
         assert isinstance(result, str)
         assert len(result) > 0
 
@@ -354,28 +310,17 @@ class TestProjectDigest:
         assert any(sid in result for sid in ("056", "073", "074"))
 
     @_NEEDS_INSTANCE
-    def test_real_progress_summary_is_smaller(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Integration: real progress-summary.md digest is shorter than the source."""
-        monkeypatch.delenv("VOIDPAY_AI_ROOT", raising=False)
-        from briefing import paths
-        monkeypatch.setattr("briefing.paths._REPO_ROOT_CACHE", None)
-        root = paths.repo_root()
-        real_path = root / "progress-summary.md"
-        if not real_path.is_file():
-            pytest.skip("progress-summary.md not found")
-        ctx = ScanCtx(
-            advisor="kai-cto",
-            short_name="kai",
-            repo_root=root,
-            decisions_dir=root / "agent-memory" / "advisors" / "decisions",
-            sessions_dir=root / "agent-memory" / "advisors" / "sessions",
-            mentions_dir=root / "agent-memory" / "advisors" / "mentions",
-            gh_cache_dir=root / "agent-memory" / "gh-cache",
-            personality_path=root / ".claude" / "skills" / "team.kai-cto" / "memory" / "personality.md",
-            progress_path=real_path,
-        )
-        result = project_digest.build(ctx)
-        source_len = real_path.read_text(encoding="utf-8").__len__()
+    def test_real_progress_summary_is_smaller(self, live_ctx) -> None:
+        """Integration: the digest of a real progress-summary.md is shorter than its source.
+
+        Optional DATA, so the absent branch asserts the documented placeholder instead of
+        skipping — no instance in this project has ever had the file, which is exactly how
+        this test spent a month reporting nothing."""
+        result = project_digest.build(live_ctx)
+        if not live_ctx.progress_path.is_file():
+            assert result == "_(progress-summary.md missing)_"
+            return
+        source_len = len(live_ctx.progress_path.read_text(encoding="utf-8"))
         assert result != "_(progress-summary.md missing)_"
         assert len(result) < source_len, (
             f"Digest ({len(result)}) not shorter than source ({source_len})"

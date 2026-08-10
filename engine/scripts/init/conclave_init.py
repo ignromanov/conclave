@@ -42,6 +42,11 @@ DATA_SUBDIRS = (
     "agent-memory/advisors/briefings",
     "agent-memory/advisors/sessions",
     "agent-memory/advisors/decisions",
+    # mentions/ was the one advisor dir missing here, so a fresh instance had a mailbox
+    # nothing had created — every briefing build resolved mentions_dir() to an absent path
+    # (GH#105, caught by the live lane against a seeded instance). ops/feedback/ is created
+    # by feedback_emit on first use; this one is read before anything writes it.
+    "agent-memory/advisors/mentions",
     "agent-memory/advisors/audits",
     "ops/specs",
     "ops/handoffs",

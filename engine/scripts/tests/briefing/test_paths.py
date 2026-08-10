@@ -1,14 +1,13 @@
 """Tests for briefing.paths — repo-root + canonical dir resolution."""
-import os
 from pathlib import Path
 
 import pytest
 
-# Skip live-instance tests when no instance root is available (D3).
-_NEEDS_INSTANCE = pytest.mark.skipif(
-    not (os.environ.get("CONCLAVE_AI_ROOT") or os.environ.get("VOIDPAY_AI_ROOT")),
-    reason="needs live instance root",
-)
+# Live-instance tests: gated by the `live_instance` marker, whose conftest fixture points
+# CONCLAVE_AI_ROOT at CONCLAVE_LIVE_INSTANCE_ROOT for marked tests only. The old form gated
+# on CONCLAVE_AI_ROOT itself — a variable the hermetic conftest clears — so it was asking
+# whether hermeticity had been switched off, and the answer was always no (GH#105).
+_NEEDS_INSTANCE = pytest.mark.live_instance
 
 # We need the package importable; pyproject.toml is the install anchor.
 # During test runs, pytest is invoked from scripts/briefing/ with PYTHONPATH set.
@@ -17,7 +16,6 @@ from briefing.paths import (
     agent_memory_dir,
     briefings_dir,
     decisions_dir,
-    feedback_dir,
     gh_cache_dir,
     git_cache_dir,
     handoffs_dir,
@@ -37,10 +35,21 @@ def test_repo_root_returns_path():
 
 
 @_NEEDS_INSTANCE
-def test_repo_root_has_ops_and_claude():
+def test_repo_root_holds_ops_and_its_project_holds_claude():
+    """The two-root layout: ops/ is DATA, .claude/ belongs to the PROJECT beside it.
+
+    This asserted `.claude` under repo_root() — an assumption from the `.ai/` era, when one
+    directory held both (spec 103 split them). It passed anyway on a developer machine,
+    because a live `.conclave` carries a generated `.claude` symlink layer (GH#109); on a
+    freshly initialised instance, which has no such layer, it fails. An assertion that holds
+    only where an incidental artefact exists is not testing the contract it names.
+    """
+    from enginelib.paths import project_root
+
     root = repo_root()
-    assert (root / "ops").is_dir(), f"ops/ not found under {root}"
-    assert (root / ".claude").exists(), f".claude not found under {root}"
+    assert (root / "ops").is_dir(), f"ops/ not found under DATA root {root}"
+    project = project_root()
+    assert (project / ".claude").is_dir(), f".claude/ not found under project root {project}"
 
 
 def test_repo_root_env_override(monkeypatch, tmp_path):
@@ -117,13 +126,6 @@ def test_mentions_dir_exists():
 
 
 @_NEEDS_INSTANCE
-def test_feedback_dir_exists():
-    d = feedback_dir()
-    assert isinstance(d, Path)
-    assert d.is_dir(), f"feedback/ not found: {d}"
-
-
-@_NEEDS_INSTANCE
 def test_handoffs_dir_exists():
     d = handoffs_dir()
     assert isinstance(d, Path)
@@ -131,10 +133,15 @@ def test_handoffs_dir_exists():
 
 
 @_NEEDS_INSTANCE
-def test_gh_cache_dir_exists():
+def test_gh_cache_dir_resolves_under_agent_memory():
+    """gh-cache/ is a cache: gh-fetch creates it on first use, so an instance that has never
+    fetched legitimately has none. Assert the resolved location, as the git-cache test beside
+    this one already does — demanding existence would fail every fresh instance for having
+    made no network call yet."""
     d = gh_cache_dir()
     assert isinstance(d, Path)
-    assert d.is_dir(), f"gh-cache/ not found: {d}"
+    assert d.parent == agent_memory_dir()
+    assert d.name == "gh-cache"
 
 
 @_NEEDS_INSTANCE
@@ -175,7 +182,6 @@ def test_all_dirs_are_under_repo_root():
         sessions_dir(),
         decisions_dir(),
         mentions_dir(),
-        feedback_dir(),
     ]
     for d in dirs:
         assert str(d).startswith(str(root)), f"{d} is not under repo root {root}"

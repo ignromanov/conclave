@@ -5,16 +5,15 @@ No test reads or writes the live agent-memory/ tree.
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
 
-# Skip live-instance tests when no instance root is available (D3).
-_NEEDS_INSTANCE = pytest.mark.skipif(
-    not (os.environ.get("CONCLAVE_AI_ROOT") or os.environ.get("VOIDPAY_AI_ROOT")),
-    reason="needs live instance root",
-)
+# Live-instance tests: gated by the `live_instance` marker, whose conftest fixture points
+# CONCLAVE_AI_ROOT at CONCLAVE_LIVE_INSTANCE_ROOT for marked tests only. The old form gated
+# on CONCLAVE_AI_ROOT itself — a variable the hermetic conftest clears — so it was asking
+# whether hermeticity had been switched off, and the answer was always no (GH#105).
+_NEEDS_INSTANCE = pytest.mark.live_instance
 
 from briefing.scans import ScanCtx, current_work, interrupted, owed
 
@@ -150,28 +149,9 @@ class TestCurrentWork:
         assert "002-nexus" not in result
 
     @_NEEDS_INSTANCE
-    def test_real_data_produces_string(self) -> None:
-        """Integration smoke: build() returns a non-empty string from the live repo."""
-        from briefing.paths import (
-            decisions_dir,
-            gh_cache_dir,
-            mentions_dir,
-            repo_root,
-            sessions_dir,
-        )
-        root = repo_root()
-        ctx = ScanCtx(
-            advisor="kai-cto",
-            short_name="kai",
-            repo_root=root,
-            decisions_dir=decisions_dir(),
-            sessions_dir=sessions_dir(),
-            mentions_dir=mentions_dir(),
-            gh_cache_dir=gh_cache_dir(),
-            personality_path=root / ".claude" / "skills" / "team.kai-cto" / "memory" / "personality.md",
-            progress_path=root / "progress-summary.md",
-        )
-        result = current_work.build(ctx)
+    def test_real_data_produces_string(self, live_ctx) -> None:
+        """Integration smoke: build() returns a non-empty string from the live instance."""
+        result = current_work.build(live_ctx)
         assert isinstance(result, str)
         assert len(result) > 0
 
@@ -239,28 +219,9 @@ class TestOwed:
         assert "_(no pending actions owed" in result
 
     @_NEEDS_INSTANCE
-    def test_real_data_produces_string(self) -> None:
-        """Integration smoke: owed.build() returns a string from the live repo."""
-        from briefing.paths import (
-            decisions_dir,
-            gh_cache_dir,
-            mentions_dir,
-            repo_root,
-            sessions_dir,
-        )
-        root = repo_root()
-        ctx = ScanCtx(
-            advisor="kai-cto",
-            short_name="kai",
-            repo_root=root,
-            decisions_dir=decisions_dir(),
-            sessions_dir=sessions_dir(),
-            mentions_dir=mentions_dir(),
-            gh_cache_dir=gh_cache_dir(),
-            personality_path=root / ".claude" / "skills" / "team.kai-cto" / "memory" / "personality.md",
-            progress_path=root / "progress-summary.md",
-        )
-        result = owed.build(ctx)
+    def test_real_data_produces_string(self, live_ctx) -> None:
+        """Integration smoke: build() returns a non-empty string from the live instance."""
+        result = owed.build(live_ctx)
         assert isinstance(result, str)
         assert len(result) > 0
 
@@ -337,27 +298,8 @@ class TestInterrupted:
         assert "_(no interrupted work" in result
 
     @_NEEDS_INSTANCE
-    def test_real_data_produces_string(self) -> None:
-        """Integration smoke: interrupted.build() returns a string from the live repo."""
-        from briefing.paths import (
-            decisions_dir,
-            gh_cache_dir,
-            mentions_dir,
-            repo_root,
-            sessions_dir,
-        )
-        root = repo_root()
-        ctx = ScanCtx(
-            advisor="kai-cto",
-            short_name="kai",
-            repo_root=root,
-            decisions_dir=decisions_dir(),
-            sessions_dir=sessions_dir(),
-            mentions_dir=mentions_dir(),
-            gh_cache_dir=gh_cache_dir(),
-            personality_path=root / ".claude" / "skills" / "team.kai-cto" / "memory" / "personality.md",
-            progress_path=root / "progress-summary.md",
-        )
-        result = interrupted.build(ctx)
+    def test_real_data_produces_string(self, live_ctx) -> None:
+        """Integration smoke: build() returns a non-empty string from the live instance."""
+        result = interrupted.build(live_ctx)
         assert isinstance(result, str)
         assert len(result) > 0

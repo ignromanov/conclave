@@ -84,14 +84,6 @@ def mentions_dir() -> Path:
     return advisors_memory_dir() / "mentions"
 
 
-def feedback_dir() -> Path:
-    return advisors_memory_dir() / "feedback"
-
-
-def feedback_archive_dir() -> Path:
-    return advisors_memory_dir() / "feedback" / "archive"
-
-
 def handoffs_dir() -> Path:
     return repo_root() / "ops" / "handoffs"
 
