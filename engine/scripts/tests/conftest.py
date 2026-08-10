@@ -25,21 +25,28 @@ _REAL_ENGINE_ROOT = Path(__file__).resolve().parents[2]
 # Canonical advisor names auto-seeded by fixture_setup in fixtures.bash.
 _CANONICAL_ADVISORS = ("dev", "kai-cto", "nexus-ceo", "quorum", "shade-ciso", "spark-cmo")
 
-# Hermeticity: clear ambient instance-root env vars at conftest IMPORT (before test
-# collection) so `@skipif(not CONCLAVE_AI_ROOT)` gates (e.g. _NEEDS_INSTANCE) evaluate
-# against a clean env and skip live-instance smoke tests, instead of running them
-# against the real .conclave tree exported by the SessionStart hook. Per-test isolation
-# is reinforced by the _hermetic_instance_env autouse fixture below. CONCLAVE_ENGINE_ROOT
-# (CODE root) is intentionally left set. (feedback f69060/i1, 240857/i2)
+# Hermeticity is UNCONDITIONAL: clear ambient instance-root env vars at conftest IMPORT
+# (before collection), and again per-test via _hermetic_instance_env below, so no test
+# reads the real .conclave tree the SessionStart hook exports. CONCLAVE_ENGINE_ROOT (the
+# CODE root) is intentionally left set. (feedback f69060/i1, 240857/i2)
 #
-# The SessionStart hook exports CONCLAVE_AI_ROOT UNCONDITIONALLY, so it can't double as
-# the "run live-instance tests" signal. Opt in explicitly with CONCLAVE_TEST_LIVE=1
-# (keep CONCLAVE_AI_ROOT set) to run the _NEEDS_INSTANCE smoke tests against a real tree.
-_LIVE_TESTS = os.environ.get("CONCLAVE_TEST_LIVE")
+# It used to be conditional on CONCLAVE_TEST_LIVE=1, and that same flag doubled as the
+# "run the live-instance tests" signal — one switch for two orthogonal concerns. Entering
+# the live lane therefore meant disarming hermeticity for the WHOLE suite, which reddens
+# four tests that legitimately expect a clean env (test_backfill_cli, test_paths::
+# test_repo_root_env_override, test_session_init::TestRepoRoot::{test_env_override,
+# test_missing_raises}). That collateral is why the flag was never wired into CI, and why
+# 31 gated tests went a month without executing anywhere (GH#105).
+#
+# The live lane now has its own variable and its own marker — see _live_instance_root.
 _INSTANCE_ROOT_VARS = ("CONCLAVE_AI_ROOT", "VOIDPAY_AI_ROOT", "CLAUDE_PROJECT_DIR")
-if not _LIVE_TESTS:
-    for _var in _INSTANCE_ROOT_VARS:
-        os.environ.pop(_var, None)
+for _var in _INSTANCE_ROOT_VARS:
+    os.environ.pop(_var, None)
+
+# Opt-in live lane: a path to an instance tree the `live_instance`-marked tests read.
+# Deliberately NOT one of the vars above — an ambient CONCLAVE_AI_ROOT export must never
+# be able to enable the lane by accident, which is the trap the old flag fell into.
+LIVE_INSTANCE_ROOT_VAR = "CONCLAVE_LIVE_INSTANCE_ROOT"
 
 
 def _write_skill_stubs(ai_root: Path, engine_root: Path, *names: str) -> None:
@@ -90,11 +97,37 @@ def _hermetic_instance_env(monkeypatch):
     masking regressions (feedback f69060/i1, 240857/i2). Tests that need an
     instance root set it explicitly (e.g. the `ai_root` fixture via monkeypatch,
     which runs after this autouse clear). CONCLAVE_ENGINE_ROOT (CODE root) is left
-    untouched — it is not an instance root. Skipped when CONCLAVE_TEST_LIVE=1."""
-    if _LIVE_TESTS:
-        return
+    untouched — it is not an instance root.
+
+    Unconditional by design: tests that want a live instance get one from
+    _live_instance_root below, which sets a root back AFTER this clear rather than
+    suppressing the clear for everyone."""
     for var in _INSTANCE_ROOT_VARS:
         monkeypatch.delenv(var, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _live_instance_root(request, monkeypatch, _hermetic_instance_env):
+    """Point a `live_instance`-marked test at a real instance tree; no-op otherwise.
+
+    Depends on _hermetic_instance_env so it always runs AFTER the clear — the marked
+    test gets exactly one instance root, the one named by CONCLAVE_LIVE_INSTANCE_ROOT,
+    and every unmarked test keeps the hermetic env. This is the half of GH#105 that was
+    missing: the old gate asked "is CONCLAVE_AI_ROOT set?", which is a question about
+    whether hermeticity had been switched off, not about whether an instance exists.
+
+    A path that does not exist FAILS rather than skips. A typo'd or moved root would
+    otherwise reproduce the original defect exactly — a lane that reports green because
+    it silently declined to run."""
+    if request.node.get_closest_marker("live_instance") is None:
+        return
+    raw = os.environ.get(LIVE_INSTANCE_ROOT_VAR)
+    if not raw:
+        pytest.skip(f"needs a live instance root — set {LIVE_INSTANCE_ROOT_VAR}=<path>")
+    root = Path(raw).resolve()
+    if not root.is_dir():
+        pytest.fail(f"{LIVE_INSTANCE_ROOT_VAR}={raw} is not a directory")
+    monkeypatch.setenv("CONCLAVE_AI_ROOT", str(root))
 
 
 @pytest.fixture
