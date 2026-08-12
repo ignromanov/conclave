@@ -10,10 +10,11 @@ permissiveness caused problems.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 Stage = Literal["clarify", "design", "spec", "plan", "implement", "verify", "deliver"]
 Tier = Literal["quick", "work"]
@@ -40,6 +41,17 @@ class ProtocolMeta(BaseModel):
     binding: Binding
     last_reviewed: str | None = None
     external_skill: str | None = None
+
+    @field_validator("last_reviewed", mode="before")
+    @classmethod
+    def _iso_string(cls, v: object) -> object:
+        """YAML auto-types an unquoted `2026-08-07` into `datetime.date`.
+
+        Rejecting it would push the quoting rule onto every protocol author, and the
+        first one to forget gets "invalid frontmatter" for a date that is perfectly
+        well-formed. Normalize instead, so consumers still see exactly one type.
+        """
+        return v.isoformat() if isinstance(v, date) else v
 
     @property
     def is_adapter(self) -> bool:

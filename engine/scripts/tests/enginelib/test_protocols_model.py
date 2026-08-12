@@ -50,6 +50,15 @@ def test_empty_axis_is_rejected():
         ProtocolMeta(**_valid(tiers=[]))
 
 
+def test_a_yaml_date_is_normalized_not_rejected():
+    # YAML turns an unquoted 2026-08-07 into datetime.date. The unit test alone never
+    # sees this — only the file round-trip does — so pin it here where the type lives.
+    import datetime
+
+    m = ProtocolMeta(**_valid(last_reviewed=datetime.date(2026, 8, 7)))
+    assert m.last_reviewed == "2026-08-07"
+
+
 def test_external_skill_marks_an_adapter():
     m = ProtocolMeta(**_valid(external_skill="pytest-advanced"))
     assert m.is_adapter is True
