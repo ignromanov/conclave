@@ -10,6 +10,11 @@ files:
   - .ai/agent-memory/advisors/{sessions,decisions,mentions}/ (script-written)
 find-pattern: |
   "memory/personality.md" OR "memory/references/" OR "agent-memory/advisors/"
+stages: [implement]
+tiers: [work]
+task_types: [advisory]
+binding: advisory
+last_reviewed: "2026-08-12"
 ---
 
 # Aspect: memory-structure

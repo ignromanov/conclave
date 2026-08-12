@@ -3,6 +3,11 @@ schema_version: "1.0.0"
 applies-to: advisors+executors
 spec: 051
 status: active
+stages: [implement, deliver]
+tiers: [work]
+task_types: [dev, content, research, review, advisory]
+binding: required
+last_reviewed: "2026-08-12"
 ---
 
 # Memory invariants (spec 051)

@@ -3,6 +3,11 @@ contract: agent-data-policy
 version: 2.0.0
 appliers: [team.quorum, all advisors]
 propagation: hire-template
+stages: [implement, deliver]
+tiers: [work]
+task_types: [dev, content, research, review, advisory]
+binding: required
+last_reviewed: "2026-08-12"
 ---
 
 # Agent Data Policy

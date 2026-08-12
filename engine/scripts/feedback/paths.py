@@ -1,8 +1,9 @@
 """paths.py — ops/feedback/ layout resolution for spec 086.
 
-Imports only repo_root from briefing.paths — NOT feedback_dir or
-feedback_archive_dir, which point to the OLD agent-memory/advisors/feedback/
-location. This module's functions use distinct names to avoid confusion.
+Imports only repo_root from briefing.paths. That module used to also carry
+feedback_dir/feedback_archive_dir pointing at the OLD agent-memory/advisors/feedback/
+location; this module never used them, nothing else did either, and they were deleted
+with the tests that were their only callers (GH#105). ops/feedback/ is the one layout.
 """
 from __future__ import annotations
 

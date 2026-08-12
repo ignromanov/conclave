@@ -196,8 +196,6 @@ def briefings_dir() -> Path: return advisors_memory_dir() / "briefings"
 def sessions_dir() -> Path: return advisors_memory_dir() / "sessions"
 def decisions_dir() -> Path: return advisors_memory_dir() / "decisions"
 def mentions_dir() -> Path: return advisors_memory_dir() / "mentions"
-def feedback_dir() -> Path: return advisors_memory_dir() / "feedback"
-def feedback_archive_dir() -> Path: return advisors_memory_dir() / "feedback" / "archive"
 def hot_md_path() -> Path: return agent_memory_dir() / "hot.md"
 def executor_memory_dir(eid: str) -> Path: return executors_memory_dir() / eid
 def handoffs_dir() -> Path: return repo_root() / "ops" / "handoffs"

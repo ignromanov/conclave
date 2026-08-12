@@ -2,16 +2,15 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
 
-# Skip live-instance tests when no instance root is available (D3).
-_NEEDS_INSTANCE = pytest.mark.skipif(
-    not (os.environ.get("CONCLAVE_AI_ROOT") or os.environ.get("VOIDPAY_AI_ROOT")),
-    reason="needs live instance root",
-)
+# Live-instance tests: gated by the `live_instance` marker, whose conftest fixture points
+# CONCLAVE_AI_ROOT at CONCLAVE_LIVE_INSTANCE_ROOT for marked tests only. The old form gated
+# on CONCLAVE_AI_ROOT itself — a variable the hermetic conftest clears — so it was asking
+# whether hermeticity had been switched off, and the answer was always no (GH#105).
+_NEEDS_INSTANCE = pytest.mark.live_instance
 
 from briefing.scans import (
     ScanCtx,
@@ -102,26 +101,13 @@ class TestIdentity:
         assert result.startswith("First real line.")
 
     @_NEEDS_INSTANCE
-    def test_real_kai_cto_personality(self):
-        """Integration: real kai-cto personality.md must produce non-placeholder output."""
-        from briefing.paths import repo_root
-        real_path = repo_root() / ".claude" / "skills" / "team.kai-cto" / "memory" / "personality.md"
-        if not real_path.is_file():
-            pytest.skip("kai-cto personality.md not found")
-        from briefing.paths import decisions_dir, gh_cache_dir, mentions_dir, sessions_dir
-        ctx = ScanCtx(
-            advisor="kai-cto",
-            short_name="kai",
-            repo_root=repo_root(),
-            decisions_dir=decisions_dir(),
-            sessions_dir=sessions_dir(),
-            mentions_dir=mentions_dir(),
-            gh_cache_dir=gh_cache_dir(),
-            personality_path=real_path,
-            progress_path=repo_root() / "progress-summary.md",
+    def test_real_personality(self, live_ctx):
+        """Integration: the live instance's own advisor renders a real persona."""
+        result = identity.build(live_ctx)
+        assert "_(personality.md not yet written" not in result, (
+            f"{live_ctx.advisor}'s persona resolved to {live_ctx.personality_path}, "
+            "which does not exist"
         )
-        result = identity.build(ctx)
-        assert "_(personality.md not yet written" not in result
         assert len(result) > 10
 
 
@@ -166,27 +152,16 @@ class TestProjectState:
         assert result.startswith("Actual content")
 
     @_NEEDS_INSTANCE
-    def test_real_progress_summary(self):
-        """Integration: real progress-summary.md returns non-placeholder ≤20 lines."""
-        from briefing.paths import repo_root
-        real_path = repo_root() / "progress-summary.md"
-        if not real_path.is_file():
-            pytest.skip("progress-summary.md not found")
-        from briefing.paths import decisions_dir, gh_cache_dir, mentions_dir, sessions_dir
-        ctx = ScanCtx(
-            advisor="kai-cto",
-            short_name="kai",
-            repo_root=repo_root(),
-            decisions_dir=decisions_dir(),
-            sessions_dir=sessions_dir(),
-            mentions_dir=mentions_dir(),
-            gh_cache_dir=gh_cache_dir(),
-            personality_path=repo_root() / ".claude" / "skills" / "team.kai-cto" / "memory" / "personality.md",
-            progress_path=real_path,
-        )
-        result = project_state.build(ctx)
-        assert result != "_(progress-summary.md missing)_"
-        assert len(result.splitlines()) <= 20
+    def test_real_progress_summary(self, live_ctx):
+        """Integration: project_state honours its contract on whichever branch the live tree
+        lands in. progress-summary.md is optional per-instance DATA, so 'absent' is a
+        legitimate state — asserting only the present branch is what made this skip."""
+        result = project_state.build(live_ctx)
+        if live_ctx.progress_path.is_file():
+            assert result != "_(progress-summary.md missing)_"
+            assert len(result.splitlines()) <= 20
+        else:
+            assert result == "_(progress-summary.md missing)_"
 
 
 # ---------------------------------------------------------------------------
@@ -237,28 +212,9 @@ class TestDecisions:
         assert "nexus-ceo" not in result
 
     @_NEEDS_INSTANCE
-    def test_real_kai_cto_decisions(self):
+    def test_real_decisions(self, live_ctx):
         """Integration: real decisions dir returns links."""
-        from briefing.paths import (
-            decisions_dir,
-            gh_cache_dir,
-            mentions_dir,
-            repo_root,
-            sessions_dir,
-        )
-        ctx = ScanCtx(
-            advisor="kai-cto",
-            short_name="kai",
-            repo_root=repo_root(),
-            decisions_dir=decisions_dir(),
-            sessions_dir=sessions_dir(),
-            mentions_dir=mentions_dir(),
-            gh_cache_dir=gh_cache_dir(),
-            personality_path=repo_root() / ".claude" / "skills" / "team.kai-cto" / "memory" / "personality.md",
-            progress_path=repo_root() / "progress-summary.md",
-        )
-        result = decisions.build(ctx)
-        # Either has links or the placeholder — both are valid.
+        result = decisions.build(live_ctx)
         assert isinstance(result, str)
         assert len(result) > 0
 
@@ -298,33 +254,29 @@ class TestQueue:
         assert "_(no open issues for advisor:kai-cto)_" == result
 
     @_NEEDS_INSTANCE
-    def test_real_kai_cto_queue(self):
-        """Integration: real gh-cache produces non-placeholder output."""
-        from briefing.paths import (
-            decisions_dir,
-            gh_cache_dir,
-            mentions_dir,
-            repo_root,
-            sessions_dir,
-        )
-        cache_path = gh_cache_dir() / "kai-cto.md"
-        if not cache_path.is_file():
-            pytest.skip("kai-cto gh-cache not found")
-        ctx = ScanCtx(
-            advisor="kai-cto",
-            short_name="kai",
-            repo_root=repo_root(),
-            decisions_dir=decisions_dir(),
-            sessions_dir=sessions_dir(),
-            mentions_dir=mentions_dir(),
-            gh_cache_dir=gh_cache_dir(),
-            personality_path=repo_root() / ".claude" / "skills" / "team.kai-cto" / "memory" / "personality.md",
-            progress_path=repo_root() / "progress-summary.md",
-        )
-        result = queue.build(ctx)
-        assert "_(no open issues for advisor:kai-cto)_" not in result
-        # Queue rows now carry a repo prefix (e.g. "voidpay-ai#140") per enrichment #14.
-        assert result.startswith("- ")
+    def test_real_queue(self, live_ctx):
+        """Integration: gh-cache is optional — an instance may have no GitHub at all — so
+        assert the contract of whichever branch the live tree lands in, rather than skipping
+        and reporting nothing."""
+        result = queue.build(live_ctx)
+        placeholder = f"_(no open issues for advisor:{live_ctx.advisor})_"
+        snapshot = live_ctx.gh_cache_dir / f"{live_ctx.advisor}.md"
+        if not snapshot.is_file():
+            assert result == placeholder
+            return
+        # Expectation is keyed on the snapshot's CONTENTS, not its existence: a cached
+        # snapshot holding zero items is a legitimate state (an advisor with nothing open,
+        # or — as measured on this instance — one whose GH label was dropped by a rename,
+        # GH#111). Keying on the file alone made this test redden on the instance's label
+        # hygiene rather than on the scan's contract.
+        raw = snapshot.read_text(encoding="utf-8")
+        items = json.loads(raw.split("```json", 1)[1].split("```", 1)[0])
+        if items:
+            assert placeholder not in result
+            # Queue rows carry a repo prefix (e.g. "conclave#140") per enrichment #14.
+            assert result.startswith("- ")
+        else:
+            assert result == placeholder
 
 
 # ---------------------------------------------------------------------------
@@ -356,34 +308,12 @@ class TestP0:
         assert result == "_(no global p0 blockers)_"
 
     @_NEEDS_INSTANCE
-    def test_real_kai_cto_p0(self):
-        """Integration: real gh-cache p0 filter."""
-        from briefing.paths import (
-            decisions_dir,
-            gh_cache_dir,
-            mentions_dir,
-            repo_root,
-            sessions_dir,
-        )
-        cache_path = gh_cache_dir() / "kai-cto.md"
-        if not cache_path.is_file():
-            pytest.skip("kai-cto gh-cache not found")
-        ctx = ScanCtx(
-            advisor="kai-cto",
-            short_name="kai",
-            repo_root=repo_root(),
-            decisions_dir=decisions_dir(),
-            sessions_dir=sessions_dir(),
-            mentions_dir=mentions_dir(),
-            gh_cache_dir=gh_cache_dir(),
-            personality_path=repo_root() / ".claude" / "skills" / "team.kai-cto" / "memory" / "personality.md",
-            progress_path=repo_root() / "progress-summary.md",
-        )
-        result = p0.build(ctx)
-        # Either p0 issues or placeholder — both valid.
+    def test_real_p0(self, live_ctx):
+        """Integration: p0 renders either real blockers or the documented placeholder —
+        both of which name p0."""
+        result = p0.build(live_ctx)
         assert isinstance(result, str)
-        if result != "_(no global p0 blockers)_":
-            assert "p0" in result
+        assert "p0" in result
 
 
 # ---------------------------------------------------------------------------
@@ -432,27 +362,9 @@ class TestSessions:
         assert "nexus-ceo" not in result
 
     @_NEEDS_INSTANCE
-    def test_real_kai_cto_sessions(self):
-        """Integration: real sessions dir."""
-        from briefing.paths import (
-            decisions_dir,
-            gh_cache_dir,
-            mentions_dir,
-            repo_root,
-            sessions_dir,
-        )
-        ctx = ScanCtx(
-            advisor="kai-cto",
-            short_name="kai",
-            repo_root=repo_root(),
-            decisions_dir=decisions_dir(),
-            sessions_dir=sessions_dir(),
-            mentions_dir=mentions_dir(),
-            gh_cache_dir=gh_cache_dir(),
-            personality_path=repo_root() / ".claude" / "skills" / "team.kai-cto" / "memory" / "personality.md",
-            progress_path=repo_root() / "progress-summary.md",
-        )
-        result = sessions.build(ctx)
+    def test_real_sessions(self, live_ctx):
+        """Integration: real sessions dir returns a non-empty render."""
+        result = sessions.build(live_ctx)
         assert isinstance(result, str)
         assert len(result) > 0
 
@@ -522,26 +434,8 @@ class TestMentions:
         assert "[p2]" in result
 
     @_NEEDS_INSTANCE
-    def test_real_kai_cto_mentions(self):
-        """Integration: real kai-cto mentions."""
-        from briefing.paths import (
-            decisions_dir,
-            gh_cache_dir,
-            mentions_dir,
-            repo_root,
-            sessions_dir,
-        )
-        ctx = ScanCtx(
-            advisor="kai-cto",
-            short_name="kai",
-            repo_root=repo_root(),
-            decisions_dir=decisions_dir(),
-            sessions_dir=sessions_dir(),
-            mentions_dir=mentions_dir(),
-            gh_cache_dir=gh_cache_dir(),
-            personality_path=repo_root() / ".claude" / "skills" / "team.kai-cto" / "memory" / "personality.md",
-            progress_path=repo_root() / "progress-summary.md",
-        )
-        result = mentions.build(ctx)
+    def test_real_mentions(self, live_ctx):
+        """Integration: real mentions dir returns a non-empty render."""
+        result = mentions.build(live_ctx)
         assert isinstance(result, str)
         assert len(result) > 0

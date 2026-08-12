@@ -3,6 +3,11 @@ contract: advisor-anti-patterns
 version: 1.0.0
 appliers: [all advisors]
 propagation: hire-template
+stages: [implement, verify, deliver]
+tiers: [quick, work]
+task_types: [dev, content, research, review, advisory]
+binding: required
+last_reviewed: "2026-08-12"
 ---
 
 # Shared advisor anti-patterns

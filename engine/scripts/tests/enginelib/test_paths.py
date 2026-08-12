@@ -60,18 +60,6 @@ def test_snapshot_path_invalid_cache_type(tmp_path, monkeypatch):
         paths.snapshot_path_for_advisor("bogus", "nexus-ceo")
 
 
-def test_feedback_dir(tmp_path, monkeypatch):
-    root = _make_ai_root(tmp_path)
-    monkeypatch.setenv("CONCLAVE_AI_ROOT", str(root))
-    assert str(paths.feedback_dir()).endswith("/agent-memory/advisors/feedback")
-
-
-def test_feedback_archive_dir(tmp_path, monkeypatch):
-    root = _make_ai_root(tmp_path)
-    monkeypatch.setenv("CONCLAVE_AI_ROOT", str(root))
-    assert str(paths.feedback_archive_dir()).endswith("/agent-memory/advisors/feedback/archive")
-
-
 def test_project_claude_dir_sibling_for_conclave_root(tmp_path, monkeypatch):
     """CLAUDE_PROJECT_DIR unset + a `.conclave` DATA root → .claude/ is the SIBLING
     (parent/.claude), not <root>/.claude inside .conclave (poststart-sweep F3 / start it-2)."""

@@ -8,6 +8,11 @@ files:
 find-pattern: |
   "Required Skills" OR "Chains" OR "Toolbox"
 external-skill: find-skills
+stages: [design, implement]
+tiers: [work]
+task_types: [advisory]
+binding: required
+last_reviewed: "2026-08-12"
 ---
 
 # Aspect: toolbox

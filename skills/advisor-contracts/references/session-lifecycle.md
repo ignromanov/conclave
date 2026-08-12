@@ -3,6 +3,11 @@ contract: session-lifecycle
 version: 1.0.0
 appliers: [team.start, team.processing, team.done, team.handoff]
 propagation: hire-template
+stages: [clarify, design, implement, verify, deliver]
+tiers: [quick, work]
+task_types: [dev, content, research, review, advisory]
+binding: required
+last_reviewed: "2026-08-12"
 ---
 
 # Session lifecycle (default)

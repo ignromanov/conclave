@@ -37,6 +37,51 @@ def _write(path: Path, content: str) -> None:
 
 
 @pytest.fixture()
+def live_ctx():
+    """A ScanCtx over the live instance, for one of the instance's OWN advisors.
+
+    Pair with @pytest.mark.live_instance — the marker's fixture is what points
+    CONCLAVE_AI_ROOT at CONCLAVE_LIVE_INSTANCE_ROOT, and without it repo_root()
+    resolves to nothing useful.
+
+    The advisor is discovered from the roster, never named: these tests used to
+    hardcode `kai-cto` and a `team.<id>` skill path, both of which belong to the
+    VoidPay era. In this instance kai-cto does not exist, so every one of them
+    skipped at runtime on a missing artifact even when the gate let it through —
+    a second, quieter reason the 31 tests of GH#105 never ran. `sorted(...)[0]`
+    only needs to be deterministic; any hired advisor exercises the same scans.
+
+    Built with the same calls as briefing/__main__.py:122-140, deliberately: a
+    ctx assembled differently from production is a ctx production never makes,
+    and drift between the two resolvers would pass unseen.
+    """
+    from briefing import paths
+    from briefing.scans import ScanCtx
+    from enginelib.advisors import known_advisors
+    from enginelib.advisors import personality_path as advisor_personality_path
+
+    root = paths.repo_root()
+    roster = sorted(known_advisors(root))
+    if not roster:
+        pytest.fail(
+            f"live instance at {root} has no advisor in .claude/agents/ — "
+            "an instance without a roster cannot exercise the briefing scans"
+        )
+    advisor = roster[0]
+    return ScanCtx(
+        advisor=advisor,
+        short_name=advisor.split("-")[0],
+        repo_root=root,
+        decisions_dir=paths.decisions_dir(),
+        sessions_dir=paths.sessions_dir(),
+        mentions_dir=paths.mentions_dir(),
+        gh_cache_dir=paths.gh_cache_dir(),
+        personality_path=advisor_personality_path(advisor),
+        progress_path=root / "progress-summary.md",
+    )
+
+
+@pytest.fixture()
 def kai_cto_tmp_root(tmp_path: Path) -> Path:
     """A hermetic .ai-like tmp root for briefing_main(["kai-cto"]) tests.
 

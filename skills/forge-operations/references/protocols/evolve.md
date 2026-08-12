@@ -4,6 +4,11 @@ version: 1.0.0
 description: |
   Mutates existing agent model. Scope-flexible (single advisor / multi / all / lifecycle / architectural).
   Composable aspects. Diff-preview → approve → edit → commit loop.
+stages: [design, implement, verify]
+tiers: [work]
+task_types: [advisory]
+binding: required
+last_reviewed: "2026-08-12"
 ---
 
 # Evolve protocol

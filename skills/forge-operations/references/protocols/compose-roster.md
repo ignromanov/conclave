@@ -15,6 +15,11 @@ note: |
   Net-new in spec 097 (C-proof). Role *selection* is a Forge judgment layer, distinct from
   091's deontic norms-composition (validate-norms.py) — the decoupling is by layer, not by
   build-state, so compose-roster is usable whether or not 091 ships.
+stages: [design]
+tiers: [work]
+task_types: [advisory]
+binding: required
+last_reviewed: "2026-08-12"
 ---
 
 # team.forge — Compose Roster

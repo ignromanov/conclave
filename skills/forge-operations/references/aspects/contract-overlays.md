@@ -8,6 +8,11 @@ files:
 external-command: engine overlay apply
 find-pattern: |
   "contracts/.*\\.md" scoped to skills/team.<id>/
+stages: [implement]
+tiers: [work]
+task_types: [advisory]
+binding: advisory
+last_reviewed: "2026-08-12"
 ---
 
 # Aspect: contract-overlays
