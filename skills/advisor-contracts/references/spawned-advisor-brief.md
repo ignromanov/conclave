@@ -5,7 +5,7 @@ propagation: runtime-inject
 applies-to: advisors in autonomous mode (spec 089)
 stages: [clarify]
 tiers: [work]
-task_types: [dev, content]
+task_types: [dev, content, research, review, advisory]
 binding: required
 last_reviewed: "2026-08-12"
 ---
