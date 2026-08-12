@@ -4,6 +4,11 @@ version: 1.0.0
 appliers: [all advisors via lifecycle skills]
 propagation: hire-template
 source: c-level-advisor skill (inspiration)
+stages: [verify, deliver]
+tiers: [work]
+task_types: [dev, content, research, review, advisory]
+binding: required
+last_reviewed: "2026-08-12"
 ---
 
 # Internal Quality Loop

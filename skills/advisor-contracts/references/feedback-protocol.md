@@ -1,3 +1,11 @@
+---
+stages: [deliver]
+tiers: [quick, work]
+task_types: [dev, content, research, review, advisory]
+binding: required
+last_reviewed: "2026-08-12"
+---
+
 # Feedback Protocol — Unified Work Reviews
 
 > **Purpose**: Every agent emits a work review at the end of its session/dispatch.

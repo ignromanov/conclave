@@ -1,3 +1,11 @@
+---
+stages: [implement, verify]
+tiers: [work]
+task_types: [advisory]
+binding: required
+last_reviewed: "2026-08-12"
+---
+
 # Aspect: Lifecycle Skill
 
 Modify `team.start/`, `team.done/`, `team.handoff/`, or `team.processing/` skills.

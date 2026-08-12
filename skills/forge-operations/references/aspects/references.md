@@ -1,3 +1,11 @@
+---
+stages: [implement]
+tiers: [work]
+task_types: [advisory]
+binding: required
+last_reviewed: "2026-08-12"
+---
+
 # Aspect: References
 
 Modify `memory/references/<domain>.md` for an advisor.

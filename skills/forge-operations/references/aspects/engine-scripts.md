@@ -1,3 +1,11 @@
+---
+stages: [implement, verify]
+tiers: [work]
+task_types: [dev]
+binding: required
+last_reviewed: "2026-08-12"
+---
+
 # Aspect: Engine Scripts
 
 Modify the Python engine under `engine/scripts/` — the `engine <noun> <verb>` CLI (argparse adapters in

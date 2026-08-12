@@ -2,6 +2,11 @@
 contract: executor-protocol
 version: 1.1.0
 applies-to: exec-*.md agent-defs (+ optional exec.* script dirs)
+stages: [implement, verify]
+tiers: [work]
+task_types: [dev]
+binding: required
+last_reviewed: "2026-08-12"
 ---
 
 # Executor Protocol

@@ -9,6 +9,11 @@ files:
   - .claude/agents/team.<id>.md (tone hint in description)
 find-pattern: |
   "## Identity" OR "memory/personality.md" OR tone: field in agents/*.md frontmatter
+stages: [design, implement]
+tiers: [work]
+task_types: [advisory]
+binding: advisory
+last_reviewed: "2026-08-12"
 ---
 
 # Aspect: identity

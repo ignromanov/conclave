@@ -3,6 +3,11 @@ contract: decision-framework
 version: 1.0.0
 appliers: [team.processing]
 propagation: hire-template
+stages: [design]
+tiers: [quick, work]
+task_types: [dev, content, research, review, advisory]
+binding: advisory
+last_reviewed: "2026-08-12"
 ---
 
 # Decision Framework

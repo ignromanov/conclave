@@ -8,6 +8,11 @@ files:
 external-skill: plugin-dev:agent-development
 find-pattern: |
   ".claude/agents/team\\..*\\.md"
+stages: [implement]
+tiers: [work]
+task_types: [advisory]
+binding: advisory
+last_reviewed: "2026-08-12"
 ---
 
 # Aspect: agent-frontmatter

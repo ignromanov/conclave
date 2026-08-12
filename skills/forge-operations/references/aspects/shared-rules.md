@@ -9,6 +9,11 @@ files:
   - .claude/CLAUDE.md (project-level)
 find-pattern: |
   "rules/" OR "contracts/" OR "CLAUDE.md"
+stages: [design, implement]
+tiers: [work]
+task_types: [advisory]
+binding: advisory
+last_reviewed: "2026-08-12"
 ---
 
 # Aspect: shared-rules

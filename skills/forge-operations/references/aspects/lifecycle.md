@@ -12,6 +12,11 @@ files:
   - ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/session-lifecycle.md
 find-pattern: |
   "LIFECYCLE_SKILLS" OR "/conclave:start" OR "/conclave:done" OR "/conclave:processing" OR "/conclave:handoff"
+stages: [implement]
+tiers: [work]
+task_types: [advisory]
+binding: advisory
+last_reviewed: "2026-08-12"
 ---
 
 # Aspect: lifecycle

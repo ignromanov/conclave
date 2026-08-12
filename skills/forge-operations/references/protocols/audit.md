@@ -4,6 +4,11 @@ version: 1.0.0
 description: |
   Detects drift across the agent model. Read-only by default. --fix delegates to Evolve.
   Also runs as sub-call from Evolve Stage 7.
+stages: [verify]
+tiers: [work]
+task_types: [advisory]
+binding: required
+last_reviewed: "2026-08-12"
 ---
 
 # Audit protocol
