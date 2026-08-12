@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -10,11 +9,11 @@ import pytest
 from briefing.render import _hot_section, _substitute
 from briefing.scans import ScanCtx
 
-# Skip live-instance tests when no instance root is available (D3).
-_NEEDS_INSTANCE = pytest.mark.skipif(
-    not (os.environ.get("CONCLAVE_AI_ROOT") or os.environ.get("VOIDPAY_AI_ROOT")),
-    reason="needs live instance root",
-)
+# Live-instance tests: gated by the `live_instance` marker, whose conftest fixture points
+# CONCLAVE_AI_ROOT at CONCLAVE_LIVE_INSTANCE_ROOT for marked tests only. The old form gated
+# on CONCLAVE_AI_ROOT itself — a variable the hermetic conftest clears — so it was asking
+# whether hermeticity had been switched off, and the answer was always no (GH#105).
+_NEEDS_INSTANCE = pytest.mark.live_instance
 
 
 # ---------------------------------------------------------------------------
@@ -243,43 +242,53 @@ class TestRenderBuild:
 # ---------------------------------------------------------------------------
 
 @_NEEDS_INSTANCE
-def test_real_kai_cto_integration():
-    """Integration: render produces a briefing for kai-cto using real data."""
-    from briefing.paths import (
-        decisions_dir,
-        gh_cache_dir,
-        mentions_dir,
-        repo_root,
-        sessions_dir,
-    )
-    from briefing.render import build as render_build
-
-    root = repo_root()
-    ctx = ScanCtx(
-        advisor="kai-cto",
-        short_name="kai",
-        repo_root=root,
-        decisions_dir=decisions_dir(),
-        sessions_dir=sessions_dir(),
-        mentions_dir=mentions_dir(),
-        gh_cache_dir=gh_cache_dir(),
-        personality_path=root / ".claude" / "skills" / "team.kai-cto" / "memory" / "personality.md",
-        progress_path=root / "progress-summary.md",
-    )
+def test_real_integration(live_ctx):
+    """Integration: render produces a briefing for the live instance's own advisor."""
     # Write to a temp location — don't touch real briefings.
     import tempfile
+
+    from briefing.render import build as render_build
     with tempfile.TemporaryDirectory() as td:
-        out = Path(td) / "kai-cto.md"
-        render_build(ctx, out)
+        out = Path(td) / f"{live_ctx.advisor}.md"
+        render_build(live_ctx, out)
         content = out.read_text(encoding="utf-8")
 
-    assert "# Briefing — kai-cto" in content
+    assert f"# Briefing — {live_ctx.advisor}" in content
     # AC8: hot.md reference present, content not embedded.
     assert "Live context" in content
     assert "## Live (hot.md)" not in content
-    # No raw placeholders remaining.
-    import re
-    unresolved = re.findall(r"\{\{[a-zA-Z0-9_]+\}\}", content)
-    assert unresolved == []
     # Should have real data (not all placeholders).
     assert "_(personality.md not yet written" not in content
+
+
+@_NEEDS_INSTANCE
+def test_real_render_leaks_no_template_tokens(live_ctx):
+    """No {{Token}} of the BRIEFING template's own survives into the render.
+
+    Tokens carried in from an unauthored persona are a different defect with a different
+    owner (GH#118 — init mints `{{Name}}`/`{{Emoji}}`/`{{Role}}` without substituting them),
+    and they are present or absent depending on whether the instance's advisor has been
+    enriched yet. Subtracting the persona's own tokens keeps this test's verdict a property
+    of the renderer rather than of whichever instance it was pointed at — the earlier form,
+    `assert unresolved == []`, passed on a developer machine and failed on a fresh instance
+    while the renderer behaved identically in both.
+    """
+    import re
+    import tempfile
+
+    from briefing.render import build as render_build
+    pattern = r"\{\{[a-zA-Z0-9_]+\}\}"
+    persona = (
+        live_ctx.personality_path.read_text(encoding="utf-8")
+        if live_ctx.personality_path.is_file()
+        else ""
+    )
+    inherited = set(re.findall(pattern, persona))
+
+    with tempfile.TemporaryDirectory() as td:
+        out = Path(td) / f"{live_ctx.advisor}.md"
+        render_build(live_ctx, out)
+        content = out.read_text(encoding="utf-8")
+
+    leaked = [t for t in re.findall(pattern, content) if t not in inherited]
+    assert leaked == [], f"briefing template left {leaked} unrendered"

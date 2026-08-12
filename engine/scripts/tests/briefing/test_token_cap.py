@@ -1,16 +1,15 @@
 """Tests for render.check_token_cap and identity.py eager-file preference."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
 
-# Skip live-instance tests when no instance root is available (D3).
-_NEEDS_INSTANCE = pytest.mark.skipif(
-    not (os.environ.get("CONCLAVE_AI_ROOT") or os.environ.get("VOIDPAY_AI_ROOT")),
-    reason="needs live instance root",
-)
+# Live-instance tests: gated by the `live_instance` marker, whose conftest fixture points
+# CONCLAVE_AI_ROOT at CONCLAVE_LIVE_INSTANCE_ROOT for marked tests only. The old form gated
+# on CONCLAVE_AI_ROOT itself — a variable the hermetic conftest clears — so it was asking
+# whether hermeticity had been switched off, and the answer was always no (GH#105).
+_NEEDS_INSTANCE = pytest.mark.live_instance
 
 from briefing.render import _CHARS_PER_TOKEN, _TOKEN_CAP, check_token_cap
 from briefing.scans import ScanCtx, identity
@@ -141,41 +140,12 @@ class TestIdentityEagerPreference:
         assert "type: identity" not in result
 
     @_NEEDS_INSTANCE
-    def test_real_kai_cto_eager(self):
-        """Integration: real kai-cto personality-eager.md produces non-placeholder output."""
-        from briefing.paths import (
-            decisions_dir,
-            gh_cache_dir,
-            mentions_dir,
-            repo_root,
-            sessions_dir,
-        )
-        eager_path = (
-            repo_root()
-            / ".claude"
-            / "skills"
-            / "team.kai-cto"
-            / "memory"
-            / "personality-eager.md"
-        )
-        if not eager_path.is_file():
-            pytest.skip("personality-eager.md not found for kai-cto")
-        ctx = ScanCtx(
-            advisor="kai-cto",
-            short_name="kai",
-            repo_root=repo_root(),
-            decisions_dir=decisions_dir(),
-            sessions_dir=sessions_dir(),
-            mentions_dir=mentions_dir(),
-            gh_cache_dir=gh_cache_dir(),
-            personality_path=repo_root()
-            / ".claude"
-            / "skills"
-            / "team.kai-cto"
-            / "memory"
-            / "personality.md",
-            progress_path=repo_root() / "progress-summary.md",
-        )
-        result = identity.build(ctx)
+    def test_real_persona_renders(self, live_ctx):
+        """Integration: identity renders the live advisor's persona, not a placeholder.
+
+        The eager branch is covered synthetically above. It gets no live coverage on
+        purpose: no advisor in this project has ever had a personality-eager.md, so the
+        old form of this test — skip unless one exists — could only ever report nothing."""
+        result = identity.build(live_ctx)
         assert "_(personality.md not yet written" not in result
         assert len(result) > 10
