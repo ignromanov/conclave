@@ -3,6 +3,11 @@ contract: question-shape
 version: 1.0.0
 appliers: [team.start, team.processing]
 propagation: hire-template
+stages: [clarify, design]
+tiers: [quick, work]
+task_types: [dev, content, research, review, advisory]
+binding: required
+last_reviewed: "2026-08-12"
 ---
 
 # Question shape — prose-context + condensed-Ask

@@ -12,10 +12,15 @@ inherits:
 trigger:
   cadence: quarterly OR post-pivot OR after-major-release OR on-context-bloat
   signals:
-    - "audit skills" / "проверь скиллы" / "очисти плагины"
+    - '"audit skills" / "проверь скиллы" / "очисти плагины"'
     - skill-list line count > 250 (proxy for sprawl)
     - product roadmap pivot (e.g., dropped feature group)
     - new advisor created (may obsolete predecessors)
+stages: [verify, implement]
+tiers: [work]
+task_types: [advisory]
+binding: required
+last_reviewed: "2026-08-12"
 ---
 
 # audit-skills protocol

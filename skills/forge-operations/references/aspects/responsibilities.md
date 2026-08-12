@@ -8,6 +8,11 @@ files:
   - .claude/agents/team.<id>.md (description competencies)
 find-pattern: |
   "## Scope" OR "## Self-Description" OR "competencies"
+stages: [design, implement]
+tiers: [work]
+task_types: [advisory]
+binding: advisory
+last_reviewed: "2026-08-12"
 ---
 
 # Aspect: responsibilities

@@ -7,6 +7,11 @@ description: |
 note: |
   This file is the baseline copy of legacy team.hire v2.0 (spec 049 rollout step 3).
   Mechanical changes (scripts, thin template, first-launch extraction) land in later tasks.
+stages: [design, implement]
+tiers: [work]
+task_types: [advisory]
+binding: required
+last_reviewed: "2026-08-12"
 ---
 
 # team.hire — Advisor Factory

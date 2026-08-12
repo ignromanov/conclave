@@ -5,6 +5,11 @@ propagation: hire-template
 autonomy_level: L3
 applies-to: all advisors (autonomous mode — spec 089)
 spec: 089-autonomous-advisor-pipeline
+stages: [clarify, design, spec, plan, implement, verify, deliver]
+tiers: [work]
+task_types: [dev, content, research, review]
+binding: required
+last_reviewed: "2026-08-12"
 ---
 
 # Autonomous Pipeline (spec 089)

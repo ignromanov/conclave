@@ -3,6 +3,11 @@ contract: spawned-advisor-brief
 version: 1.0.0
 propagation: runtime-inject
 applies-to: advisors in autonomous mode (spec 089)
+stages: [clarify]
+tiers: [work]
+task_types: [dev, content, research, review, advisory]
+binding: required
+last_reviewed: "2026-08-12"
 ---
 
 # Spawned Advisor Brief
