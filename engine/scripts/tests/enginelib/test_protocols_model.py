@@ -26,6 +26,7 @@ def test_stage_sequence_is_the_documented_order():
 def test_every_stage_literal_appears_in_the_sequence():
     # Completeness assertion: the enum and the ordering constant cannot drift apart.
     import typing
+
     from enginelib.protocols import model
     literals = set(typing.get_args(model.Stage))
     assert literals == set(STAGE_SEQUENCE)

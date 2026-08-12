@@ -55,7 +55,10 @@ def scan(dirs: list[Path]) -> tuple[list[ProtocolFile], list[ScanError]]:
                 errors.append(ScanError(path, "no frontmatter"))
                 continue
             try:
-                meta = ProtocolMeta(**post.metadata)
+                # model_validate, not ProtocolMeta(**meta): splatting a dict[str, object]
+                # into Literal-typed parameters is unverifiable by construction, so the
+                # keyword form costs five type errors and buys nothing.
+                meta = ProtocolMeta.model_validate(post.metadata)
             except ValidationError as exc:
                 errors.append(ScanError(path, f"invalid frontmatter: {exc.error_count()} error(s)"))
                 continue

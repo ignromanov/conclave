@@ -1,11 +1,16 @@
 """engine/cmd/protocol.py — adapter for `engine protocol <verb>` (spec 108 P0)."""
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations are lazy here, so this costs the parser build nothing
+    from pathlib import Path
+
 TIERS = ("quick", "work")
 TASK_TYPES = ("dev", "content", "research", "review", "advisory")
 
 
-def _registry_root(paths) -> "object":
+def _registry_root(paths) -> Path:
     """The base the three fixed homes hang off.
 
     NOT `repo_root()`: that is the DATA root (`.conclave`), which holds no `skills/`
