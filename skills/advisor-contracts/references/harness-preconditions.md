@@ -2,6 +2,11 @@
 contract: harness-preconditions
 version: 1.0.0
 appliers: [team.start, team.processing]
+stages: [clarify, design, implement]
+tiers: [quick, work]
+task_types: [dev, content, research, review, advisory]
+binding: required
+last_reviewed: "2026-08-12"
 ---
 
 # Harness Preconditions
