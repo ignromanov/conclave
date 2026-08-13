@@ -104,7 +104,7 @@ Complete `/conclave:feedback` before continuing. The gate is the
 
 5. One aggregate commit:
    ```bash
-   cd "$CONCLAVE_AI_ROOT"   # the .ai root
+   cd "$CONCLAVE_AI_ROOT"   # the DATA root
    git add agent-memory/advisors ops/handoffs
    git commit -m "session: <advisor> <slug> (decisions:N, mentions:M, handoff:Y/N)"
    ```
@@ -284,7 +284,7 @@ Drop zero counters from the row text — show only fields that have non-zero val
 - Skipping Study because "tests pass, ship it" → defeats knowledge graduation
 - Promoting every candidate (bypassing 5-test filter) → wiki signal degrades
 - Treating Study exit codes as blocking (except step 4 P0) → violates `wiki_failure_policy: defer`
-- Running Study INSIDE close-session.sh → must run BEFORE close-session for failures to be visible in the session record
+- Running Study INSIDE `engine session close` → must run BEFORE close-session for failures to be visible in the session record
 
 ---
 

@@ -60,7 +60,7 @@ Replace `<your-skill>` with the primary skill you ran this session (e.g. `exec.a
 Run from the DATA root (`.conclave/`):
 
 ```bash
-cd /path/to/.ai   # CONCLAVE_AI_ROOT must resolve here
+cd /path/to/.conclave   # CONCLAVE_AI_ROOT must resolve here
 uv run --project engine/scripts/feedback \
   python engine/scripts/feedback/feedback_emit.py \
   --agent <your-agent-slug> \
