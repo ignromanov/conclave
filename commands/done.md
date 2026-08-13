@@ -143,13 +143,12 @@ Complete `/conclave:feedback` before continuing. The gate is the
 4. ☐ **IF session produced new knowledge** → wiki updated
    - Preferred: invoke `/wiki:capture --clipboard "Title"` with session summary
    - For web sources discovered: `/wiki:capture <url>`
-   - Architecture registries (`docs/architecture/`) — update directly (code-coupled)
+   - Architecture registries (instance DATA root, e.g. `.conclave/architecture/`) — update directly
    - Gate: **Auto** — always capture if knowledge was produced
 
-5. ☐ **IF new slice/component** → architecture registries updated
-   - `architecture/fsd-registry.md`
-   - `architecture/ui-index.md`
-   - `architecture/types-registry.md`
+5. ☐ **IF new slice/component** → the instance's own architecture registries updated (same DATA
+   root as item 4 — an instance may keep any registries it likes, or none; the engine cannot name
+   them)
 
 6. ☐ **IF spec deviation** → spec.md updated
    - Compare implementation vs spec

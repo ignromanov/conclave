@@ -77,7 +77,7 @@ reclassify**. This mirrors how Tier is carried, immediately below.
 If the request visibly does not match the type `/conclave:start` picked, surface it via the
 Question-shape pattern — don't silently re-route.
 
-#### Tier (carried from team.start)
+#### Tier (carried from /conclave:start)
 
 Tier (Quick / Feature / Epic) was classified by `/conclave:start` Step 2 — **read it, do not
 reclassify**. It drives execution depth:
@@ -94,7 +94,7 @@ Question-shape pattern — don't silently re-tier.
 ## Skill-Driven Execution
 
 ```
-Task type detected → workflow skill identified
+Skill chain identified at /conclave:start §5 (carried, not re-detected)
   └→ Skill installed?
      ├→ YES → Invoke via Skill tool, follow its protocol
      ├→ MAYBE → Search with find-skills
@@ -118,7 +118,7 @@ Full grammar + Mermaid flowchart: see `${CLAUDE_PLUGIN_ROOT}/skills/forge-operat
 ## Decision Log
 
 When a routing decision is non-obvious, log it:
-"Routed to [workflow] because [reason]. Tier: [tier]."
+"Routed to [skill chain] because [reason]. Tier: [tier]."
 This helps /conclave:done understand what was attempted.
 
 ## Routing Result (chat output)
@@ -129,7 +129,8 @@ After mode + type + tier detected and skill chain identified, render the routing
 ▍
 ▍ **gh-bind**    AI#{N} · {title-fragment}              ← `none` if unmatched
 ▍ **mode**       {Quick | Working | Meeting | Execution}
-▍ **type**       {task type, as classified at /conclave:start §5}  ← Working only
+▍ **type**       {task type, as classified at /conclave:start §5 — the type rows only; Meeting and
+▍                 Plan execution there are modes, already handled above}  ← Working only
 ▍ **tier**       {Quick | Feature | Epic}              ← Working only
 ▍ **skills**     {chain → comma-separated}
 ▍
