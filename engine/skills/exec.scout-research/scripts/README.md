@@ -1,9 +1,11 @@
 # exec.scout-research hook-evaluator scripts (spec 089, D31)
 
 Python 3.11 · pydantic v2 + ruamel (reuse the 084/086 substrate). These make the D31 research
-triggers **machine-checkable** — without them the triggers are un-evaluable prose. The spine
-(`workflow.autopilot/protocols/spine.md` § 7) calls them at the P2/P6/P7 hooks; the scout role
-calls the saturation/validate ones internally (round8 § 5).
+triggers **machine-checkable** — without them the triggers are un-evaluable prose. The P2/P6/P7
+hooks named below belonged to spec 089's autopilot pipeline; that pipeline's spine protocol never
+existed and was retired on evidence 2026-07-11, so no hook calls these scripts. The scout role
+calls them directly — the saturation/validate ones internally (round8 § 5), the rest at the
+equivalent points in its own flow.
 
 | Script | Phase / caller | Input | Output | Purpose |
 |--------|----------------|-------|--------|---------|

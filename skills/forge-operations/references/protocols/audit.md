@@ -105,8 +105,9 @@ register/promote/dispatch** (`advisory` permits dispatch-with-note but blocks pr
 - `agent_model_version` matches the agent's current `forge:` model-version
 
 Absent / stale (>30d) / version-mismatch → verdicts become `inconclusive` + `calibration_note`,
-no promotion, no gating role. This check also runs as a **pre-P6 guard** inside `workflow.autopilot`
-(spine.md) and in `forge evolve` Stage 7.
+no promotion, no gating role. This check has no automated pre-P6 guard — the autopilot phase that
+was to run one (spec 089) never existed and was retired on evidence 2026-07-11. It runs today only
+in `forge evolve` Stage 7.
 
 ## Quality loop
 Before emitting findings, apply `contracts/quality-loop.md`. Report skipped items with reason.

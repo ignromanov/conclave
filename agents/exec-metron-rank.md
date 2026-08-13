@@ -107,8 +107,10 @@ If none pass → `status: escalate` (never silently select a blocker-failing art
 
 ### Adaptive-N controller (D13)
 
-Lives in the spine (P5), not in ranker. Ranker receives N as a given. Full N×stakes×autonomy
-table is in `workflow.autopilot/protocols/spine.md`.
+Lives in the spine (P5), not in ranker. Ranker receives N as a given. The full N×stakes×autonomy
+table has no shipped home — it was cited to spec 089's autopilot spine protocol, retired
+2026-07-11 without that file ever having existed. Use the ranking criteria in this definition
+directly.
 
 ### Cost ceiling (D5)
 

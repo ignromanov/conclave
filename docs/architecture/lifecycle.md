@@ -115,8 +115,6 @@ Runs after `start`, before any substantive work.
 
 | Step | What happens | Output |
 |------|-------------|--------|
-| **0.5. Compaction check** | If context is transitioning (research → implementation; mode shift; explicit abandon) → invoke `/compact` | Context trimmed before routing |
-| **0.7. Iteration discipline** | If spec has AC list, plan has ≥2 unchecked tasks, or subagent dispatch expected → wrap with `workflow.iterative-loop` | Loop discipline applied before work starts |
 | **GH bind** | Match request to open GH issue from `start` step 3; if matched, set Project Board → `In Progress` | Session bound to a tracked issue |
 | **Mode detection** | Quick Answer / Working Session / Meeting / Execution | Mode determines ceremony |
 | **Type detection** | Working Session only: Development / Content / Grant / Advisory / Review | Workflow skill selected |
@@ -323,7 +321,6 @@ Originally filed as feedback item `it-1` in `fb-1781159734-e51973`.
   └─ skill routing
 
 /team.processing
-  ├─ compaction + iteration discipline
   ├─ GH bind
   └─ mode → workflow skill dispatch
 
