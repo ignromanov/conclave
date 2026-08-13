@@ -22,10 +22,10 @@ the advisor's SKILL.md identity. Activated when the spawned brief contains `auto
 ## Autonomy dial (L0-L4) — D12
 
 Default level: **L3**. The full gate-state matrix (gate × level → block|async(Nh)|notify|skipped|ack)
-has no canonical home. It was cited to `workflow.autopilot/protocols/spine.md`,
-which never existed; spec 089's spine was retired on evidence 2026-07-11. Authoring it belongs to
-spec 108 P2, which ranks the detection layer first. Until then there is no matrix to consult — do
-not act as though one exists elsewhere.
+has no canonical home. It was cited to spec 089's autopilot spine protocol, retired on evidence
+2026-07-11 without that file ever having existed. Authoring it belongs to spec 108 P2, which ranks
+the detection layer first. Until then there is no matrix to consult — do not act as though one
+exists elsewhere.
 
 **Always-human — overrides any level, forces `block`:**
 - External financial commitments

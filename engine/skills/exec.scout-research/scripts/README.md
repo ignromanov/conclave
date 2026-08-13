@@ -25,9 +25,10 @@ parsing stdout — the same file-as-message-bus discipline as the lifecycle scri
 
 ## "Non-mechanical" proxy
 
-The P7 hook's "non-mechanical" condition is operationalized in the spine (spine.md § 8): a failing
-finding with `category ∈ {lint, format, syntax}` is **mechanical** (no re-research); any other
-category is a re-research candidate. `scout-criterion-absent-matcher.py` + the finding `category`
+The P7 hook's "non-mechanical" condition was operationalized in spec 089's autopilot spine
+protocol (§ 8, retired 2026-07-11 without that file ever having existed): a failing finding with
+`category ∈ {lint, format, syntax}` is **mechanical** (no re-research); any other category is a
+re-research candidate. `scout-criterion-absent-matcher.py` + the finding `category`
 field are both machine-readable, so the full P7 predicate is evaluable without human judgment.
 
 ## Status
