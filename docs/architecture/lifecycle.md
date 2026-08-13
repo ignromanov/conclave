@@ -78,7 +78,7 @@ work begins. Detect whether interrupted work should resume. Classify request sca
 | **3. GH issue check** | Quick: count open issues. Feature/Epic: full list + match request to existing issue + reconcile briefing Action Items vs GH | Open issues surfaced; mismatches flagged for cleanup in `done` |
 | **4. Startup audit** | Feature/Epic only: `gh pr list`, unmerged branches, worktrees, `.ai git status` | Stale worktrees or branches without PRs flagged |
 | **4.5. Wiki context** | Feature/Epic only: load domain context from knowledge wiki per advisor role | Richer context for advisory work |
-| **5. Skill routing** | Map task type to workflow skill chain | Skill chain identified before work starts |
+| **5. Skill routing** | Map task type to its skill chain | Skill chain identified before work starts |
 | **6. Create tasks** | Feature/Epic only: `TaskCreate` for each work item + mandatory `/team.done` as final task | Task list tracking the session |
 | **7. Present & confirm** | Render `▍`-framed start summary; `AskUserQuestion` for tier/chain confirmation | Session confirmed before work begins |
 
@@ -106,8 +106,8 @@ never reached briefing build at all.
 
 ## team.processing — Work routing
 
-**Purpose:** Detect what kind of session this is (mode) and route to the right workflow skill.
-Runs after `start`, before any substantive work.
+**Purpose:** Detect what kind of session this is (mode), then invoke the skill chain the request's
+type already carries from `start`. Runs after `start`, before any substantive work.
 
 **Inputs:** current request content; tier from `team.start`.
 
@@ -117,8 +117,8 @@ Runs after `start`, before any substantive work.
 |------|-------------|--------|
 | **GH bind** | Match request to open GH issue from `start` step 3; if matched, set Project Board → `In Progress` | Session bound to a tracked issue |
 | **Mode detection** | Quick Answer / Working Session / Meeting / Execution | Mode determines ceremony |
-| **Type detection** | Working Session only: Development / Content / Grant / Advisory / Review | Workflow skill selected |
-| **Skill execution** | Invoke identified workflow skill via Skill tool | Work proceeds under skill discipline |
+| **Type + tier carried** | Working Session only: type and tier were classified by `team.start` and are read here, not reclassified | Skill chain already identified |
+| **Skill invocation** | Invoke the skill chain carried from `start`, via Skill tool | Work proceeds under skill discipline |
 
 **Ambiguity rule:** if two modes are equally plausible, `processing` does not pick silently. It
 surfaces the conflict via `AskUserQuestion` with the cost of misroute explained.
@@ -128,8 +128,8 @@ surfaces the conflict via `AskUserQuestion` with the cost of misroute explained.
 | Mode | Trigger | Action |
 |------|---------|--------|
 | Quick Answer | Opinion question, <30 min | Answer directly; no workflow; record any decision |
-| Working Session | "let's work on X", task | Type + tier detection → workflow skill |
-| Meeting | "team meeting", "discuss" | Invoke Forge facilitation mode |
+| Working Session | "let's work on X", task | Type + tier carried from `start` → skill chain invoked |
+| Meeting | "team meeting", "discuss" | Route to the instance's facilitator slot, if hired |
 | Execution | "execute plan", `plan.md` present | `subagent-driven-development` |
 
 ---
@@ -294,7 +294,8 @@ fixed inside Conclave as part of C-004 module delivery. Known 085 cleanup items:
 VoidPay's Quorum (⚖️ Secretary) is absorbed into Forge's facilitation mode in Conclave. The
 lifecycle skills must not assume Quorum is present. Specifically:
 
-- `team.processing` Meeting mode: "Invoke `team.quorum`" → "Invoke Forge facilitation mode"
+- `team.processing` Meeting mode: "Invoke `team.quorum`" → "Route to the instance's facilitator
+  slot, if one was hired; the engine ships no meeting skill of its own (GH#82)"
 - `team.done` hot.md reconciliation: currently gated on "Quorum or current advisor is Quorum" — in
   Conclave, Forge is the gate.
 - `team.start` step 4.5 wiki routing: Quorum row removed; Forge facilitation mode has its own entry.
@@ -322,7 +323,7 @@ Originally filed as feedback item `it-1` in `fb-1781159734-e51973`.
 
 /team.processing
   ├─ GH bind
-  └─ mode → workflow skill dispatch
+  └─ mode → skill chain invocation (type/tier carried from team.start)
 
 [work]
 
