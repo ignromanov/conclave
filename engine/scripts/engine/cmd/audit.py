@@ -177,6 +177,22 @@ def _versions(args: argparse.Namespace) -> int:
     return 1 if rpt.crit > 0 else (2 if rpt.warn > 0 else 0)
 
 
+def _routing_targets(args: argparse.Namespace) -> int:
+    from enginelib.audit import routing_targets
+    from enginelib.paths import engine_root
+
+    repo = engine_root().parent
+    agents = repo / "agents"
+    surfaces: list[Path] = []
+    for d in (repo / "commands", agents):
+        surfaces.extend(sorted(d.rglob("*.md")))
+    roster = frozenset(
+        p.stem.removeprefix("conclave-").removeprefix("exec-") for p in agents.glob("*.md")
+    )
+    roots = [repo / "skills", repo / "engine" / "skills"]
+    return _emit(routing_targets.run(surfaces, roots, roster))
+
+
 def _skills(args: argparse.Namespace) -> int:
     from datetime import date
 
@@ -215,6 +231,7 @@ _AUDITS: dict[str, Callable[[argparse.Namespace], int]] = {
     "agent-configs": _agent_configs,
     "skills": _skills,
     "versions": _versions,
+    "routing-targets": _routing_targets,
 }
 
 
