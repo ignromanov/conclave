@@ -21,7 +21,7 @@ description: >-
 ## Question shape
 
 This skill mostly auto-routes silently. When it CAN'T (ambiguous mode, borderline tier,
-multiple plausible workflows, compaction-vs-continue judgment) it follows the
+multiple plausible workflows) it follows the
 **prose-context + condensed-Ask** pattern — see `question-shape.md` (auto-imported).
 Applies here at Mode Detection and Tier Detection.
 
@@ -46,9 +46,9 @@ Analyze user request to determine session mode:
 | Quick Answer | "what do you think?", opinion question | Answer directly, no workflow |
 | Working Session | "let's work on X", task description | Detect type + tier, load skills |
 | Meeting | "team meeting", "let's discuss" | Route to the instance's facilitator slot, if one was hired |
-| Execution | "execute plan", plan.md exists | Load plan, invoke subagent-driven-development |
+| Execution | "execute plan", plan.md exists | Load plan, invoke superpowers:subagent-driven-development |
 
-**Ambiguity escape hatch** — if two modes are equally plausible (e.g., "посмотри спеку и скажи что думаешь" reads as both Quick Answer and Working Session), do NOT silently pick. Invoke **Question shape** (above): prose the signals you saw + cost of misroute, then `AskUserQuestion` with condensed labels. Same rule for borderline Tier (Quick-vs-Feature on a 2-hour task) and ambiguous Task Type (Content-vs-Advisory on copywriting strategy questions).
+**Ambiguity escape hatch** — if two modes are equally plausible (e.g., "посмотри спеку и скажи что думаешь" reads as both Quick Answer and Working Session), do NOT silently pick. Invoke **Question shape** (above): prose the signals you saw + cost of misroute, then `AskUserQuestion` with condensed labels. Same rule for borderline Tier (Quick-vs-Feature on a 2-hour task).
 
 ### Quick Answer Mode
 
@@ -129,7 +129,7 @@ After mode + type + tier detected and skill chain identified, render the routing
 ▍
 ▍ **gh-bind**    AI#{N} · {title-fragment}              ← `none` if unmatched
 ▍ **mode**       {Quick | Working | Meeting | Execution}
-▍ **type**       {Development | Content | Grant | Advisory | Review} ← Working only
+▍ **type**       {task type, as classified at /conclave:start §5}  ← Working only
 ▍ **tier**       {Quick | Feature | Epic}              ← Working only
 ▍ **skills**     {chain → comma-separated}
 ▍
