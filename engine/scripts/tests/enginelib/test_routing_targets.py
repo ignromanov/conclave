@@ -41,6 +41,25 @@ def test_a_dotted_word_ending_in_ai_is_not_an_ai_root_reference():
     assert rt.find_ai_root_refs(text) == []
 
 
+def test_a_path_embedded_ai_root_with_no_trailing_slash_is_extracted():
+    """`.ai` with a path segment but no trailing slash — `cd /path/to/.ai` — must be found; the
+    original regex required a trailing `/` and missed exactly this shape."""
+    text = "cd /path/to/.ai\n"
+    assert rt.find_ai_root_refs(text) == [(1, ".ai")]
+
+
+def test_a_bare_backticked_ai_root_with_no_trailing_slash_is_extracted():
+    text = "open a GitHub Issue in the `.ai` repo\n"
+    assert rt.find_ai_root_refs(text) == [(1, ".ai")]
+
+
+def test_a_longer_extension_ending_in_ai_is_not_an_ai_root_reference():
+    """`.aiff` / `.airc` must not fire — the guard is the trailing-character class, not just the
+    preceding one."""
+    text = "convert the .aiff file and check .airc config\n"
+    assert rt.find_ai_root_refs(text) == []
+
+
 def _surface(tmp_path: Path, name: str, body: str) -> Path:
     p = tmp_path / name
     p.write_text(body, encoding="utf-8")

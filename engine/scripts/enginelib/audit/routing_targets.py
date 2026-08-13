@@ -33,8 +33,12 @@ from enginelib.audit import Findings
 # A dotted routing token: `workflow.dev-lifecycle`, `team.quorum`. Backticked or bare.
 _DOTTED_RE = re.compile(r"\b((?:workflow|team)\.[a-z][a-z0-9-]*)")
 
-# A reference to the retired VoidPay DATA root, in backticks or in a shell fragment.
-_AI_ROOT_RE = re.compile(r"(?<![\w./-])(\.ai/[A-Za-z0-9_./-]*|\.ai/)")
+# A reference to the retired VoidPay DATA root, in backticks or in a shell fragment. The
+# lookbehind drops `/` from the exclusion class so a path-embedded `.ai` (e.g. `/path/to/.ai`) is
+# visible; the path segment is optional so a bare `.ai` with no trailing slash still matches; the
+# trailing negative lookahead keeps it from firing inside a longer token (`.aiff`, `.airc`,
+# `example.ai`, `openai`).
+_AI_ROOT_RE = re.compile(r"(?<![\w.-])(\.ai(?:/[A-Za-z0-9_./-]*)?)(?![\w-])")
 
 # Lifecycle skill ids, prefix-agnostic — mirrors phantom_skills.py:33-36.
 _LIFECYCLE = frozenset({
