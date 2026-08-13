@@ -16,10 +16,10 @@ than shipped with an exclusion list (plan-p1.md D-6):
                 so it resolves against the lifecycle set plus the discovered roster, the same rule
                 phantom_skills.py:95-98 uses. Only `team.quorum` survives that, which is what
                 loop-map.md §5 measured independently.
-  2. ai-root  — no shipped surface may name a path under `.ai/`. That was VoidPay's DATA root;
-                spec 103 moved DATA to `.conclave/` and `.ai/` exists nowhere in this repo. Seven
-                live command instructions still operate on it, two of them in steps that run every
-                session.
+  2. ai-root  — no shipped surface may name a path under `.ai/`. That was the origin instance's
+                DATA root; spec 103 moved DATA to `.conclave/` and `.ai/` exists nowhere in this
+                repo. Twelve live command instructions still operated on it when this check was
+                written, two of them in steps that run every session.
 
 NOT covered, deliberately: bare-kebab routing cells such as `doc-coauthoring`. See D-6.
 """
@@ -33,7 +33,7 @@ from enginelib.audit import Findings
 # A dotted routing token: `workflow.dev-lifecycle`, `team.quorum`. Backticked or bare.
 _DOTTED_RE = re.compile(r"\b((?:workflow|team)\.[a-z][a-z0-9-]*)")
 
-# A reference to the retired VoidPay DATA root, in backticks or in a shell fragment. The
+# A reference to the retired origin-instance DATA root, in backticks or in a shell fragment. The
 # lookbehind drops `/` from the exclusion class so a path-embedded `.ai` (e.g. `/path/to/.ai`) is
 # visible; the path segment is optional so a bare `.ai` with no trailing slash still matches; the
 # trailing negative lookahead keeps it from firing inside a longer token (`.aiff`, `.airc`,
