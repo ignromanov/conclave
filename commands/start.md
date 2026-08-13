@@ -214,18 +214,23 @@ Optional: `/wiki:query "topic"` for task-specific context.
 
 ### 5. Skill Routing
 
-Detect task type → load required skill chain:
+Detect task type → load required skill chain. Every external target carries its plugin prefix, so a
+missing one is visible as a missing plugin rather than as silence.
+
+> **Provenance, not dependency.** The `superpowers:*` and `marketing-skills:*` rows are third-party
+> prior art carried until spec 108 P2 authors Conclave-owned procedures for the stages that earn
+> one. They are cited here, never `Skill()`-ed from engine code.
 
 | Task Type | Skill Chain |
 |-----------|-------------|
-| New feature | brainstorming → writing-plans → workflow.dev-lifecycle |
-| Bug fix | systematic-debugging → workflow.dev-lifecycle |
-| Content | product-marketing-context → copywriting → copy-editing |
-| Grant | grant-proposal-assistant → doc-coauthoring |
-| Code review | workflow.pr-review |
+| New feature | superpowers:brainstorming → superpowers:writing-plans |
+| Bug fix | superpowers:systematic-debugging |
+| Content | marketing-skills:product-marketing-context → marketing-skills:copywriting → marketing-skills:copy-editing |
+| Grant | grant-proposal-assistant |
+| Code review | superpowers:requesting-code-review |
 | Security | senior-security |
-| Meeting | team.quorum |
-| Plan execution | subagent-driven-development |
+| Meeting | the instance's facilitator slot, if one was hired — see the roster |
+| Plan execution | superpowers:subagent-driven-development |
 
 If no matching skill exists:
 1. Search with `find-skills`
@@ -257,7 +262,7 @@ Render the start-summary using the ▍-framed format (per `output-formatting.md`
 ▍ **briefing**    `agent-memory/advisors/briefings/{advisor}.md` ({unchanged | regenerated})
 ▍ ⚠ **interrupted** {title} ({path})              ← OMIT if none
 ▍ **tier**        {Quick | Feature | Epic}
-▍ **skills**      {chain → e.g. brainstorming → writing-plans → workflow.dev-lifecycle}
+▍ **skills**      {chain → e.g. superpowers:brainstorming → superpowers:writing-plans}
 ▍
 ▍ **next →** {first concrete action from the chain}
 
