@@ -57,7 +57,7 @@ Replace `<your-skill>` with the primary skill you ran this session (e.g. `exec.a
 
 ## Step 3 — Scaffold the review file
 
-Run from the repo root (the `.ai/` directory):
+Run from the DATA root (`.conclave/`):
 
 ```bash
 cd /path/to/.ai   # CONCLAVE_AI_ROOT must resolve here
