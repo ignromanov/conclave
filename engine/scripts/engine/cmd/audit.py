@@ -194,7 +194,9 @@ def _routing_targets(args: argparse.Namespace) -> int:
         return 1
 
     roster = frozenset(
-        p.stem.removeprefix("conclave-").removeprefix("exec-") for p in agents.glob("*.md")
+        p.stem.removeprefix("conclave-")
+        for p in agents.glob("*.md")
+        if not p.stem.startswith("exec-")  # executors are not advisors (#108 finding 13)
     )
     roots = [repo / "skills", repo / "engine" / "skills"]
     return _emit(routing_targets.run(surfaces, roots, roster))

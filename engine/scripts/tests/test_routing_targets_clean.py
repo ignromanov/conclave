@@ -21,10 +21,17 @@ SKILLS_ROOTS = [REPO / "skills", REPO / "engine" / "skills"]
 
 
 def _roster() -> frozenset[str]:
-    """Bare advisor ids discovered from the agent defs — never a hardcoded list."""
+    """Bare advisor ids discovered from the agent defs — never a hardcoded list.
+
+    Executors (`exec-*`) are excluded: they are not advisors, and `team.<executor>` is not a
+    valid routing target (108 finding 13) — stripping the prefix instead of skipping the file
+    would fold them into the roster and hide a real phantom of that shape.
+    """
     out: set[str] = set()
     for p in (REPO / "agents").glob("*.md"):
-        out.add(p.stem.removeprefix("conclave-").removeprefix("exec-"))
+        if p.stem.startswith("exec-"):
+            continue
+        out.add(p.stem.removeprefix("conclave-"))
     return frozenset(out)
 
 
@@ -48,8 +55,15 @@ def test_the_surface_set_is_not_empty():
 
 
 def test_the_roster_is_discovered_and_not_empty():
-    """An empty roster makes every team.<advisor> reference a false positive."""
-    assert len(_roster()) >= 5, "roster discovery returned almost nothing — agents/ moved?"
+    """An empty roster makes every team.<advisor> reference a false positive.
+
+    Floor is 1, not the pre-108-finding-13 5: the shipped roster is the always-present
+    meta-role (Forge) plus whatever domain advisors are hired per project (CLAUDE.md), and
+    excluding executors (finding 13) drops the committed agents/ tree to Forge alone. A floor
+    above 1 would not be a genuine anti-vacuity check against this tree — it would be a proxy
+    for "domain advisors are hired," which is exactly the thing this repo does not ship.
+    """
+    assert len(_roster()) >= 1, "roster discovery returned nothing — agents/ moved?"
 
 
 def test_no_shipped_command_names_a_routing_target_that_does_not_exist():
