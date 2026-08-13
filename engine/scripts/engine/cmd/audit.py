@@ -182,10 +182,17 @@ def _routing_targets(args: argparse.Namespace) -> int:
     from enginelib.paths import engine_root
 
     repo = engine_root().parent
+    commands = repo / "commands"
     agents = repo / "agents"
+
     surfaces: list[Path] = []
-    for d in (repo / "commands", agents):
+    for d in (commands, agents):
         surfaces.extend(sorted(d.rglob("*.md")))
+
+    if not commands.is_dir() or not agents.is_dir() or not surfaces:
+        print("ERROR: no commands/agents dirs found", file=sys.stderr)
+        return 1
+
     roster = frozenset(
         p.stem.removeprefix("conclave-").removeprefix("exec-") for p in agents.glob("*.md")
     )
