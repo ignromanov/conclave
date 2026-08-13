@@ -16,12 +16,19 @@ than shipped with an exclusion list (plan-p1.md D-6):
                 so it resolves against the lifecycle set plus the discovered roster, the same rule
                 phantom_skills.py:95-98 uses. Only `team.quorum` survives that, which is what
                 loop-map.md §5 measured independently.
-  2. ai-root  — no shipped surface may name a path under `.ai/`. That was the origin instance's
-                DATA root; spec 103 moved DATA to `.conclave/` and `.ai/` exists nowhere in this
-                repo. Twelve live command instructions still operated on it when this check was
-                written, two of them in steps that run every session.
+  2. ai-root  — within the 18 surfaces this gate scans (`commands/` + `agents/`, of roughly 150
+                shipped total), no path under `.ai/` may survive. That was the origin instance's
+                DATA root; spec 103 moved DATA to `.conclave/`. Twelve live command instructions
+                still operated on it inside this perimeter when this check was written, two of
+                them in steps that run every session. Intent is broader than reach: a sweep with
+                this module's own regex over the rest of the shipped tree (skills/, docs/) measures
+                50 more surviving references this gate does not scan, tracked as GH#124.
 
 NOT covered, deliberately: bare-kebab routing cells such as `doc-coauthoring`. See D-6.
+
+This docstring and the token comments below name `workflow.dev-lifecycle` and `team.quorum` as
+literals — a detector cannot document or test what it may not name. That is a scoped exception for
+this module's own definition site only; no other shipped surface may repeat either token literally.
 """
 from __future__ import annotations
 
