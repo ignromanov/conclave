@@ -102,8 +102,8 @@ drift — un-closed work corrupts the record. Every advisor runs this sequence i
 Forge is not required to coordinate it.
 
 `team.start` loads context (project-context, constitution, advisor briefing, hot.md).
-`team.processing` detects mode and routes to the appropriate workflow skill. `team.done`
-writes session record, syncs GH issues, updates hot.md. `team.handoff` creates a
+`team.processing` detects mode and invokes the skill chain already identified by `team.start`.
+`team.done` writes session record, syncs GH issues, updates hot.md. `team.handoff` creates a
 structured resume-prompt if work is incomplete.
 
 VoidPay spec 085 contained lifecycle simplification; 078/079/081 were B-criteria stubs

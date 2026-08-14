@@ -38,8 +38,8 @@ sentences feed the next session as priors.
 /team.processing
 ```
 
-Mode detection, skill chain routing (e.g. brainstorming → writing-plans → workflow.dev-lifecycle
-for a feature; systematic-debugging for a bug fix). Creates TaskList entries including
+Mode detection, skill chain routing (e.g. brainstorming → writing-plans for a feature;
+systematic-debugging for a bug fix). Creates TaskList entries including
 `/team.done` as the final mandatory task.
 
 ```

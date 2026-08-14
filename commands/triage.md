@@ -44,7 +44,7 @@ Do NOT skip this gate by editing the index directly.
 ### Step 1 — Run the dedup digest
 
 ```bash
-cd /path/to/.ai
+cd /path/to/.conclave
 uv run --project engine/scripts/feedback \
   python engine/scripts/feedback/feedback_triage.py \
   --digest
@@ -126,7 +126,7 @@ for the item. Track this metric across triages to measure whether the loop is cl
 Run the verify sweep (dry-run first):
 
 ```bash
-cd /path/to/.ai
+cd /path/to/.conclave
 PYTHONPATH=engine/scripts \
   uv run --project engine/scripts/feedback \
   python engine/scripts/feedback/feedback_verify.py
@@ -148,7 +148,7 @@ PYTHONPATH=engine/scripts \
 
 ### Step 4 — Open GH Issues for accepted items
 
-For each `accepted` item, open a GitHub Issue in the `.ai` repo:
+For each `accepted` item, open a GitHub Issue in the DATA repo (`.conclave/`):
 
 ```bash
 gh issue create \
