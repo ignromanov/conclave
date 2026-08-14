@@ -33,7 +33,6 @@ loaded by path when needed.
 | `feedback-protocol.md` | how advisors emit feedback into the notebook |
 | `output-formatting.md` | the ▍-framed output instantiation |
 | `question-shape.md` | the prose-context + condensed-Ask pattern |
-| `harness-preconditions.md` | harness-injected system-prompt limits + the standing founder authorization that satisfies them |
 | `advisor-anti-patterns.md` | failure modes to avoid |
 | `first-launch-protocol.md` | first-session bootstrap |
 | `persona-voice.md` | the 4-axis persona identity |

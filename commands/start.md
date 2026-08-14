@@ -16,7 +16,6 @@ description: >-
 !`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/feedback-protocol.md`
 !`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/output-formatting.md`
 !`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/question-shape.md`
-!`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/harness-preconditions.md`
 
 # /conclave:start — Session Initialization
 
