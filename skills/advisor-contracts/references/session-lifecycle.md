@@ -27,8 +27,8 @@ Per-advisor overlays live at `skills/team.<id>/contracts/session-lifecycle.md`.
 - Detect resume state / task tier (quick answer / advisory / meeting / execution).
 
 ### 2. Processing (team.processing)
-- Detect mode × type × scale.
-- Route to the appropriate workflow skill.
+- Detect mode.
+- Invoke the skill chain already identified at `team.start` (type + tier carried, not redetected).
 
 ### 3. During session
 - Advisor may edit code and commit **if** user requests AND no overlay forbids it.

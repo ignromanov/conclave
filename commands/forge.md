@@ -27,7 +27,7 @@ Router. Loads one protocol on demand. Never hardcodes advisor inventory.
 2. AskUserQuestion at every commit boundary.
 3. Per-aspect commits (never mega-commit).
 4. No `--force`, no `--no-verify`, no `git reset --hard`.
-5. Commits go to the `.ai/` repo.
+5. Commits go to the DATA repo (`.conclave/`).
 6. Lifecycle + feedback-infra skills are infrastructure, not advisors: `LIFECYCLE_SKILLS = {team.start, team.processing, team.done, team.handoff, team.forge, team.hire, team.retro, team.feedback, team.feedback-triage}` (feedback pair added spec 086 — no agent/model-version, must be skipped by advisor audits).
 7. Advisor inventory is always discovered: `Glob skills/team.*/SKILL.md` minus `LIFECYCLE_SKILLS`.
 8. **Feedback loop**: if a forge protocol hits any infra defect (script error, contract drift, naming mismatch) invoke `/conclave:feedback` at session end with a `script-defect` or `doc-contradiction` item. See `${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/feedback-protocol.md`.

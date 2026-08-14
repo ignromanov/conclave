@@ -21,41 +21,9 @@ description: >-
 ## Question shape
 
 This skill mostly auto-routes silently. When it CAN'T (ambiguous mode, borderline tier,
-multiple plausible workflows, compaction-vs-continue judgment) it follows the
+multiple plausible workflows) it follows the
 **prose-context + condensed-Ask** pattern — see `question-shape.md` (auto-imported).
-Applies here at Step 0.5, Step 0.7, Mode Detection, and Tier Detection.
-
-## Step 0.5 — Compaction check
-
-Before mode detection, check whether any of these apply to the current state:
-
-- Just completed a research/exploration phase, about to start implementation
-- Mode is about to transition (e.g., Quick Answer → Working Session)
-- Last task was a failed approach the user explicitly abandoned
-
-→ Announce: "Compacting — <trigger reason>" and invoke `/compact` before proceeding.
-
-If mid-implementation, mid-debug, or mid-edit, SKIP compaction.
-
-## Step 0.7 — Iteration discipline check
-
-After Step 0.5 (compaction) and before GH issue matching, check if the session needs `workflow.iterative-loop` (controller-discipline wrapper for multi-iteration work).
-
-Invoke `workflow.iterative-loop` BEFORE the lifecycle workflow if ANY of:
-
-- Spec file has `## Acceptance criteria` / `## DoD` / explicit AC list
-- `plan.md` has ≥2 unchecked tasks
-- User message mentions DoD / AC / validation / "make sure all tests pass"
-- Subagent dispatch (Atlas/Iris/Shade) expected this session
-- Mid-session resume where previous iteration left findings open
-- User pressure phrase ("just ship it", "good enough", "user is waiting") detected — invoke DEFENSIVELY
-
-Skip iteration discipline when:
-- Quick Answer mode (no DoD)
-- Meeting / brainstorming (use those workflows)
-- Single Read / grep / one-liner (no validation cycle)
-
-The loop WRAPS the lifecycle workflow — see `workflow.iterative-loop/protocols/08-session-router.md`.
+Applies here at Mode Detection and Tier Detection.
 
 ## GH Issue Matching (before mode detection)
 
@@ -77,10 +45,10 @@ Analyze user request to determine session mode:
 |------|--------|--------|
 | Quick Answer | "what do you think?", opinion question | Answer directly, no workflow |
 | Working Session | "let's work on X", task description | Detect type + tier, load skills |
-| Meeting | "team meeting", "let's discuss" | Invoke team.quorum |
-| Execution | "execute plan", plan.md exists | Load plan, invoke subagent-driven-development |
+| Meeting | "team meeting", "let's discuss" | Route to the instance's facilitator slot, if one was hired |
+| Execution | "execute plan", plan.md exists | Load plan, invoke superpowers:subagent-driven-development |
 
-**Ambiguity escape hatch** — if two modes are equally plausible (e.g., "посмотри спеку и скажи что думаешь" reads as both Quick Answer and Working Session), do NOT silently pick. Invoke **Question shape** (above): prose the signals you saw + cost of misroute, then `AskUserQuestion` with condensed labels. Same rule for borderline Tier (Quick-vs-Feature on a 2-hour task) and ambiguous Task Type (Content-vs-Advisory on copywriting strategy questions).
+**Ambiguity escape hatch** — if two modes are equally plausible (e.g., "посмотри спеку и скажи что думаешь" reads as both Quick Answer and Working Session), do NOT silently pick. Invoke **Question shape** (above): prose the signals you saw + cost of misroute, then `AskUserQuestion` with condensed labels. Same rule for borderline Tier (Quick-vs-Feature on a 2-hour task).
 
 ### Quick Answer Mode
 
@@ -89,27 +57,27 @@ If a decision is made during the answer → record in BRIEFING.md.
 
 ### Meeting Mode
 
-Invoke `team.quorum`. It handles its own Phase 1-7 protocol.
+Route to the instance's facilitator slot if the roster has one; it handles its own protocol.
+If the roster has none, say so and continue as a Working Session — the engine ships no meeting
+skill of its own (GH#82).
 
 ### Execution Mode
 
 Check for `plan.md` in the relevant spec directory.
-- Has unchecked tasks? → invoke `subagent-driven-development`
-- All complete? → invoke `workflow.dev-lifecycle` (review + PR phase)
+- Has unchecked tasks? → invoke `superpowers:subagent-driven-development`
+- All complete? → the work is ready for review; go to `/conclave:done`
 
 ### Working Session Mode
 
-#### Task Type Detection
+#### Task type (carried from /conclave:start)
 
-| Task Type | Signals | Workflow Skill |
-|-----------|---------|----------------|
-| Development | code, feature, bug, test, refactor | workflow.dev-lifecycle |
-| Content | blog, tweet, copy, announcement, docs | workflow.content-pipeline |
-| Grant | application, proposal, funding, grant | workflow.grant-pipeline |
-| Advisory | strategy, decision, architecture, planning | workflow.advisory-session |
-| Review | PR, code review, audit | workflow.pr-review |
+Task type and its skill chain were classified by `/conclave:start` §5 — **read them, do not
+reclassify**. This mirrors how Tier is carried, immediately below.
 
-#### Tier (carried from team.start)
+If the request visibly does not match the type `/conclave:start` picked, surface it via the
+Question-shape pattern — don't silently re-route.
+
+#### Tier (carried from /conclave:start)
 
 Tier (Quick / Feature / Epic) was classified by `/conclave:start` Step 2 — **read it, do not
 reclassify**. It drives execution depth:
@@ -126,7 +94,7 @@ Question-shape pattern — don't silently re-tier.
 ## Skill-Driven Execution
 
 ```
-Task type detected → workflow skill identified
+Skill chain identified at /conclave:start §5 (carried, not re-detected)
   └→ Skill installed?
      ├→ YES → Invoke via Skill tool, follow its protocol
      ├→ MAYBE → Search with find-skills
@@ -150,7 +118,7 @@ Full grammar + Mermaid flowchart: see `${CLAUDE_PLUGIN_ROOT}/skills/forge-operat
 ## Decision Log
 
 When a routing decision is non-obvious, log it:
-"Routed to [workflow] because [reason]. Tier: [tier]."
+"Routed to [skill chain] because [reason]. Tier: [tier]."
 This helps /conclave:done understand what was attempted.
 
 ## Routing Result (chat output)
@@ -161,9 +129,8 @@ After mode + type + tier detected and skill chain identified, render the routing
 ▍
 ▍ **gh-bind**    AI#{N} · {title-fragment}              ← `none` if unmatched
 ▍ **mode**       {Quick | Working | Meeting | Execution}
-▍ ⚠ **compact**  triggered ({reason})                  ← OMIT if not compacted
-▍ ⚠ **iterate**  invoked workflow.iterative-loop ({reason}) ← OMIT if not invoked
-▍ **type**       {Development | Content | Grant | Advisory | Review} ← Working only
+▍ **type**       {task type, as classified at /conclave:start §5 — the type rows only; Meeting and
+▍                 Plan execution there are modes, already handled above}  ← Working only
 ▍ **tier**       {Quick | Feature | Epic}              ← Working only
 ▍ **skills**     {chain → comma-separated}
 ▍

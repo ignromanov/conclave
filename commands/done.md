@@ -99,12 +99,12 @@ Complete `/conclave:feedback` before continuing. The gate is the
    The `--handoff-file` arg files a **new** handoff inline — it requires all four
    companions (`--handoff-to`, `--handoff-priority`, `--handoff-title`, `--handoff-slug`);
    omitting any one aborts the call. If the handoff was already created separately via
-   `file-handoff.sh`, omit `--handoff-file` entirely and reference the handoff path in
+   `python -m engine file handoff`, omit `--handoff-file` entirely and reference the handoff path in
    the session body prose.
 
 5. One aggregate commit:
    ```bash
-   cd "$CONCLAVE_AI_ROOT"   # the .ai root
+   cd "$CONCLAVE_AI_ROOT"   # the DATA root
    git add agent-memory/advisors ops/handoffs
    git commit -m "session: <advisor> <slug> (decisions:N, mentions:M, handoff:Y/N)"
    ```
@@ -116,7 +116,7 @@ Complete `/conclave:feedback` before continuing. The gate is the
 ### Mandatory (always)
 
 1. ☐ **All changes committed** (both repos if applicable)
-   - Run: `git status` in both `/` and `.ai/`
+   - Run: `git status` in both `/` and `.conclave/`
    - If uncommitted changes → commit or explain why not
    - Gate: **Auto**
 
@@ -131,9 +131,9 @@ Complete `/conclave:feedback` before continuing. The gate is the
    - Gate: **Auto** (comment/status) / **Notify** (close — show user after)
 
 3. ☐ **Session artifacts filed** (scripted flow above)
-   - Decisions → `file-decision.sh`
-   - Mentions → `mention.sh`
-   - Session record + handoff → `close-session.sh`
+   - Decisions → `python -m engine file decision`
+   - Mentions → `python -m engine mention create`
+   - Session record + handoff → `python -m engine session close`
    - Single aggregate commit under `agent-memory/advisors` + `ops/handoffs`
    - (Briefing regenerates on next `/conclave:start`; no manual action here.)
    - Gate: **Auto**
@@ -143,13 +143,12 @@ Complete `/conclave:feedback` before continuing. The gate is the
 4. ☐ **IF session produced new knowledge** → wiki updated
    - Preferred: invoke `/wiki:capture --clipboard "Title"` with session summary
    - For web sources discovered: `/wiki:capture <url>`
-   - Architecture registries (`.ai/architecture/`) — update directly (code-coupled)
+   - Architecture registries (instance DATA root, e.g. `.conclave/architecture/`) — update directly
    - Gate: **Auto** — always capture if knowledge was produced
 
-5. ☐ **IF new slice/component** → architecture registries updated
-   - `architecture/fsd-registry.md`
-   - `architecture/ui-index.md`
-   - `architecture/types-registry.md`
+5. ☐ **IF new slice/component** → the instance's own architecture registries updated (same DATA
+   root as item 4 — an instance may keep any registries it likes, or none; the engine cannot name
+   them)
 
 6. ☐ **IF spec deviation** → spec.md updated
    - Compare implementation vs spec
@@ -284,7 +283,7 @@ Drop zero counters from the row text — show only fields that have non-zero val
 - Skipping Study because "tests pass, ship it" → defeats knowledge graduation
 - Promoting every candidate (bypassing 5-test filter) → wiki signal degrades
 - Treating Study exit codes as blocking (except step 4 P0) → violates `wiki_failure_policy: defer`
-- Running Study INSIDE close-session.sh → must run BEFORE close-session for failures to be visible in the session record
+- Running Study INSIDE `engine session close` → must run BEFORE close-session for failures to be visible in the session record
 
 ---
 
@@ -307,14 +306,14 @@ python -m engine lifecycle runlog-summary --advisor <advisor> --date <YYYY-MM-DD
 Output: one row body ready for the Summary column block. Examples:
 
 - Clean session (all exit 0) → script emits a clean signal; **row is OMITTED from Summary**
-- One failure → `1 script · gh-fetch.sh exit=2`
+- One failure → `1 script · gh-fetch exit=2`
 - P0 failure → row prefixed with `✗` instead of `⚠`
 
 ### Severity → render
 
 - All scripts exit 0 → **omit the row entirely**
 - Any non-zero exit, none P0 → emit row with `⚠`
-- Any P0 script failed (`briefing-build.sh`, `close-session.sh`, `file-decision.sh`) → emit row with `✗`
+- Any P0 script failed (`engine briefing build`, `engine session close`, `engine file decision`) → emit row with `✗`
 
 ### Inline render
 
@@ -335,7 +334,7 @@ Inspired by Toyota's *hansei* (反省): explicit reflection on what could be bet
 
 ### When
 
-**Execution order**: Study → Infra → **Lifecycle Retrospective** → Reflexion → hot.md → `close-session.sh`. Runs every session — non-blocking.
+**Execution order**: Study → Infra → **Lifecycle Retrospective** → Reflexion → hot.md → `engine session close`. Runs every session — non-blocking.
 
 Rationale for slot: Infra's exit-codes are needed as inputs to the **broke** lens; Reflexion (the one-sentence post-mortem persisted to session frontmatter) can then quote the highest-leverage Retrospective finding. Documentation order matches execution order — Study → Infra → Lifecycle Retrospective → Reflexion → hot.md.
 
@@ -390,7 +389,7 @@ improves next-session performance without retraining (+11% accuracy on HumanEval
 
 ### When
 
-After the Lifecycle Retrospective phase, before `close-session.sh` is invoked.
+After the Lifecycle Retrospective phase, before `engine session close` is invoked.
 
 ### What
 
@@ -407,7 +406,7 @@ like *"good session"* — those degrade the buffer faster than blanks.
 
 ### Where
 
-`--reflexion "..."` arg → `close-session.sh` → `session.md` frontmatter field `reflexion:`.
+`--reflexion "..."` arg → `engine session close` → `session.md` frontmatter field `reflexion:`.
 Read back via `/conclave:start` Step 1c (last 3 sessions for this advisor; concatenated into briefing context).
 
 ### Inline render
@@ -427,7 +426,7 @@ Filler reflexions ("good session") are forbidden — they degrade the buffer fas
 
 If session involved Quorum (or current advisor is Quorum):
 
-1. `grep -c "\[!contradiction\]" .ai/agent-memory/hot.md` — count contradiction markers
+1. `grep -c "\[!contradiction\]" .conclave/agent-memory/hot.md` — count contradiction markers
 2. If count > 0:
    - Display each marker block to founder
    - AskUserQuestion: "Resolve <marker> as: keep A / keep B / merge / archive both"

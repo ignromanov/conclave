@@ -3,7 +3,8 @@
 
 One of the four P7 re-research conditions: the failing criterion is a KNOWLEDGE-gap, not an
 execution-gap, when it is **absent from the P1 scout artifact** (the research wave never covered
-it). Combined in spine.md §8 with: ≥1 atlas attempt, non-mechanical category, last-2 n-gram ≥0.80.
+it). Combined (spec 089's retired autopilot spine protocol, §8, never shipped) with: ≥1 atlas
+attempt, non-mechanical category, last-2 n-gram ≥0.80.
 
 I/O:
   --criterion "<failing AC text or id>"   the criterion the artifact keeps failing

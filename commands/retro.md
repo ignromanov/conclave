@@ -31,7 +31,7 @@ Present 3 questions to the founder via AskUserQuestion. Founder + advisors (if d
 
 ## Output
 
-Append to `.ai/agent-memory/advisors/retros/YYYY-MM-DD-retro.md`:
+Append to `.conclave/agent-memory/advisors/retros/YYYY-MM-DD-retro.md`:
 
 ```markdown
 ---
