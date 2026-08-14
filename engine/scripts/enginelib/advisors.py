@@ -75,6 +75,12 @@ def _agent_ids(agents_dir: Path) -> set[str]:
 # is kept and the others get longer established forms: `cpo` is Product, privacy is
 # `cdpo`, people is `chro`; `cro` is Revenue.
 #
+# `cxo` was excluded with those three and is readmitted (2026-08-14). Its collision
+# is of a different kind: each of `cdo`/`cco`/`cso` collides with ANOTHER REAL SEAT,
+# so picking one decides an accountability by acronym. "CxO" is a metasyntactic
+# placeholder for any C-level officer — nobody holds the title "Chief x Officer" —
+# so the experience seat keeps the short slug without arbitrating between seats.
+#
 # `chro` is the seat forge holds: it hires advisors, evolves their personalities and
 # responsibilities, and audits the roster for drift. Under the operator's ruling
 # that forge is an ordinary advisor that merely ships pre-installed, the roster IS
@@ -84,6 +90,7 @@ ADVISOR_ROLES: frozenset[str] = frozenset({
     "coo",    # delivery cadence, process, operational execution
     "cto",    # architecture, engineering direction, technical risk, performance
     "cpo",    # product vision, roadmap, scope, UX
+    "cxo",    # the display contract — what a human-facing surface shows and how
     "cmo",    # brand, positioning, demand generation, content/SEO
     "cro",    # monetisation, pricing, the acquisition→revenue funnel
     "cfo",    # unit economics, budget, runway
