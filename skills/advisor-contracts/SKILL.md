@@ -12,10 +12,16 @@ description: >-
 # advisor-contracts
 
 The contract substrate shared by every Conclave advisor. The individual contracts live under
-[`references/`](references/) and are imported verbatim at session start by `/conclave:start`
-(`${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/*.md`) and read by the engine's
-`session_init` overlay scan. This SKILL.md is the discovery entry point; the references are the
-authoritative content.
+[`references/`](references/), are imported verbatim at session start by `/conclave:start`, and
+are read by the engine's `session_init` overlay scan. This SKILL.md is the discovery entry point;
+the references are the authoritative content.
+
+⚠️ That import is an **explicit per-file list, not a glob**: `commands/{start,processing,done}.md`
+each open with their own ``!`cat …/references/<name>.md` `` lines and load only what they name.
+A reference added to this directory reaches no session until it is wired into those lists — and
+five existing ones (`persona-voice.md`, `executor-protocol.md`, `autonomous-pipeline.md`,
+`spawned-advisor-brief.md`, `spec-051-invariants.md`) are not in the start list at all; they are
+loaded by path when needed.
 
 | Reference | Governs |
 |-----------|---------|
