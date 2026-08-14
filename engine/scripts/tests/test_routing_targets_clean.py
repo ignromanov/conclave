@@ -66,6 +66,24 @@ def test_the_roster_is_discovered_and_not_empty():
     assert len(_roster()) >= 1, "roster discovery returned nothing — agents/ moved?"
 
 
+def test_the_routing_table_is_actually_reached():
+    """A fourth anti-vacuity guard, for the cell check added in GH#123.
+
+    The cell check anchors on the header ROW `| Task Type | Skill Chain |`. Rename that header
+    and the scan finds zero tables, flags nothing, and reports clean — the same false-clean shape
+    as the CLI adapter that printed a success banner over zero surfaces (108 final review, R-1).
+    A floor rather than an exact count, so adding or retiring a legitimate row does not redden
+    the suite; measured at 10 today.
+    """
+    cells = [
+        c for s in _surfaces() for c in rt.find_routing_cells(s.read_text(encoding="utf-8"))
+    ]
+    assert len(cells) >= 5, (
+        f"only {len(cells)} routing cells reached — the table was renamed, moved, or its header "
+        f"row changed shape, and the cell check is now scanning nothing"
+    )
+
+
 def test_no_shipped_command_names_a_routing_target_that_does_not_exist():
     findings = rt.run(_surfaces(), SKILLS_ROOTS, _roster())
     assert findings.crit == [], "\n".join(findings.crit)

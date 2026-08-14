@@ -63,6 +63,25 @@ def _bootstrap_interpreter(args: list[str]) -> None:
         os.execve(plan.python, [plan.python, *plan.argv], {**os.environ, **plan.env})
 
 
+def _warn_on_cross_tree_run() -> None:
+    """Say so when the imported engine belongs to a checkout the caller is not in (GH#126).
+
+    Warned, never enforced: a non-zero exit from a `!`-block aborts the entire command load,
+    which replaces a diagnosable message with a missing command. And stderr, never stdout —
+    the dispatcher's stdout is read by machines.
+
+    Every failure here is swallowed. A diagnostic that can break the CLI it diagnoses is a
+    worse defect than the one it reports.
+    """
+    try:
+        from enginelib.provenance import diagnose_tree
+        report = diagnose_tree(module_file=Path(__file__), cwd=Path.cwd())
+        if report is not None:
+            sys.stderr.write(report.message())
+    except Exception:
+        pass
+
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="engine")
     sub = p.add_subparsers(dest="noun", required=True)
@@ -121,6 +140,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     _bootstrap_interpreter(sys.argv[1:] if argv is None else argv)
+    _warn_on_cross_tree_run()
     parser = _build_parser()
     # Usage errors (unknown noun/verb/flag) → argparse SystemExit(2) by design: POSIX usage-error
     # convention, intentional (B4-decided 2026-07-01) — NOT bash's blanket exit 1.
