@@ -27,7 +27,7 @@ Applies here at Step 0.5, Step 0.7, Mode Detection, and Tier Detection.
 
 ## Step 0.5 — Compaction check
 
-Before mode detection, check `.ai/references/compaction-triggers.md`. If any of these apply to the current state:
+Before mode detection, check whether any of these apply to the current state:
 
 - Just completed a research/exploration phase, about to start implementation
 - Mode is about to transition (e.g., Quick Answer → Working Session)
