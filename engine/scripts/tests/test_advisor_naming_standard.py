@@ -48,11 +48,30 @@ def test_no_role_collides_with_an_executor_role():
 
 def test_the_ambiguous_acronyms_are_absent():
     """`cdo` is Data vs Digital with no dominant reading, `cco` has four readings,
-    `cso` three. Each is excluded in favour of an unambiguous longer form."""
-    for ambiguous in ("cdo", "cco", "cso", "cxo"):
+    `cso` three. Each is excluded in favour of an unambiguous longer form.
+
+    `cxo` was in this list until 2026-08-14; it left because its rival reading is a
+    placeholder rather than a seat — see test_the_experience_seat_is_admitted_under_cxo.
+    """
+    for ambiguous in ("cdo", "cco", "cso"):
         assert ambiguous not in ADVISOR_ROLES, ambiguous
     assert "cdao" in ADVISOR_ROLES, "the data seat must exist under its unambiguous form"
     assert "ciso" in ADVISOR_ROLES, "the security seat must exist under its unambiguous form"
+
+
+def test_the_experience_seat_is_admitted_under_cxo():
+    """`cxo` was excluded alongside `cdo`/`cco`/`cso` in #95 and is readmitted here.
+
+    The three others collide with ANOTHER REAL SEAT — Data vs Digital, four readings
+    of CCO, three of CSO — so picking one silently decides which accountability the
+    id names. `cxo` collides with a metasyntactic placeholder instead: "CxO" stands
+    for any C-level officer, and nobody holds the title "Chief x Officer". Under the
+    vocabulary's own test — an unambiguous executive title a person can actually hold
+    — Chief Experience Officer passes and the placeholder is not a competing claimant.
+    """
+    assert "cxo" in ADVISOR_ROLES
+    validate_advisor_id("kosmos-cxo")
+    assert is_valid_advisor_id("kosmos-cxo")
 
 
 def test_privacy_and_product_do_not_share_a_slug():
