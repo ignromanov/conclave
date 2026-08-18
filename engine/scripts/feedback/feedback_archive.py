@@ -172,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
                 # writes: if the append lands and the stamp does not, the item is in the
                 # ledger with no `archived_at` and would otherwise sit in the index forever
                 # while the key guard blocks a retry. Stamp everything closed-and-unstamped;
-                # append only what the ledger has not already got.
+                # add to the ledger just what it does not already carry.
                 to_stamp = [it for it in items
                             if it.get("status") in _DONE_STATUSES and not it.get("archived_at")]
                 to_append = [it for it in to_stamp
