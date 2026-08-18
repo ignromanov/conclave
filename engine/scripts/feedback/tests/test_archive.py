@@ -6,6 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from briefing.frontmatter_io import read as fm_read
 from briefing.frontmatter_io import write
 
 SCRIPTS_DIR = Path(__file__).parent.parent.parent  # .../scripts/
@@ -95,7 +96,11 @@ def test_archive_moves_fully_resolved_review(tmp_path):
 
 
 def test_archive_leaves_open_review_untouched(tmp_path):
-    """A review with at least one open item is not archived."""
+    """A review with at least one open item is never archived AS A REVIEW.
+
+    Its closed items are archived individually (see the partial-archive test below), so the
+    guard here is on review-kind rows, not on the bare presence of the feedback_id.
+    """
     mixed_items = [_valid_item("it-1", "resolved"), _valid_item("it-2", "open")]
     review_path = _write_review(
         tmp_path, "2026-05-22", "atlas-open.md",
@@ -108,12 +113,98 @@ def test_archive_leaves_open_review_untouched(tmp_path):
     # Source file still present
     assert review_path.exists(), "open review must not be archived"
 
-    # No archive line for this id
+    # No REVIEW-kind archive line for this id
     archive_file = tmp_path / "ops" / "feedback" / "_archive" / "2026-05.jsonl"
     if archive_file.exists():
         lines = [json.loads(ln) for ln in archive_file.read_text().splitlines() if ln.strip()]
-        ids = [ln["feedback_id"] for ln in lines]
+        ids = [ln["feedback_id"] for ln in lines if ln.get("kind") != "item"]
         assert "fb-222-bbbbbb" not in ids
+
+
+def test_archive_closes_items_of_a_partially_closed_review(tmp_path):
+    """The archive unit is the ITEM: a closed item is archived even while a sibling is open.
+
+    Without this, a single lingering item pins its whole review forever — measured on the
+    live instance as 60 live reviews, 0 of them fully closed, and an archiver that had
+    never once fired.
+    """
+    mixed = [_valid_item("it-1", "resolved"), _valid_item("it-2", "open")]
+    review_path = _write_review(
+        tmp_path, "2026-05-22", "atlas-partial.md",
+        _valid_review_meta(feedback_id="fb-444-dddddd", items=mixed)
+    )
+
+    result = run_archive(tmp_path)
+    assert result.returncode == 0, result.stderr
+
+    # The review file survives — nothing is cut out of the source of truth
+    assert review_path.exists()
+    text = review_path.read_text()
+    assert "it-1" in text and "it-2" in text, "no item may be removed from the review"
+
+    archive_file = tmp_path / "ops" / "feedback" / "_archive" / "2026-05.jsonl"
+    rows = [json.loads(ln) for ln in archive_file.read_text().splitlines() if ln.strip()]
+    item_rows = [r for r in rows if r.get("kind") == "item"
+                 and r.get("feedback_id") == "fb-444-dddddd"]
+    assert len(item_rows) == 1, "exactly the closed item is archived"
+    assert item_rows[0]["item_id"] == "it-1"
+    assert item_rows[0]["item"]["id"] == "it-1", "the row carries the item verbatim"
+
+    # The closed item is stamped; the open one is not
+    meta, _ = fm_read(review_path)
+    by_id = {i["id"]: i for i in meta["items"]}
+    assert by_id["it-1"].get("archived_at"), "closed item must be stamped archived_at"
+    assert not by_id["it-2"].get("archived_at"), "open item must not be stamped"
+
+
+def test_archive_stamps_an_item_the_ledger_already_holds(tmp_path):
+    """Recovery: ledger row written, review stamp lost — the retry stamps, never duplicates.
+
+    The append and the stamp are two writes to two files. If only the first lands, the key
+    guard would block the retry and the item would sit in the index forever, closed but
+    unstamped. Stamping is driven by status, appending by the ledger.
+    """
+    mixed = [_valid_item("it-1", "resolved"), _valid_item("it-2", "open")]
+    review_path = _write_review(
+        tmp_path, "2026-05-22", "atlas-halfwritten.md",
+        _valid_review_meta(feedback_id="fb-666-ffffff", items=mixed)
+    )
+
+    # Simulate the crashed run: ledger row present, review never stamped.
+    arch_dir = tmp_path / "ops" / "feedback" / "_archive"
+    arch_dir.mkdir(parents=True, exist_ok=True)
+    (arch_dir / "2026-05.jsonl").write_text(json.dumps({
+        "kind": "item", "feedback_id": "fb-666-ffffff", "item_id": "it-1",
+        "archived_at": "2026-05-22T00:00:00+00:00", "item": {"id": "it-1"},
+    }) + "\n")
+
+    assert run_archive(tmp_path).returncode == 0
+
+    rows = [json.loads(ln) for ln in (arch_dir / "2026-05.jsonl").read_text().splitlines()
+            if ln.strip()]
+    mine = [r for r in rows if r.get("feedback_id") == "fb-666-ffffff"]
+    assert len(mine) == 1, f"must not duplicate the ledger row, got {len(mine)}"
+
+    meta, _ = fm_read(review_path)
+    by_id = {i["id"]: i for i in meta["items"]}
+    assert by_id["it-1"].get("archived_at"), "the unstamped ledgered item must get stamped"
+
+
+def test_archive_does_not_re_archive_an_already_archived_item(tmp_path):
+    """Running twice appends the item row once — the (feedback_id, item_id) guard holds."""
+    mixed = [_valid_item("it-1", "resolved"), _valid_item("it-2", "open")]
+    _write_review(
+        tmp_path, "2026-05-22", "atlas-twice.md",
+        _valid_review_meta(feedback_id="fb-555-eeeeee", items=mixed)
+    )
+
+    assert run_archive(tmp_path).returncode == 0
+    assert run_archive(tmp_path).returncode == 0
+
+    archive_file = tmp_path / "ops" / "feedback" / "_archive" / "2026-05.jsonl"
+    rows = [json.loads(ln) for ln in archive_file.read_text().splitlines() if ln.strip()]
+    mine = [r for r in rows if r.get("feedback_id") == "fb-555-eeeeee"]
+    assert len(mine) == 1, f"expected one row after two runs, got {len(mine)}"
 
 
 def test_archive_appends_to_hot_md(tmp_path):
@@ -297,3 +388,26 @@ def test_hot_md_append_uses_structured_format_with_skill_slug(tmp_path):
     assert pattern.search(content), (
         f"hot.md line does not match section-aware structured format.\nContent:\n{content}"
     )
+
+
+def test_archive_reconciles_the_index_it_just_invalidated(tmp_path):
+    """Archiving must leave the cache agreeing with the tree it just changed.
+
+    An archived item is stamped out of the working set and an archived review's file is
+    gone, but the index keeps their rows until a rebuild — so without this the closed work
+    keeps costing every index consumer exactly as much as it did before.
+    """
+    mixed = [_valid_item("it-1", "resolved"), _valid_item("it-2", "open")]
+    _write_review(
+        tmp_path, "2026-05-22", "atlas-reconcile.md",
+        _valid_review_meta(feedback_id="fb-888-aaaaaa", items=mixed)
+    )
+
+    assert run_archive(tmp_path).returncode == 0
+
+    index = tmp_path / "ops" / "feedback" / "_index" / "index.jsonl"
+    assert index.exists(), "archive must leave an index behind"
+    rows = [json.loads(ln) for ln in index.read_text().splitlines() if ln.strip()]
+    ids = {(r["feedback_id"], r["item_id"]) for r in rows}
+    assert ("fb-888-aaaaaa", "it-1") not in ids, "archived item must leave the working set"
+    assert ("fb-888-aaaaaa", "it-2") in ids, "the open sibling must stay in the working set"

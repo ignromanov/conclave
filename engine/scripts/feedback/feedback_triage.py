@@ -221,8 +221,8 @@ def cmd_monthly(rows: list[dict]) -> None:
 
 
 def cmd_set(root: Path, feedback_id: str, item_id: str, status: str,
-            owner: str | None, triage_marker: Path) -> int:
-    """Write status/owner/resolved_at back to the review file."""
+            owner: str | None, triage_marker: Path, issue: int | None = None) -> int:
+    """Write status/owner/issue/resolved_at back to the review file."""
     if status not in _VALID_STATUSES:
         print(f"ERROR: invalid status={status!r} (allowed: {sorted(_VALID_STATUSES)})",
               file=sys.stderr)
@@ -247,6 +247,8 @@ def cmd_set(root: Path, feedback_id: str, item_id: str, status: str,
             item["status"] = status
             if owner is not None:
                 item["owner"] = owner
+            if issue is not None:
+                item["issue"] = issue
             if status in ("resolved", "rejected"):
                 item["resolved_at"] = now_str
             if status == "accepted":
@@ -266,7 +268,8 @@ def cmd_set(root: Path, feedback_id: str, item_id: str, status: str,
     triage_marker.touch()
 
     print(f"Updated {feedback_id}/{item_id}: status={status}" +
-          (f" owner={owner}" if owner else ""))
+          (f" owner={owner}" if owner else "") +
+          (f" issue=#{issue}" if issue else ""))
     return 0
 
 
@@ -323,6 +326,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--set", nargs=3, metavar=("FEEDBACK_ID", "ITEM_ID", "STATUS"),
                         help="Write status back to review file")
     parser.add_argument("--owner", default=None, help="Owner to assign with --set")
+    parser.add_argument("--issue", type=int, default=None,
+                        help="GH issue number to bind to the item with --set (Step 4). "
+                             "Binding the item to its issue is what stops a defect that "
+                             "already has an open issue from re-entering the queue as new.")
     args = parser.parse_args(argv)
 
     root = repo_root()
@@ -355,7 +362,16 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.set:
             feedback_id, item_id, status = args.set
-            return cmd_set(root, feedback_id, item_id, status, args.owner, triage_marker)
+            set_rc = cmd_set(root, feedback_id, item_id, status, args.owner, triage_marker,
+                             issue=args.issue)
+            if set_rc == 0:
+                # Reconcile the cache with the review we just wrote. The rebuild above runs
+                # BEFORE the write, so without this the index lags the source of truth by
+                # exactly one --set: the last item classified in a session stays invisible
+                # to the digest, --check and the dashboard until something else rebuilds.
+                # feedback_verify already does this after its own writes; cmd_set did not.
+                _rebuild_index(root)
+            return set_rc
 
         if args.digest:
             digest_rows = rows

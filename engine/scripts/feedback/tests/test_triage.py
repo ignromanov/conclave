@@ -1,6 +1,7 @@
 """test_triage.py — TDD tests for feedback_triage.py (T6)."""
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -429,3 +430,29 @@ def test_concurrent_set_no_lost_update(tmp_path):
     statuses = {it["id"]: it.get("status") for it in fm_read(review_path)[0]["items"]}
     assert statuses["it-1"] == "accepted", statuses
     assert statuses["it-2"] == "accepted", statuses  # lost without the lock
+
+
+def test_set_reconciles_the_index_with_the_review_it_just_wrote(tmp_path):
+    """--set must leave the cache agreeing with the source of truth, not one write behind.
+
+    The defensive rebuild runs BEFORE the write, so without a reconcile the last item
+    classified in a session is invisible to the digest, --check and any index consumer
+    until something unrelated triggers a rebuild.
+    """
+    _write_review(
+        tmp_path, "2026-05-22", "atlas-lag.md",
+        _valid_review_meta(feedback_id="fb-777-aaaaaa", items=[_valid_item("it-1")])
+    )
+
+    res = run_triage(tmp_path, ["--set", "fb-777-aaaaaa", "it-1", "accepted",
+                                "--owner", "sage-cto", "--issue", "424"])
+    assert res.returncode == 0, res.stderr
+
+    # Read the index directly — no rebuild, no second command.
+    index = tmp_path / "ops" / "feedback" / "_index" / "index.jsonl"
+    rows = [json.loads(ln) for ln in index.read_text().splitlines() if ln.strip()]
+    row = next(r for r in rows if r["feedback_id"] == "fb-777-aaaaaa"
+               and r["item_id"] == "it-1")
+    assert row["status"] == "accepted", "index must carry the status just written"
+    assert row["owner"] == "sage-cto", "index must carry the owner just written"
+    assert row["issue"] == 424, "index must carry the issue binding just written"

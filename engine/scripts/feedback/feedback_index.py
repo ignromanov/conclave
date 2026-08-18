@@ -121,6 +121,11 @@ def _process_reviews(dirs: list[Path], existing: dict[str, str], check: bool) ->
                     # final review updated_at, so a tie doesn't mean "unchanged" (issue #8).
                     continue
 
+                # An archived item lives on in the review file verbatim; it is out of the
+                # working set, so it must not re-enter the index the next rebuild rewrites.
+                if item.archived_at:
+                    continue
+
                 fp = fingerprint(item.location, item.category)
 
                 row = {
@@ -128,6 +133,7 @@ def _process_reviews(dirs: list[Path], existing: dict[str, str], check: bool) ->
                     "agent": review.agent,
                     "agent_type": review.agent_type,
                     "session_ref": review.session_ref,
+                    "created": str(review.created),
                     "updated_at": str(review.updated_at),
                     "item_id": item.id,
                     "category": item.category,
@@ -140,6 +146,11 @@ def _process_reviews(dirs: list[Path], existing: dict[str, str], check: bool) ->
                     "frequency": item.frequency,
                     "evidence": item.evidence,
                     "status": item.status,
+                    "owner": item.owner,
+                    "issue": item.issue,
+                    "accepted_at": item.accepted_at,
+                    "resolved_at": str(item.resolved_at) if item.resolved_at else None,
+                    "reopened_from": item.reopened_from,
                     "migrated": item.migrated,
                     "legacy_source": item.legacy_source,
                     "verify": item.verify.model_dump() if item.verify else None,

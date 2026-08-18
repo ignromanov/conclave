@@ -77,8 +77,11 @@ class FeedbackItem(BaseModel):
     evidence: str | None = None         # gate enforced below
     status: Status = "open"
     owner: str | None = None
+    issue: int | None = None            # GH issue opened for this item at triage Step 4
     resolved_at: datetime | None = None
     accepted_at: str | None = None
+    archived_at: str | None = None      # set by feedback_archive: item is in the ledger,
+                                        # still verbatim here, and out of the working set
     migrated: bool = False
     legacy_source: str | None = None
     reopened_from: str | None = None    # 093 — provenance "fid:iid" when status re-occurred
