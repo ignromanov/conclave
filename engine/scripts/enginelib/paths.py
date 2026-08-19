@@ -19,19 +19,91 @@ def _plugin_engine_default() -> str | None:
     return f"{base}/engine" if base else None
 
 
+LEGACY_DATA_ROOT_ENV = "VOIDPAY_AI_ROOT"
+
+
+def check_legacy_data_root_env() -> None:
+    """Refuse to run when the retired VOIDPAY_AI_ROOT alias is the only DATA root set.
+
+    The alias dates from the instance this engine was extracted from. Six call sites
+    read it — `briefing/paths.py`, roster, study_phase, gh_board_query, session_init
+    and the emission gate — and a seventh, `enginelib/paths.py`, ignored it. That
+    seventh was the resolver the other six were meant to defer to, which is what made
+    the split a split. A process could therefore honour the alias in one
+    subsystem and ignore it in the next, writing feedback into one tree while reading
+    advisors from another — with no error anywhere, because every individual call
+    succeeded.
+
+    Silence is the part that has to go. An operator who still exports the old name is
+    better served by a stopped command naming the new one than by half a session's
+    work landing in a tree they did not mean. Set alongside CONCLAVE_AI_ROOT the alias
+    is inert and ignored, which is what the test fixtures did for years.
+
+    Every site that resolves a DATA root calls this first, including the ones that do
+    not go through `repo_root()` — a guard inside the resolver would have covered one
+    of the six.
+    """
+    if os.environ.get(LEGACY_DATA_ROOT_ENV) and not os.environ.get("CONCLAVE_AI_ROOT"):
+        raise RuntimeError(
+            f"{LEGACY_DATA_ROOT_ENV} is set but CONCLAVE_AI_ROOT is not. The alias was "
+            f"retired because the engine's readers disagreed about whether it counted. "
+            f"Export CONCLAVE_AI_ROOT={os.environ[LEGACY_DATA_ROOT_ENV]!r} instead."
+        )
+
+
 def repo_root(start: Path | None = None) -> Path:
-    """DATA root. Env override (CONCLAVE_AI_ROOT, then CLAUDE_PROJECT_DIR/.conclave),
-    else walk up from `start` for a dir with non-symlink ops/ + .claude/ siblings."""
+    """DATA root — the single implementation; `briefing.paths` re-exports this one.
+
+    Env override (CONCLAVE_AI_ROOT, then CLAUDE_PROJECT_DIR/.conclave), else walk up
+    from `start` for a dir holding a real ops/ and a roster.yaml next to a .claude/.
+
+    The result is always resolved. The two ports of this function disagreed on that,
+    and on macOS every path either produced differed from the other's by the /private
+    prefix alone — so a comparison between a briefing-derived path and an enginelib-
+    derived one was false for the same directory. Callers had begun sprinkling
+    `.resolve()` at the comparison sites instead.
+
+    `ops/` must be a real directory but `.claude/` may be a symlink: a git worktree
+    root links .claude/ back to the main checkout, while a symlinked ops/ is the
+    signature of the CODE-side orphan (GH#87), which is not a DATA root and must not
+    be mistaken for one.
+
+    The walk starts from the cwd, never from this file, and a candidate must carry a
+    `roster.yaml`. Both halves matter, and the first without the second fixes nothing:
+    the engine's own checkout carries an ops/ (for ops/SCHEMA.md) beside a .claude/, so
+    the ops/+.claude/ pair alone matched the CODE tree — whether the walk started from
+    __file__ or from a cwd standing in that checkout, which is where a dogfooding run
+    always stands. `roster.yaml` is what an instance root *is*: `conclave init` writes
+    it at the DATA root and nothing writes it into CODE. The old marker was
+    self-confirming (GH#29) — it answered with the tree it was reading itself from, and
+    an empty environment silently wrote DATA into the CODE checkout.
+    """
+    check_legacy_data_root_env()
     env = os.environ.get("CONCLAVE_AI_ROOT") or _plugin_data_default()
     if env:
-        return Path(env)
+        return Path(env).resolve()
+    found = walk_for_data_root(start)
+    if found is not None:
+        return found
+    raise RuntimeError(
+        "repo_root: unable to locate a DATA root (set CONCLAVE_AI_ROOT, or run from "
+        "inside an instance root — one holding roster.yaml beside ops/ and .claude/)")
+
+
+def walk_for_data_root(start: Path | None = None) -> Path | None:
+    """Walk up from `start` (default: cwd) for an instance root, or None.
+
+    Exposed because `lifecycle/session_init.py` deliberately keeps its own env policy —
+    it refuses to derive a root from CLAUDE_PROJECT_DIR, so that a missing
+    CONCLAVE_AI_ROOT fails loudly instead of being papered over — but must not keep its
+    own idea of what a root looks like. Policy differs by caller; the marker does not."""
     cur = (start or Path.cwd()).resolve()
     for d in (cur, *cur.parents):
         ops, claude = d / "ops", d / ".claude"
-        if ops.is_dir() and not ops.is_symlink() and claude.is_dir() and not claude.is_symlink():
+        if (ops.is_dir() and not ops.is_symlink() and claude.is_dir()
+                and (d / "roster.yaml").is_file()):
             return d
-    raise RuntimeError(
-        "repo_root: unable to locate .ai root (set CONCLAVE_AI_ROOT or run from inside .ai/)")
+    return None
 
 
 def engine_root() -> Path:
@@ -40,7 +112,7 @@ def engine_root() -> Path:
     (parents[0]=enginelib, parents[1]=scripts, parents[2]=engine)."""
     env = os.environ.get("CONCLAVE_ENGINE_ROOT") or _plugin_engine_default()
     if env:
-        return Path(env)
+        return Path(env).resolve()
     return Path(__file__).resolve().parents[2]   # enginelib/ -> scripts/ -> engine/
 
 

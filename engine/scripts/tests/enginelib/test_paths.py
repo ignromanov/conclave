@@ -9,6 +9,9 @@ def _make_ai_root(tmp_path: Path) -> Path:
     root = tmp_path / ".ai"
     (root / "ops").mkdir(parents=True)
     (root / ".claude").mkdir(parents=True)
+    # roster.yaml is what makes this an instance root rather than the shape of the
+    # engine checkout, which also carries ops/ beside .claude/ (GH#29).
+    (root / "roster.yaml").write_text("github: {}\n", encoding="utf-8")
     return root
 
 
@@ -87,3 +90,17 @@ def test_project_claude_dir_in_repo_layout(tmp_path, monkeypatch):
     root = _make_ai_root(tmp_path)
     monkeypatch.setenv("CONCLAVE_AI_ROOT", str(root))
     assert paths.project_claude_dir() == root / ".claude"
+
+
+def test_repo_root_walk_refuses_a_tree_without_a_roster(tmp_path, monkeypatch):
+    """ops/ + .claude/ alone is the engine checkout's shape. The old marker matched it,
+    so with no env set the resolver answered with the CODE tree and DATA was written
+    into it (GH#29) — the heuristic confirmed itself from the tree it read itself from."""
+    monkeypatch.delenv("CONCLAVE_AI_ROOT", raising=False)
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    code_like = tmp_path / "checkout"
+    (code_like / "ops").mkdir(parents=True)
+    (code_like / ".claude").mkdir(parents=True)
+    assert paths.walk_for_data_root(code_like) is None
+    with pytest.raises(RuntimeError, match="unable to locate"):
+        paths.repo_root(start=code_like)

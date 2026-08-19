@@ -53,22 +53,15 @@ def test_repo_root_holds_ops_and_its_project_holds_claude():
 
 
 def test_repo_root_env_override(monkeypatch, tmp_path):
-    import briefing.paths as _paths
-
     # Create a fake root with ops/ and .claude/
     (tmp_path / "ops").mkdir()
     (tmp_path / ".claude").mkdir()
-    # Clear module cache so env override takes effect.
-    monkeypatch.setattr(_paths, "_REPO_ROOT_CACHE", None)
-    monkeypatch.setenv("VOIDPAY_AI_ROOT", str(tmp_path))
+    monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
     root = repo_root()
     assert root == tmp_path.resolve()
 
 
 def test_repo_root_plugin_mode_defaults_to_project_conclave(monkeypatch, tmp_path):
-    import briefing.paths as _paths
-
-    monkeypatch.setattr(_paths, "_REPO_ROOT_CACHE", None)
     monkeypatch.delenv("CONCLAVE_AI_ROOT", raising=False)
     monkeypatch.delenv("VOIDPAY_AI_ROOT", raising=False)
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))

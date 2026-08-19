@@ -1,6 +1,6 @@
 """Tests for Phase 2.1 scan modules: current_work, owed, interrupted.
 
-Hermetic: all tests use tmp_path or monkeypatched VOIDPAY_AI_ROOT.
+Hermetic: all tests use tmp_path or monkeypatched CONCLAVE_AI_ROOT.
 No test reads or writes the live agent-memory/ tree.
 """
 from __future__ import annotations

@@ -58,6 +58,10 @@ from enginelib.advisors import (  # noqa: E402 (follows the sys.path bootstrap a
     META_ADVISORS,
     with_meta,
 )
+from enginelib.paths import (  # noqa: E402
+    check_legacy_data_root_env,
+    walk_for_data_root,
+)
 
 
 def _project_dir(root: Path) -> Path:
@@ -97,20 +101,23 @@ def _known_advisors(root: Path) -> set[str]:
 
 
 def _repo_root() -> Path:
-    env = os.environ.get("CONCLAVE_AI_ROOT") or os.environ.get("VOIDPAY_AI_ROOT")
+    check_legacy_data_root_env()
+    env = os.environ.get("CONCLAVE_AI_ROOT")
     if env:
         return Path(env).resolve()
-    # Intentional divergence from briefing/paths.py repo_root(): that function adds
-    # a CLAUDE_PROJECT_DIR → <dir>/.conclave branch for plugin mode (D-5).  Here we
-    # omit it because session_init is always invoked from the SessionStart hook after
+    # Intentional divergence from enginelib.paths.repo_root(): that function adds a
+    # CLAUDE_PROJECT_DIR → <dir>/.conclave branch for plugin mode (D-5).  Here we omit
+    # it because session_init is always invoked from the SessionStart hook after
     # conclave_init has already persisted CONCLAVE_AI_ROOT — the shortcut is never
     # needed and adding it would silently mask a missing CONCLAVE_AI_ROOT.
-    cur = Path(__file__).resolve().parent
-    while cur != cur.parent:
-        has_ops = (cur / "ops").is_dir() and not (cur / "ops").is_symlink()
-        if has_ops and (cur / ".claude").exists():
-            return cur
-        cur = cur.parent
+    #
+    # The env POLICY is this function's own; the marker is not. The walk it used to
+    # carry started from __file__ and asked only for ops/ + .claude/, which the engine
+    # checkout satisfies — so with no env set it answered with the CODE tree, the same
+    # self-confirming match as GH#29. It now shares the one walk.
+    found = walk_for_data_root()
+    if found is not None:
+        return found
     raise RuntimeError("session-init: cannot locate .ai root (set CONCLAVE_AI_ROOT)")
 
 

@@ -54,19 +54,23 @@ CONCLAVE_AI_ROOT     := ${CLAUDE_PROJECT_DIR:+${CLAUDE_PROJECT_DIR}/.conclave}  
 CONCLAVE_ENGINE_ROOT := ${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/engine}      # else: walk up
 ```
 
-Implemented in `enginelib/paths.py` (`_plugin_data_default` / `_plugin_engine_default`) and mirrored
-in `briefing/paths.py`. The bash original `engine/scripts/lib/paths.sh` **no longer exists** — spec 099
-ported the whole tree to Python; only its docstring reference survives at `enginelib/paths.py:1`.
+Implemented once, in `enginelib/paths.py` (`_plugin_data_default` / `_plugin_engine_default`).
+`briefing/paths.py` re-exports it — the names stay for its twelve importers, the answers come from
+one place. The bash original `engine/scripts/lib/paths.sh` **no longer exists** — spec 099 ported
+the whole tree to Python; only its docstring reference survives at `enginelib/paths.py:1`.
 
-> ⚠ The two implementations **do not agree**, and the divergence is load-bearing, not cosmetic:
-> `enginelib.repo_root()` walks up from **`cwd`** and requires a non-symlink `.claude/`;
-> `briefing.repo_root()` walks up from **`__file__`**, memoizes, accepts a symlinked `.claude/`, and
-> additionally honours the `VOIDPAY_AI_ROOT` alias (§7) that `enginelib` ignores. With no env set, the
-> `briefing` walk matches the **engine repo root itself** and DATA is written into the CODE tree.
-> Reproduce: `env -u CONCLAVE_AI_ROOT -u CLAUDE_PROJECT_DIR PYTHONPATH=engine/scripts python -c
-> 'from briefing.paths import agent_memory_dir; print(agent_memory_dir())'`. Tracked as **#80**;
-> unification is spec 103 W5. Until then, treat the "Resolves to" column of §1 as true *only when
-> `CLAUDE_PROJECT_DIR` or `CONCLAVE_AI_ROOT` is set*.
+> The two implementations used to disagree on five counts — the env names honoured, whether the
+> answer was `.resolve()`d, whether the walk started from `cwd` or `__file__`, whether a symlinked
+> `.claude/` passed, and a module cache only one of them had. On macOS every path either produced
+> differed from the other's by a `/private` prefix, so `==` between two spellings of one directory
+> was false. `tests/test_root_resolver_agreement.py` runs both across seven scenarios and fails if
+> they part again; it was written red (4 of 6 failing) before the collapse.
+
+> The walk's marker was also self-confirming: the engine checkout carries `ops/` (for
+> `ops/SCHEMA.md`) beside `.claude/`, so with no env set the resolver answered with the CODE tree
+> and DATA was written into it. A candidate now needs a `roster.yaml` — what `conclave init` writes
+> at a DATA root and nothing writes into CODE. The reproduction recorded here and in #29 now raises
+> instead of answering.
 
 > ⚠ History: a dead `_engine_root()/skills` lookup (overlay base) silently disabled contract overlays
 > in production; the fix unified everything on the rule above. Don't anchor plugin-skill lookups on the
@@ -116,25 +120,32 @@ CODE tree. Tracked as **#82**; relocation is spec 103 W3.
    hold per-item symlinks back to them (spec 103 §3.2) — gitignored, so CODE tracks no instance data.
    The `test_instance_data_not_tracked_in_code` gate enforces that.
 
-## 7. Back-compat alias (deprecated)
+## 7. Back-compat alias (retired)
 
-`VOIDPAY_AI_ROOT` is accepted as a fallback alias for `CONCLAVE_AI_ROOT` (origin: VoidPay was the
-dogfooding instance). It is **deprecated** — new instances set `CONCLAVE_AI_ROOT`. The alias survives
-only for the in-place VoidPay `.ai/` during migration and should be dropped once that instance is
-re-homed.
+`VOIDPAY_AI_ROOT` was a fallback alias for `CONCLAVE_AI_ROOT`, from the instance this engine was
+extracted from. **No reader honours it any more.** Set without `CONCLAVE_AI_ROOT`, it now stops the
+command with an error naming the current variable; set alongside it, it is ignored.
 
-Resolution points (enumerated 2026-07-09; `lib/paths.sh`, `create-advisor.sh` and `register-advisor.sh`
-were listed here but no longer exist — retired by spec 099):
+It was retired rather than deprecated because the six sites that read it did not agree on whether
+it counted, and the seventh — `enginelib/paths.py`, the resolver everything else was meant to
+defer to — ignored it entirely. A process could therefore honour the alias in one subsystem and
+ignore it in the next, writing feedback into one tree while reading advisors from another, with
+every individual call succeeding. A deprecation warning does not fix a split brain; it narrates it.
 
-| File | Reads the alias |
-|------|-----------------|
-| `enginelib/roster.py` | yes |
-| `briefing/paths.py` | yes |
-| `lifecycle/session_init.py` | yes |
-| `lifecycle/study_phase.py` | yes |
-| `lifecycle/gh_board_query.py` | yes |
-| `engine/cmd/session.py` | yes |
-| `enginelib/paths.py` | **no** — reads only `CONCLAVE_AI_ROOT` (part of the #80 split-brain) |
+The guard is `enginelib.paths.check_legacy_data_root_env()`, called by every site that resolves a
+DATA root. It lives beside `repo_root()` rather than inside it because five of the six readers
+never call `repo_root()` — they read `os.environ` directly, and a check inside the resolver would
+have covered one of six.
+
+| File | Before | Now |
+|------|--------|-----|
+| `enginelib/paths.py` | ignored the alias | raises the guard, then reads `CONCLAVE_AI_ROOT` |
+| `briefing/paths.py` | honoured it | re-exports `enginelib/paths.py` |
+| `enginelib/roster.py` | honoured it | guard + `CONCLAVE_AI_ROOT` |
+| `lifecycle/session_init.py` | honoured it | guard + `CONCLAVE_AI_ROOT` |
+| `lifecycle/study_phase.py` | honoured it | guard + `CONCLAVE_AI_ROOT` |
+| `lifecycle/gh_board_query.py` | honoured it | guard + `CONCLAVE_AI_ROOT` |
+| `engine/cmd/session.py` | honoured it | guard + `CONCLAVE_AI_ROOT` |
 
 ## 8. Boundary invariants (checklist)
 
@@ -142,7 +153,8 @@ Each invariant names the test that enforces it. An unenforced invariant is a wis
 
 | Invariant | Enforced by | Status |
 |-----------|-------------|--------|
-| Sessions write only under `CONCLAVE_AI_ROOT` (DATA); CODE is read-only | — | ⚠ unenforced; violated when env is unset (#80) |
+| Sessions write only under `CONCLAVE_AI_ROOT` (DATA); CODE is read-only | `test_root_resolver_agreement.py::test_a_code_shaped_tree_is_not_taken_for_a_data_root` | ✅ with env unset the walk now refuses a rosterless tree (#29) |
+| The two `repo_root()` spellings answer alike | `test_root_resolver_agreement.py` (7 scenarios) | ✅ `briefing.paths` re-exports `enginelib.paths` |
 | Plugin tree carries zero instance literals | `test_grep_gate_no_instance_literals` | ✅ |
 | Public surface carries zero operator-absolute paths | `test_publication_gate_no_operator_abs_paths` | ✅ (#83) |
 | Hook command is a resolved absolute path, no `${CLAUDE_PLUGIN_ROOT}` literal | — | ⚠ unenforced |

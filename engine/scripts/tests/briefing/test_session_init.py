@@ -36,9 +36,18 @@ def _make_root(tmp_path: Path) -> Path:
 class TestRepoRoot:
     def test_env_override(self, tmp_path, monkeypatch):
         _make_root(tmp_path)
-        monkeypatch.setenv("VOIDPAY_AI_ROOT", str(tmp_path))
+        monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
         result = session_init._repo_root()
         assert result == tmp_path.resolve()
+
+    def test_legacy_alias_alone_raises(self, tmp_path, monkeypatch):
+        """session_init reads the env directly rather than through repo_root(), so it
+        needs the guard of its own — five of the six alias readers do."""
+        _make_root(tmp_path)
+        monkeypatch.delenv("CONCLAVE_AI_ROOT", raising=False)
+        monkeypatch.setenv("VOIDPAY_AI_ROOT", str(tmp_path))
+        with pytest.raises(RuntimeError, match="VOIDPAY_AI_ROOT is set"):
+            session_init._repo_root()
 
     def test_missing_raises(self, tmp_path, monkeypatch):
         monkeypatch.delenv("VOIDPAY_AI_ROOT", raising=False)
@@ -218,7 +227,7 @@ class TestKnownAdvisors:
 
 class TestMainArgValidation:
     def test_unknown_advisor_exits_1(self, monkeypatch):
-        monkeypatch.setenv("VOIDPAY_AI_ROOT", "/nonexistent")
+        monkeypatch.setenv("CONCLAVE_AI_ROOT", "/nonexistent")
         monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", "/nonexistent")
         rc = session_init.main(["--advisor", "unknown-xyz"])
         assert rc == 1

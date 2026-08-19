@@ -47,10 +47,8 @@ class TestBackfillCliSafetyGate:
             encoding="utf-8",
         )
 
-        import briefing.paths as _paths
-        with patch.object(_paths, "_REPO_ROOT_CACHE", None):
-            with patch.dict("os.environ", {"VOIDPAY_AI_ROOT": str(tmp_path)}):
-                rc = main(["--apply", "--confirm"])
+        with patch.dict("os.environ", {"CONCLAVE_AI_ROOT": str(tmp_path)}):
+            rc = main(["--apply", "--confirm"])
 
         assert rc == 0
         migrated = (decisions / "2026-05-20-kai-legacy.md").read_text()
@@ -81,24 +79,20 @@ class TestMainEntrypoint:
         The kai_cto_tmp_root fixture (conftest.py) seeds a hermetic .ai-like
         root and both resolvers are pointed at it for the duration of the call.
 
-        Two resolvers must be pinned, not one. `briefing.paths` honours the
-        VOIDPAY_AI_ROOT back-compat alias, but `enginelib.paths.repo_root` —
-        which this call also reaches — knows only CONCLAVE_AI_ROOT, and falls
-        back to CLAUDE_PROJECT_DIR/.conclave when it is unset. That fallback is
-        why the isolation appeared to work: a dev box has CLAUDE_PROJECT_DIR, so
-        the ambient instance root stood in for the tmp one, and the test only
-        failed once CI ran it where no such var exists.
+        One variable is now enough. This call reaches both `briefing.paths` and
+        `enginelib.paths`, which used to be two implementations honouring two
+        different sets of env names: the alias pinned one of them while the other
+        fell back to CLAUDE_PROJECT_DIR/.conclave, so on a dev box the ambient
+        instance root stood in for the tmp one and the isolation only appeared to
+        hold — the test failed the first time CI ran it without that variable.
+        `briefing.paths` re-exports `enginelib.paths` now; pinning CONCLAVE_AI_ROOT
+        pins every reader.
         """
         from unittest.mock import patch
 
-        import briefing.paths as _paths
         from briefing.__main__ import main as briefing_main
-        with patch.object(_paths, "_REPO_ROOT_CACHE", None):
-            with patch.dict("os.environ", {
-                "VOIDPAY_AI_ROOT": str(kai_cto_tmp_root),
-                "CONCLAVE_AI_ROOT": str(kai_cto_tmp_root),
-            }):
-                rc = briefing_main(["kai-cto"])
+        with patch.dict("os.environ", {"CONCLAVE_AI_ROOT": str(kai_cto_tmp_root)}):
+            rc = briefing_main(["kai-cto"])
         assert rc == 0
         # Confirm output was written under the tmp root, not the live tree.
         out = kai_cto_tmp_root / "agent-memory" / "advisors" / "briefings" / "kai-cto.md"

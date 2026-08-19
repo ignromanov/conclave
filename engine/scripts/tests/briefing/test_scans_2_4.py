@@ -3,7 +3,7 @@
   - scans/code_repo.py: code-repo awareness (git log + newer docs/).
 
 HERMETICITY: no test reads or writes the live agent-memory/ tree.
-All fixtures are built under tmp_path.  The VOIDPAY_AI_ROOT env var
+All fixtures are built under tmp_path.  The CONCLAVE_AI_ROOT env var
 is used to isolate repo_root() calls in code_repo detection.
 """
 from __future__ import annotations

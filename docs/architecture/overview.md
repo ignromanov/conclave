@@ -255,7 +255,9 @@ Per-module depth (purpose, contracts, scripts, status) belongs to [`engine-modul
 
 **Key coupling blockers** identified in R1 research (must patch before Conclave runs independently):
 - `create-advisor.sh:7` + `register-advisor.sh:7` — hardcoded `PROJECT_ROOT=~/code/voidpay`
-- `briefing/paths.py` + `paths.sh` — `VOIDPAY_AI_ROOT` env var
+- ~~`briefing/paths.py` + `paths.sh` — `VOIDPAY_AI_ROOT` env var~~ — done: the alias is retired
+  (guard in `enginelib/paths.py`), `paths.sh` is gone with spec 099, and `briefing/paths.py`
+  re-exports the single resolver
 - `team.done:109` — absolute path hardcoded
 - `github-issues-protocol.md` — entire file is VoidPay-specific (owner/repo/board IDs)
 

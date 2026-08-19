@@ -27,9 +27,13 @@ def test_ai_root_sets_conclave_ai_root(ai_root):
     assert os.environ["CONCLAVE_AI_ROOT"] == str(ai_root)
 
 
-def test_ai_root_sets_voidpay_ai_root(ai_root):
-    """VOIDPAY_AI_ROOT is also set (roster.py fallback)."""
-    assert os.environ["VOIDPAY_AI_ROOT"] == str(ai_root)
+def test_ai_root_leaves_the_legacy_alias_unset(ai_root):
+    """The retired VOIDPAY_AI_ROOT alias must NOT be set alongside CONCLAVE_AI_ROOT.
+
+    It was, for years, pointed at the same tree — which made every DATA-root resolver
+    agree by construction and put the divergence between them out of the suite's reach.
+    """
+    assert "VOIDPAY_AI_ROOT" not in os.environ
 
 
 def test_ai_root_sets_conclave_engine_root(ai_root):
