@@ -126,6 +126,8 @@ def _build_parser() -> argparse.ArgumentParser:
     duty.register(sub)
     from engine.cmd import protocol
     protocol.register(sub)
+    from engine.cmd import test as test_cmd
+    test_cmd.register(sub)
     try:
         # Excluded from the eval fixture (evals/fixture.py EXCLUDED_PREFIXES) so a trial cannot
         # read the apparatus scoring it. A fixture build must therefore leave this import failing

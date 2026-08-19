@@ -92,6 +92,14 @@ jobs:
   # point: these tests assert that the path resolvers and the briefing scans agree with the layout
   # the engine's OWN scaffolder produces. A hand-written fixture tree would only assert that the
   # fixture matches the tests.
+  #
+  # The seed/assert/run/no-skips sequence used to live here as three shell steps, and nowhere
+  # else — so the one lane that catches instance-layout regressions could not be run before
+  # pushing. It found the single semantic change in a 26-file refactor that the author's own
+  # local suite had called clean (PR #144). It is now `engine test live`, and this job invokes
+  # that verb rather than restating it: the lane a developer runs is the same lane, not a
+  # second copy of it. engine/scripts/tests/test_live_lane_is_not_a_second_copy.py reddens if
+  # the steps grow back.
   live-instance:
     name: live lane · seeded instance
     runs-on: ubuntu-latest
@@ -106,40 +114,10 @@ jobs:
       - name: Install engine + dev extras
         run: pip install -e './engine/scripts[dev]'
 
-      - name: Scaffold a fresh instance
-        run: |
-          set -euo pipefail
-          SEED="$RUNNER_TEMP/seeded-project"
-          mkdir -p "$SEED"
-          CONCLAVE_INIT_NONINTERACTIVE=1 \
-          CLAUDE_PROJECT_DIR="$SEED" \
-          CONCLAVE_ENGINE_ROOT="$PWD/engine" \
-          ROSTER_NAME="CI Seeded Instance" \
-          PYTHONPATH="$PWD/engine/scripts" \
-            python3 engine/scripts/init/conclave_init.py < /dev/null
-          test -d "$SEED/.conclave" || { echo "init produced no DATA root at $SEED/.conclave"; exit 1; }
-          echo "CONCLAVE_LIVE_INSTANCE_ROOT=$SEED/.conclave" >> "$GITHUB_ENV"
-
-      # Same idiom as the ruff and mypy guards above. It is load-bearing here for a measured
-      # reason: a mistyped `-m` expression collects nothing and pytest exits 5, which fails the
-      # job — but the marked tests SKIP when CONCLAVE_LIVE_INSTANCE_ROOT is unset, and pytest
-      # exits 0 on an all-skipped run. A seeding step that quietly failed to export the variable
-      # would therefore report green on 30 tests that never executed, which is the exact defect
-      # this job exists to end.
-      - name: Assert the live lane has an instance to read
-        run: |
-          set -euo pipefail
-          test -n "${CONCLAVE_LIVE_INSTANCE_ROOT:-}" || { echo "CONCLAVE_LIVE_INSTANCE_ROOT unset"; exit 1; }
-          test -d "$CONCLAVE_LIVE_INSTANCE_ROOT" || { echo "not a directory: $CONCLAVE_LIVE_INSTANCE_ROOT"; exit 1; }
-
+      # Seeds a throwaway instance with the real scaffolder, points the marker's fixture at it,
+      # runs `-m live_instance`, and fails on a skip, an empty selection, or a red test. Each of
+      # those three has previously reported green: the marked tests skip when the root is unset
+      # and pytest exits 0 on an all-skipped run, and a mistyped marker collects nothing and
+      # exits 5. `enginelib/live_lane.py::verdict` separates them; the reason is printed.
       - name: Live lane
-        run: |
-          set -euo pipefail
-          python -m pytest -m live_instance -rs | tee live-lane.log
-          # A skip in this lane is a failure. Every one of these tests used to skip on a missing
-          # kai-cto artifact even when its gate let it through, so "ran and passed" and "declined
-          # to run" were indistinguishable in the log. They are not, now.
-          if grep -q '^SKIPPED' live-lane.log; then
-            echo "::error::a live_instance test skipped — the lane must run every test it selects"
-            exit 1
-          fi
+        run: python -m engine test live
