@@ -47,8 +47,13 @@ Do NOT skip this gate by editing the index directly.
 cd /path/to/.conclave
 uv run --project engine/scripts/feedback \
   python engine/scripts/feedback/feedback_triage.py \
-  --digest
+  --digest --status open
 ```
+
+`--status open` is the part that matters: bare `--digest` renders **every** index row
+regardless of status, which on 2026-08-18 was 265 rows against the 66 that needed
+classifying. `--json` emits the same rows machine-readably, with the `feedback_id` /
+`item_id` pairs Step 3 needs.
 
 `feedback_triage.py` always rebuilds the index first (defensive), then deduplicates
 index rows on the emission-time `fingerprint`. Duplicate items increment `hit_count`
@@ -148,7 +153,22 @@ PYTHONPATH=engine/scripts \
 
 ### Step 4 — Open GH Issues for accepted items
 
-For each `accepted` item, open a GitHub Issue in the DATA repo (`.conclave/`):
+**First, check for an existing issue.** Step 4 has no built-in guard, and filing blind is
+how conclave#47 duplicated conclave#46:
+
+```bash
+gh issue list --state open --limit 300 --json number,title,body,labels \
+  > /tmp/open-issues.json
+```
+
+Match each accepted item against that set **by root cause, read from the issue body** —
+not by title keywords, which collide constantly here (several distinct defects all read as
+"the rename" or "pytest"). The test: would fixing the linked issue, as that issue describes
+the work, also fix this item? If yes, bind the item to it with `--issue` and open nothing.
+If it only overlaps, open a new issue and cross-reference.
+
+Then, for each accepted item with no existing issue, open one in the DATA repo
+(`.conclave/`):
 
 ```bash
 gh issue create \
@@ -176,8 +196,21 @@ labels — passing one fails with `could not add label: <layer> not found`):
 | `<priority>` | `p1` if `severity` ∈ {high, critical}, else `p2` |
 | `advisor:<owner>` | owner from the Step-2 layer→owner table (e.g. `advisor:forge`) |
 
-Record the issue number in the `--set` call's owner note if useful
-(e.g. `--owner "forge:AI#N"`).
+**Bind the issue back to the item** — this is not optional bookkeeping:
+
+```bash
+uv run --project engine/scripts/feedback \
+  python engine/scripts/feedback/feedback_triage.py \
+  --set <feedback_id> <item_id> accepted --owner <owner> --issue <N>
+```
+
+`--issue` writes a real `issue:` field on the item (the older `--owner "forge:AI#N"`
+string hack is superseded — it put a number in a name field where nothing could read it).
+
+An item with no issue link is a defect the next session re-observes, re-emits, and
+triage re-accepts as new — the feedback index dedups on `fingerprint` within itself and
+knows nothing about GitHub. Measured 2026-08-18: at least 11 of 41 accepted items already
+had an open issue (#87, #89, #99, #111, #109, #116, #69, #34, #26, #45, #86).
 
 ### Step 5 — Archive resolved reviews
 
@@ -189,10 +222,23 @@ uv run --project engine/scripts/feedback \
   [--note "triage YYYY-MM-DD"]
 ```
 
-`feedback_archive.py` moves every review whose items are **all** `resolved` or
-`rejected` into `_archive/YYYY-MM.jsonl` (append-only), removes the source `.md`
-file, and appends a one-line finding to `agent-memory/hot.md` for cross-agent
-visibility. It refuses to re-archive an id already in any archive file.
+`feedback_archive.py` archives at **two granularities**, because the lifecycle unit is
+the item and the review is only its container:
+
+- **Whole review** — every item is `resolved`/`rejected`: the review row goes to
+  `_archive/YYYY-MM.jsonl` (append-only), the source `.md` is removed, and a one-line
+  finding lands in `agent-memory/hot.md` for cross-agent visibility.
+- **Partially closed review** — its closed items are archived individually as
+  `kind: item` rows. **Nothing is removed**: the item stays in the review verbatim and
+  only gains `archived_at`, which is what makes `feedback_index.py` drop it from the
+  working set. No hot.md line (a per-item append would evict the capped decisions list).
+
+Both refuse to re-archive: reviews key on `feedback_id`, items on
+`(feedback_id, item_id)`.
+
+Without the item granularity Step 5 archives nothing at all — a single lingering
+`accepted` item pins its whole review, and a multi-item review effectively never
+reaches all-closed. Measured 2026-08-18: 60 live reviews, 0 fully closed.
 
 An item's lifecycle state is always readable from the live review file
 (`ops/feedback/<date>/<agent>-<session>.md`) until archival. The archive is the

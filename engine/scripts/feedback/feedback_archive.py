@@ -37,13 +37,44 @@ if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from briefing.frontmatter_io import read as fm_read  # noqa: E402
+from briefing.frontmatter_io import read_commented  # noqa: E402
 from briefing.paths import repo_root  # noqa: E402
+from feedback.feedback_emit import write_preserving_header  # noqa: E402
 
 _DONE_STATUSES = {"resolved", "rejected"}
 
 
+def _load_archived_item_keys(arch_dir: Path) -> set[tuple[str, str]]:
+    """Return {(feedback_id, item_id)} already written as item-kind archive rows.
+
+    Item rows and review rows share the ledger, so the review-level guard (which keys on
+    feedback_id alone) must not see an item row as "this review is archived" — and an
+    item row must not be appended twice. Two guards, two key shapes.
+    """
+    keys: set[tuple[str, str]] = set()
+    if not arch_dir.exists():
+        return keys
+    for arch_file in sorted(arch_dir.glob("*.jsonl")):
+        with arch_file.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if row.get("kind") == "item" and row.get("item_id"):
+                    keys.add((row.get("feedback_id", ""), row["item_id"]))
+    return keys
+
+
 def _load_archived_ids(arch_dir: Path) -> set[str]:
-    """Collect all feedback_ids already present in any _archive/*.jsonl file."""
+    """Collect feedback_ids archived as WHOLE reviews in any _archive/*.jsonl file.
+
+    Item-kind rows are skipped: one archived item does not make its review archived, and
+    counting it would make the review-level guard refuse a review it never wrote.
+    """
     ids: set[str] = set()
     if not arch_dir.exists():
         return ids
@@ -54,6 +85,8 @@ def _load_archived_ids(arch_dir: Path) -> set[str]:
                 continue
             try:
                 row = json.loads(line)
+                if row.get("kind") == "item":
+                    continue
                 fid = row.get("feedback_id")
                 if fid:
                     ids.add(fid)
@@ -100,9 +133,11 @@ def main(argv: list[str] | None = None) -> int:
 
     # Build set of already-archived ids (dedup guard)
     archived_ids = _load_archived_ids(arch_dir)
+    archived_item_keys = _load_archived_item_keys(arch_dir)
 
     dirs = _review_dirs(fb_root)
     archived_count = 0
+    archived_items = 0
     errors: list[str] = []
 
     for d in dirs:
@@ -121,6 +156,61 @@ def main(argv: list[str] | None = None) -> int:
             items = meta.get("items", [])
 
             if not _all_done(items):
+                # Partial review: archive its already-closed items one by one. The archive
+                # unit has to be the ITEM because the lifecycle unit is — a review closes
+                # only when every one of its items does, which for a multi-item review
+                # effectively never happens, so a review-only archiver never fires at all.
+                #
+                # Nothing is removed here. The item stays in the review verbatim and only
+                # gains `archived_at`; the index skips marked items, which is what takes
+                # them out of the working set. Cutting items out of the source file is the
+                # variant this does NOT do — six reviews already lost their bodies that way.
+                arch_dir.mkdir(parents=True, exist_ok=True)
+                month = _archive_month(str(meta.get("created", "")))
+                arch_file = arch_dir / f"{month}.jsonl"
+                # Two sets, because the ledger append and the review stamp are separate
+                # writes: if the append lands and the stamp does not, the item is in the
+                # ledger with no `archived_at` and would otherwise sit in the index forever
+                # while the key guard blocks a retry. Stamp everything closed-and-unstamped;
+                # add to the ledger just what it does not already carry.
+                to_stamp = [it for it in items
+                            if it.get("status") in _DONE_STATUSES and not it.get("archived_at")]
+                to_append = [it for it in to_stamp
+                             if (feedback_id, it.get("id")) not in archived_item_keys]
+                if not to_stamp:
+                    continue
+                with arch_file.open("a", encoding="utf-8") as fh:
+                    for it in to_append:
+                        fh.write(json.dumps({
+                            "kind": "item",
+                            "feedback_id": feedback_id,
+                            "item_id": it.get("id"),
+                            "agent": meta.get("agent", ""),
+                            "agent_type": meta.get("agent_type", ""),
+                            "session_ref": meta.get("session_ref", ""),
+                            "created": str(meta.get("created", "")),
+                            "archived_at": datetime.now(UTC).isoformat(),
+                            "source_file": str(md_file.relative_to(root)),
+                            "item": it,
+                        }) + "\n")
+                        archived_item_keys.add((feedback_id, it.get("id")))
+                stamp = datetime.now(UTC).isoformat()
+                cmeta, cbody = read_commented(md_file)
+                marked = {it.get("id") for it in to_stamp}
+                for it in cmeta.get("items", []):
+                    if it.get("id") in marked:
+                        it["archived_at"] = stamp
+                write_preserving_header(md_file, cmeta, cbody)
+                archived_items += len(to_append)
+                # Deliberately no hot.md append here. The review-level path posts one
+                # finding per archived review; doing the same per item would push ~60 lines
+                # into a capped "Recent decisions" list that silently evicts its oldest
+                # entries — trading a real decision record for rows nothing reads.
+                if to_append:
+                    print(f"Archived {len(to_append)} item(s) of {feedback_id} "
+                          f"→ {arch_file.name}")
+                else:
+                    print(f"Stamped {len(to_stamp)} already-ledgered item(s) of {feedback_id}")
                 continue
 
             # Refuse re-archive
@@ -208,7 +298,14 @@ def main(argv: list[str] | None = None) -> int:
             print(err, file=sys.stderr)
         return 1
 
-    print(f"Done: {archived_count} review(s) archived.")
+    if archived_count or archived_items:
+        # Reconcile the cache: archived items are stamped out of the working set and an
+        # archived review's file is gone, but the index still holds their rows until a
+        # rebuild. Leaving it stale is how a closed item keeps costing every consumer.
+        from feedback_triage import _rebuild_index
+        _rebuild_index(root)
+
+    print(f"Done: {archived_count} review(s) archived, {archived_items} item(s) archived.")
     return 0
 
 
