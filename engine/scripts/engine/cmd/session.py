@@ -46,10 +46,12 @@ def _close(args) -> int:
 
 def _emission_gate(args) -> int:
     from enginelib.filing import emission_gate
+    from enginelib.paths import check_legacy_data_root_env
 
     args._runlog_verb = "session-emission-gate"
 
-    ai_root = os.environ.get("CONCLAVE_AI_ROOT") or os.environ.get("VOIDPAY_AI_ROOT")
+    check_legacy_data_root_env()
+    ai_root = os.environ.get("CONCLAVE_AI_ROOT")
     advisor = os.environ.get("ADVISOR_NAME")
     session_id = os.environ.get("SESSION_ID")
     today = os.environ.get("TODAY") or _date_cls.today().isoformat()

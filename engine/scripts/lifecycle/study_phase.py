@@ -57,13 +57,16 @@ if _SCRIPTS_DIR not in sys.path:
 from enginelib.advisors import (  # noqa: E402 (follows the sys.path bootstrap above)
     lifecycle_advisors,
 )
+from enginelib.paths import check_legacy_data_root_env  # noqa: E402
 
 
 def _data_root() -> Path:
-    """DATA root for advisor discovery (lifecycle env convention: CONCLAVE_AI_ROOT
-    or its VOIDPAY_AI_ROOT back-compat alias), else CWD."""
-    env = os.environ.get("CONCLAVE_AI_ROOT") or os.environ.get("VOIDPAY_AI_ROOT")
-    return Path(env) if env else Path.cwd()
+    """DATA root for advisor discovery (lifecycle env convention: CONCLAVE_AI_ROOT),
+    else CWD. Deliberately does not raise where `repo_root()` would: a study phase with
+    no advisors to discover is a no-op, not a failure."""
+    check_legacy_data_root_env()
+    env = os.environ.get("CONCLAVE_AI_ROOT")
+    return Path(env).resolve() if env else Path.cwd()
 
 
 def _engine_root() -> Path:

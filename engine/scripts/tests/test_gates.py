@@ -79,7 +79,8 @@ def _grep_hits(
 # 1. grep-gate.sh + grep-gate.bats — no VoidPay instance literals survive in engine source.
 # ---------------------------------------------------------------------------
 # Case-sensitive on purpose (audit 2026-06-17 R1): matches lowercase `voidpay` and camelCase
-# `VoidPay` (branding) but NOT all-caps `VOIDPAY_AI_ROOT` (the legit back-compat env alias).
+# `VoidPay` (branding) but NOT all-caps `VOIDPAY_AI_ROOT` — the retired env alias, which
+# survives in the engine only as the name the guard in enginelib/paths.py refuses.
 _GREP_GATE_PATTERN = re.compile(
     r"voidpay|VoidPay|ignromanov|/Users/ignat/code/voidpay|/Users/ignat/code/vl|vl/wiki"
 )

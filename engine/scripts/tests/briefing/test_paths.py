@@ -53,22 +53,15 @@ def test_repo_root_holds_ops_and_its_project_holds_claude():
 
 
 def test_repo_root_env_override(monkeypatch, tmp_path):
-    import briefing.paths as _paths
-
     # Create a fake root with ops/ and .claude/
     (tmp_path / "ops").mkdir()
     (tmp_path / ".claude").mkdir()
-    # Clear module cache so env override takes effect.
-    monkeypatch.setattr(_paths, "_REPO_ROOT_CACHE", None)
-    monkeypatch.setenv("VOIDPAY_AI_ROOT", str(tmp_path))
+    monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
     root = repo_root()
     assert root == tmp_path.resolve()
 
 
 def test_repo_root_plugin_mode_defaults_to_project_conclave(monkeypatch, tmp_path):
-    import briefing.paths as _paths
-
-    monkeypatch.setattr(_paths, "_REPO_ROOT_CACHE", None)
     monkeypatch.delenv("CONCLAVE_AI_ROOT", raising=False)
     monkeypatch.delenv("VOIDPAY_AI_ROOT", raising=False)
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
@@ -154,9 +147,23 @@ def test_git_cache_dir_exists():
 
 @_NEEDS_INSTANCE
 def test_run_log_dir_exists():
+    """The live instance carries agent-memory/run-log/.
+
+    Asserted against `agent_memory_dir()`, not `run_log_dir()`, because the autouse
+    `_contain_run_log` fixture points CONCLAVE_RUN_LOG_DIR at tmp for EVERY test (#53) —
+    so `run_log_dir()` reports the containment target, never the instance's directory,
+    and asking it about a live tree cannot answer.
+
+    This read the instance correctly until the two paths modules were collapsed: the
+    `briefing.paths` copy of `run_log_dir()` ignored CONCLAVE_RUN_LOG_DIR entirely, so
+    this test was reaching the live tree by way of a helper that was not honouring the
+    containment its own suite had set up. Nothing in briefing/ or feedback/ called it,
+    so no run-log write escaped — but the escape hatch was there.
+    """
     d = run_log_dir()
     assert isinstance(d, Path)
-    assert d.is_dir(), f"run-log/ not found: {d}"
+    assert (agent_memory_dir() / "run-log").is_dir(), (
+        f"run-log/ not found under {agent_memory_dir()}")
 
 
 def test_templates_dir_exists():

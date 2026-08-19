@@ -4,7 +4,7 @@ I/O-free core: no stdout, no CLI argument parsing, no process exit. CLI lives in
 
 Resolution order (preserved from lib/roster.py):
   1. ROSTER_FILE env var
-  2. CONCLAVE_AI_ROOT/VOIDPAY_AI_ROOT + /roster.yaml
+  2. CONCLAVE_AI_ROOT + /roster.yaml
   3. engine-relative fallback (../../roster.yaml from this file)
 
 Missing file or missing key → default (empty string).
@@ -13,12 +13,15 @@ import os
 
 from ruamel.yaml import YAML
 
+from enginelib.paths import check_legacy_data_root_env
+
 _MISSING = object()
 
 
 def _resolve(key: str) -> object:
     """Return the raw node at dotted `key`, or `_MISSING` if the file/key is absent."""
-    data_root = os.environ.get("CONCLAVE_AI_ROOT") or os.environ.get("VOIDPAY_AI_ROOT")
+    check_legacy_data_root_env()
+    data_root = os.environ.get("CONCLAVE_AI_ROOT")
     path = os.environ.get("ROSTER_FILE") or os.path.join(
         data_root or os.path.join(os.path.dirname(__file__), "..", ".."), "roster.yaml"
     )

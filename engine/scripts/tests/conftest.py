@@ -6,7 +6,7 @@ Replaces engine/scripts/tests/helpers/fixtures.bash. Parity contract:
 
 Extensions vs brief (matching fixtures.bash semantics):
   1. Real skills/ tree copied into fake engine root (forge templates resolve).
-  2. VOIDPAY_AI_ROOT set alongside CONCLAVE_AI_ROOT (roster.py fallback).
+  2. CONCLAVE_AI_ROOT alone — the retired VOIDPAY_AI_ROOT alias is scrubbed, never set.
   3. .ai/.claude/skills/team.forge/scripts/ dir created (scripts that walk DATA root).
   4. seed_advisors writes stubs in both engine/skills/ and ai/.claude/skills/.
   5. ai_root auto-seeds canonical roster: dev kai-cto nexus-ceo quorum shade-ciso spark-cmo.
@@ -137,7 +137,7 @@ def ai_root(tmp_path, monkeypatch):
     Layout::
 
         tmp_path/
-          .ai/                        ← CONCLAVE_AI_ROOT + VOIDPAY_AI_ROOT
+          .ai/                        ← CONCLAVE_AI_ROOT
             agent-memory/advisors/{briefings,sessions,decisions,mentions}/
             .claude/skills/team.forge/scripts/
             .claude/skills/team.<canonical_advisor>/SKILL.md  (×6 auto-seeded)
@@ -156,9 +156,13 @@ def ai_root(tmp_path, monkeypatch):
     #    mirrors: mkdir -p $FIXTURE_AI_ROOT/.claude/skills/team.forge/scripts
     (root / ".claude" / "skills" / "team.forge" / "scripts").mkdir(parents=True, exist_ok=True)
 
-    # 3. Env: DATA roots (VOIDPAY_AI_ROOT is the roster.py fallback)
+    # 3. Env: the DATA root. Only CONCLAVE_AI_ROOT — this fixture used to set the
+    #    retired VOIDPAY_AI_ROOT alias to the same tree as well, which made every
+    #    resolver agree by construction: the two repo_root() ports disagreed on five
+    #    counts and not one test could reach the disagreement (see
+    #    tests/test_root_resolver_agreement.py). A fixture that satisfies every
+    #    reader's private convention tests the fixture, not the readers.
     monkeypatch.setenv("CONCLAVE_AI_ROOT", str(root))
-    monkeypatch.setenv("VOIDPAY_AI_ROOT", str(root))
 
     # 4. Fake engine root — copy real skills/ so advisor SKILL.md stubs resolve
     #    mirrors: cp -r "$_real_engine_root/skills" "$FIXTURE_ENGINE_ROOT/"

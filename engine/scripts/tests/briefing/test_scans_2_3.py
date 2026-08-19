@@ -1,7 +1,7 @@
 """Tests for Task 2.3 enrichments — queue.py (#8/#14), mentions.py (#5), closeability.py (#13).
 
 HERMETICITY: all tests use tmp_path; no live agent-memory/ tree is read or written.
-The VOIDPAY_AI_ROOT env var is NOT needed here — ctx.repo_root is always tmp_path.
+The CONCLAVE_AI_ROOT env var is NOT needed here — ctx.repo_root is always tmp_path.
 """
 from __future__ import annotations
 

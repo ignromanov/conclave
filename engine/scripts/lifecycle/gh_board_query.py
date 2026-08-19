@@ -51,7 +51,7 @@ import roster  # noqa: E402  (lib/ is not a package; path-inserted above)
 # module's import of enginelib does not rely on import order against `import
 # roster` above.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from enginelib.paths import iter_advisor_skills  # noqa: E402
+from enginelib.paths import check_legacy_data_root_env, iter_advisor_skills  # noqa: E402
 
 # Engine lifecycle/forge skills are CODE, not advisors — exclude them when deriving
 # the advisor set from the DATA-root team.* registry.
@@ -64,9 +64,9 @@ _LIFECYCLE_SKILLS = {
 def _data_root() -> str:
     """DATA root (per-instance). Mirrors lib/roster._resolve: env override, else
     engine-relative fallback for the colocated back-compat case."""
+    check_legacy_data_root_env()
     return (
         os.environ.get("CONCLAVE_AI_ROOT")
-        or os.environ.get("VOIDPAY_AI_ROOT")
         or os.path.join(os.path.dirname(__file__), "..", "..", "..")
     )
 

@@ -1,7 +1,7 @@
 """Tests for briefing.scans 2.2 — spec_progress, roadmap, drift, project_digest.
 
 All tests are hermetic: no live agent-memory/ tree is read or written.
-tmp_path fixtures + VOIDPAY_AI_ROOT env override are used throughout.
+tmp_path fixtures + CONCLAVE_AI_ROOT env override are used throughout.
 """
 from __future__ import annotations
 

@@ -15,11 +15,16 @@ import pytest
 
 from enginelib import paths
 
+# Both roots are `.resolve()`d, so expectations are resolved too. That is not a test
+# nicety: on macOS /tmp and /var are symlinks, and the two resolvers' disagreement about
+# resolving made every path either produced differ from the other's by a /private prefix
+# — the same directory under two spellings, unequal under `==`.
+
 
 def test_data_root_defaults_to_project_conclave(monkeypatch):
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", "/tmp/proj")
     monkeypatch.delenv("CONCLAVE_AI_ROOT", raising=False)
-    assert paths.repo_root() == pathlib.Path("/tmp/proj/.conclave")
+    assert paths.repo_root() == pathlib.Path("/tmp/proj/.conclave").resolve()
 
 
 def test_engine_root_defaults_to_plugin_engine_subtree(monkeypatch):
@@ -27,13 +32,35 @@ def test_engine_root_defaults_to_plugin_engine_subtree(monkeypatch):
     # so ENGINE_ROOT is the engine subtree, NOT the bare plugin root.
     monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", "/tmp/plug")
     monkeypatch.delenv("CONCLAVE_ENGINE_ROOT", raising=False)
-    assert paths.engine_root() == pathlib.Path("/tmp/plug/engine")
+    assert paths.engine_root() == pathlib.Path("/tmp/plug/engine").resolve()
 
 
 def test_explicit_data_root_wins_over_plugin_default(monkeypatch):
     monkeypatch.setenv("CONCLAVE_AI_ROOT", "/explicit/data")
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", "/tmp/proj")
-    assert paths.repo_root() == pathlib.Path("/explicit/data")
+    assert paths.repo_root() == pathlib.Path("/explicit/data").resolve()
+
+
+def test_legacy_alias_alone_raises_rather_than_resolving(monkeypatch, tmp_path):
+    """The retired alias, set without CONCLAVE_AI_ROOT, must stop the process.
+
+    Six call sites read it and disagreed about whether it counted, so a process could
+    honour it in one subsystem and ignore it in the next — writing into one tree while
+    reading from another, with every individual call succeeding.
+    """
+    monkeypatch.delenv("CONCLAVE_AI_ROOT", raising=False)
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    monkeypatch.setenv("VOIDPAY_AI_ROOT", str(tmp_path))
+    with pytest.raises(RuntimeError, match="VOIDPAY_AI_ROOT is set but CONCLAVE_AI_ROOT"):
+        paths.repo_root()
+
+
+def test_legacy_alias_is_inert_beside_the_current_name(monkeypatch):
+    """Set alongside CONCLAVE_AI_ROOT it is ignored, not an error — which is what the
+    test fixtures did for years and what an operator mid-migration will have."""
+    monkeypatch.setenv("CONCLAVE_AI_ROOT", "/explicit/data")
+    monkeypatch.setenv("VOIDPAY_AI_ROOT", "/some/other/tree")
+    assert paths.repo_root() == pathlib.Path("/explicit/data").resolve()
 
 
 def test_no_claude_env_leaves_data_root_to_walk(tmp_path, monkeypatch):

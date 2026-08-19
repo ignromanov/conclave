@@ -135,8 +135,6 @@ class TestRenderBuild:
     @pytest.fixture(autouse=True)
     def _fake_instance_root(self, tmp_path, monkeypatch):
         """Set CONCLAVE_AI_ROOT=tmp_path so hot_md_path() resolves without a live instance."""
-        import briefing.paths as _paths
-        monkeypatch.setattr(_paths, "_REPO_ROOT_CACHE", None)
         monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
 
     def test_produces_output_file(self, tmp_path):

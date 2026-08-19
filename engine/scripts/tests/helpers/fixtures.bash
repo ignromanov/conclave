@@ -12,7 +12,7 @@ fixture_setup() {
   mkdir -p "$FIXTURE_AI_ROOT/agent-memory/advisors"/{briefings,sessions,decisions,mentions}
   mkdir -p "$FIXTURE_AI_ROOT/.claude/skills/team.forge/scripts"
   export FIXTURE_TMP FIXTURE_AI_ROOT FIXTURE_ENGINE_ROOT
-  export VOIDPAY_AI_ROOT="$FIXTURE_AI_ROOT"
+  export CONCLAVE_AI_ROOT="$FIXTURE_AI_ROOT"
   export CONCLAVE_ENGINE_ROOT="$FIXTURE_ENGINE_ROOT"
   # Seed the canonical advisor inventory so writer scripts that validate
   # advisor names (mention.sh, file-handoff.sh, etc.) accept these in tests.

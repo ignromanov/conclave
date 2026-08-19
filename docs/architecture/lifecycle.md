@@ -270,8 +270,8 @@ All scripts that assume `VOIDPAY_AI_ROOT` or an absolute path to `.ai/` must be 
 
 | File | Current hardcoding | Required change |
 |------|--------------------|-----------------|
-| `briefing/paths.py` | `VOIDPAY_AI_ROOT` env | `CONCLAVE_ROOT` env |
-| `paths.sh` | `VOIDPAY_AI_ROOT` | `ENGINE_ROOT` variable (`".ai/"` for VoidPay, `""` for Conclave) |
+| ~~`briefing/paths.py`~~ | `VOIDPAY_AI_ROOT` env | ✅ done — re-exports `enginelib/paths.py`, which reads `CONCLAVE_AI_ROOT` only |
+| ~~`paths.sh`~~ | `VOIDPAY_AI_ROOT` | ✅ n/a — the bash layer was retired by spec 099 |
 | `team.done/SKILL.md:109` | absolute path `~/code/voidpay/.ai` | `${CONCLAVE_ROOT}` |
 | `create-advisor.sh:7` + `register-advisor.sh:7` | `PROJECT_ROOT=~/code/voidpay` | `${CONCLAVE_ROOT:-...}` |
 | `session_init.py` | `briefing-build.sh` path | relative from `ENGINE_ROOT` |
