@@ -8,6 +8,7 @@ created: 2026-05-07
 ---
 
 !`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/output-formatting.md`
+!`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/output-discipline.md`
 
 # /conclave:retro — Lightweight retrospective
 
@@ -59,7 +60,7 @@ Action items optionally promoted to GH Issues via existing `inbox-to-gh.sh` scri
 
 ## Chat-output (retro confirmation)
 
-After writing the .md artifact, render a v3.2 ▍-block confirmation per `${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/output-formatting.md` (the .md file format above is the persisted artifact; this is the chat acknowledgement). Header has no single speaker — use `participants` instead of persona-emoji.
+After writing the .md artifact, render the ▍-block confirmation per `${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/output-formatting.md` (the .md file format above is the persisted artifact; this is the chat acknowledgement). Header has no single speaker — use `participants` instead of persona-emoji.
 
 ▍ **participants · retro · {date}**
 ▍

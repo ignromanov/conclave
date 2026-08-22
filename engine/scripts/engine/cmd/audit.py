@@ -202,6 +202,27 @@ def _routing_targets(args: argparse.Namespace) -> int:
     return _emit(routing_targets.run(surfaces, roots, roster))
 
 
+def _output_discipline(args: argparse.Namespace) -> int:
+    from enginelib.audit import output_discipline
+
+    root = Path(args.transcripts_dir) if args.transcripts_dir else _default_transcripts()
+    paths = sorted(root.glob("*.jsonl")) if root.is_dir() else []
+    return _emit(output_discipline.run(paths))
+
+
+def _default_transcripts() -> Path:
+    """The harness's own transcript home for this project (102 §2.1).
+
+    The sanitized-cwd transform is undocumented and has already changed once, so an
+    absent directory yields zero paths and `run` reports `unrunnable` — never a
+    guess, and never a clean result from a directory that was not there.
+    """
+    from enginelib.paths import project_root
+
+    slug = "".join(c if c.isalnum() else "-" for c in str(project_root()))
+    return Path.home() / ".claude" / "projects" / slug
+
+
 def _skills(args: argparse.Namespace) -> int:
     from datetime import date
 
@@ -241,6 +262,7 @@ _AUDITS: dict[str, Callable[[argparse.Namespace], int]] = {
     "skills": _skills,
     "versions": _versions,
     "routing-targets": _routing_targets,
+    "output-discipline": _output_discipline,
 }
 
 
@@ -253,6 +275,13 @@ def register(subparsers: argparse._SubParsersAction) -> None:  # type: ignore[ty
         action="append",
         metavar="DIR",
         help="Override agents dir (repeatable; used by scope-collision).",
+    )
+    p.add_argument(
+        "--transcripts-dir",
+        dest="transcripts_dir",
+        default=None,
+        metavar="DIR",
+        help="Override transcript dir (used by output-discipline).",
     )
     p.add_argument(
         "--arch",
