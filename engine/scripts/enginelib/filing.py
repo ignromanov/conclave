@@ -412,6 +412,17 @@ def close_session(opts: CloseSessionOpts) -> str:
     except Exception:
         _log.warning("hot.append open-threads failed unexpectedly", exc_info=True)
 
+    # 15b. Drain this advisor's Now entry — the subtraction half of #149. A session
+    # that closes without ever having been registered removes 0 rows, which is not
+    # an error: /conclave:done is reachable without session_init having run.
+    try:
+        from enginelib.memory import hot
+        hot.remove("now", opts.advisor, hot.SESSION_OPEN)
+    except (ImportError, OSError):
+        _log.debug("hot.remove now skipped (expected)", exc_info=True)
+    except Exception:
+        _log.warning("hot.remove now failed unexpectedly", exc_info=True)
+
     # 16. File handoff in-process if requested
     if opts.handoff_file:
         file_handoff(HandoffOpts(

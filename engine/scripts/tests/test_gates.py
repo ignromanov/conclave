@@ -621,3 +621,146 @@ def test_shadow_detector_separates_regular_from_namespace_package(tmp_path):
 
     hits = _shadowing_packages(root)
     assert hits == ["regdir/ shadows regdir.py"], hits
+
+
+# --- hot.md section producers (#149) ---------------------------------------
+#
+# enginelib/memory/hot.py declares its sections in _SECTION_MAP. A section that is
+# declared but that no production code ever writes to renders its seed placeholder
+# forever: "now" was declared on 2026-07-06 and had zero producers 47 days later,
+# and nothing failed. append()'s own guard does not help — it validates that a
+# section name is *known*, an assertion equally true whether or not anyone passes it.
+#
+# AST, not grep: the section names appear in this gate's own comments, in hot.py's
+# docstrings and in the CLI's --section help string, none of which write anything.
+
+_HOT_MODULE = SCRIPTS_ROOT / "enginelib" / "memory" / "hot.py"
+# append() only. remove() deliberately does NOT count: a section that is only ever
+# subtracted from is still a section nothing ever puts content into. The first draft
+# of this gate accepted both, and a mutation that deleted Now's append still passed
+# because Now's remove remained — green while the defect was reinstated.
+_PRODUCER_METHODS = frozenset({"append"})
+
+
+def _declared_hot_sections(hot_module: pathlib.Path) -> set[str]:
+    """Section keys from hot.py's _SECTION_MAP literal."""
+    tree = ast.parse(hot_module.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+        if "_SECTION_MAP" not in targets or not isinstance(node.value, ast.Dict):
+            continue
+        return {
+            k.value for k in node.value.keys
+            if isinstance(k, ast.Constant) and isinstance(k.value, str)
+        }
+    raise AssertionError(f"_SECTION_MAP dict literal not found in {hot_module}")
+
+
+def _hot_aliases(tree: ast.AST) -> set[str]:
+    """Local names bound to enginelib.memory.hot in one module.
+
+    Resolved rather than assumed: `from enginelib.memory import hot as _hot` was the
+    real spelling in session_init.py, and a gate hardcoded to the name `hot` reports
+    a clean tree whether or not a producer exists — false-clean, the failure mode
+    this whole gate is here to prevent.
+    """
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "enginelib.memory":
+            names |= {a.asname or a.name for a in node.names if a.name == "hot"}
+        elif isinstance(node, ast.Import):
+            for a in node.names:
+                if a.name == "enginelib.memory.hot" and a.asname:
+                    names.add(a.asname)
+    return names
+
+
+def _hot_sections_with_producers(scripts_root: pathlib.Path) -> set[str]:
+    """Section names passed as a literal first arg to hot.append/hot.remove.
+
+    Production code only: tests are excluded, because a section written solely by
+    its own test is exactly the dead branch this gate exists to catch.
+    """
+    written: set[str] = set()
+    for path in sorted(scripts_root.rglob("*.py")):
+        parts = path.relative_to(scripts_root).parts
+        if "tests" in parts or "__pycache__" in parts or path == _HOT_MODULE:
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError):  # pragma: no cover - defensive
+            continue
+        aliases = _hot_aliases(tree)
+        if not aliases:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            func = node.func
+            if not isinstance(func, ast.Attribute) or func.attr not in _PRODUCER_METHODS:
+                continue
+            if not isinstance(func.value, ast.Name) or func.value.id not in aliases:
+                continue
+            first = node.args[0]
+            if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                written.add(first.value)
+    return written
+
+
+def test_every_declared_hot_section_has_a_producer():
+    """A section nobody writes to is a placeholder that never goes away (#149)."""
+    declared = _declared_hot_sections(_HOT_MODULE)
+    written = _hot_sections_with_producers(SCRIPTS_ROOT)
+    orphans = sorted(declared - written)
+
+    assert not orphans, (
+        "hot-section gate FAIL — declared in _SECTION_MAP but written by no production "
+        f"call to hot.append()/hot.remove(): {orphans}\n"
+        "Either give the section a producer, or drop it from _SECTION_MAP, _TEMPLATE "
+        "and the `engine memory hot-append --section` help text."
+    )
+
+
+def test_hot_section_gate_catches_a_section_with_no_producer(tmp_path):
+    """The detector, detected.
+
+    A gate that has only ever run against a tree it passes on proves nothing about
+    whether it can fail. This plants both shapes — one declared section written by a
+    real call, one declared and written by nobody — and requires exactly the orphan
+    back. The decoy matters as much as the orphan: a gate that reported both would be
+    just as useless as one that reported neither.
+    """
+    (tmp_path / "enginelib" / "memory").mkdir(parents=True)
+    (tmp_path / "enginelib" / "memory" / "hot.py").write_text(
+        '_SECTION_MAP = {"written": "## Written", "orphan": "## Orphan"}\n',
+        encoding="utf-8",
+    )
+    # Deliberately aliased: the gate must resolve the binding, not match on spelling.
+    (tmp_path / "producer.py").write_text(
+        'from enginelib.memory import hot as _hot\n'
+        '_hot.append("written", "someone", "a line")\n'
+        '# _hot.append("orphan", ...) — a comment is not a producer\n'
+        '"""nor is a docstring mentioning orphan"""\n',
+        encoding="utf-8",
+    )
+    # An unrelated object with the same method name must not register as a producer.
+    (tmp_path / "decoy.py").write_text(
+        'items = []\n'
+        'items.append("orphan")\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_orphan.py").write_text(
+        'from enginelib.memory import hot\n'
+        'hot.append("orphan", "someone", "a line")\n',
+        encoding="utf-8",
+    )
+
+    declared = _declared_hot_sections(tmp_path / "enginelib" / "memory" / "hot.py")
+    written = _hot_sections_with_producers(tmp_path)
+
+    assert declared == {"written", "orphan"}
+    assert written == {"written"}, "a test-only call must not count as a producer"
+    assert sorted(declared - written) == ["orphan"]

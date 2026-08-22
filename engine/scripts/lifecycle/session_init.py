@@ -581,10 +581,21 @@ def main(argv: list[str] | None = None) -> int:
     # Best-effort: never block session start. Explicit path avoids the repo_root
     # divergence between session_init and enginelib.paths.
     try:
-        from enginelib.memory import hot as _hot
-        _hot.init(hot_path=root / "agent-memory" / "hot.md")
+        from enginelib.memory import hot
+        hot.init(hot_path=root / "agent-memory" / "hot.md")
     except OSError as exc:
         print(f"  hot: skeleton seed skipped ({exc})", file=sys.stderr)
+
+    # Register this session in hot.md's Now — the section's only producer (#149).
+    # Remove-then-append rather than a bare append: re-running session-init for an
+    # advisor that is already open must refresh its line, not stack a second one.
+    # Best-effort, exactly like the seed above: Now is a convenience, never a gate.
+    try:
+        from enginelib.memory import hot
+        hot.remove("now", advisor, hot.SESSION_OPEN)
+        hot.append("now", advisor, hot.SESSION_OPEN)
+    except (OSError, ValueError) as exc:
+        print(f"  hot: Now registration skipped ({exc})", file=sys.stderr)
 
     step1_code, lines = _advisor_summary(advisor, root)
     for line in lines:
