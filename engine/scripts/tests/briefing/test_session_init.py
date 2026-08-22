@@ -275,6 +275,55 @@ class TestMainArgValidation:
         for header in ("## Now", "## Recent decisions", "## Watch"):
             assert header in text
 
+    def _now_bullets(self, hot: Path) -> list[str]:
+        out, inside = [], False
+        for line in hot.read_text(encoding="utf-8").split("\n"):
+            if line == "## Now":
+                inside = True
+                continue
+            if inside and line.startswith("## "):
+                break
+            if inside and line.startswith("- "):
+                out.append(line)
+        return out
+
+    def _run(self, root: Path, monkeypatch, advisor: str = "privacy-trust") -> None:
+        monkeypatch.setenv("CONCLAVE_AI_ROOT", str(root))
+        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root))
+        monkeypatch.setenv("LOCK_DIR", str(root / "locks"))
+        monkeypatch.setattr(session_init, "_step1_load_briefing", lambda a, r: (0, []))
+        monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: [])
+        monkeypatch.setattr(session_init, "_step1c_reflexion", lambda a, r: [])
+        monkeypatch.setattr(session_init, "_scan_overlays", lambda a, r: [])
+        monkeypatch.setattr(session_init, "_step_cadence_guard", lambda: [])
+        session_init.main(["--advisor", advisor])
+
+    def test_registers_the_session_in_now(self, tmp_path, monkeypatch):
+        """#149: Now's only producer. The structural gate proves the call is written;
+        only running main() proves it resolves the same hot.md the seed step wrote —
+        append() resolves its own path via enginelib.paths, while the seed above is
+        handed an explicit one from session_init's deliberately divergent _repo_root.
+        """
+        root = _make_root(tmp_path)
+        _write(root / ".claude" / "agents" / "privacy-trust.md", "# advisor\n")
+        self._run(root, monkeypatch)
+
+        bullets = self._now_bullets(root / "agent-memory" / "hot.md")
+        assert len(bullets) == 1, f"Now should hold exactly this session: {bullets}"
+        assert "privacy-trust" in bullets[0]
+        assert "waiting for first append" not in bullets[0]
+
+    def test_reopening_refreshes_rather_than_stacks(self, tmp_path, monkeypatch):
+        """Re-running session-init for an already-open advisor must not add a second
+        line — Now is a set of open sessions, not a log of every start."""
+        root = _make_root(tmp_path)
+        _write(root / ".claude" / "agents" / "privacy-trust.md", "# advisor\n")
+        self._run(root, monkeypatch)
+        self._run(root, monkeypatch)
+
+        bullets = self._now_bullets(root / "agent-memory" / "hot.md")
+        assert len(bullets) == 1, f"re-init stacked a duplicate: {bullets}"
+
 
 # ---------------------------------------------------------------------------
 # Resolved-findings surfacing (G2) — must track the #49b bullet format

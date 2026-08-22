@@ -295,7 +295,7 @@ are the cache; sessions/decisions/GH issues are the truth.
 |-------|---------|-----------|-----------|
 | Source of truth | `agent-memory/advisors/{sessions,decisions,mentions}/` + GH issues | Scripts via `close-session.sh`, `file-decision.sh`, `mention.sh` | Append-only, never overwritten |
 | Cache (briefings) | `agent-memory/advisors/briefings/<advisor>.md` | `regen.py` | Rebuilt every session; written only when content actually differs (build-and-compare in `session_init.py`) |
-| Cross-agent live | `agent-memory/hot.md` (≤500 words) | Lifecycle scripts; reconciled by Quorum/Forge | Updated per session; three sections: Now / Recent decisions / Watch |
+| Cross-agent live | `agent-memory/hot.md` (≤500 words) | Lifecycle scripts; reconciled by Quorum/Forge | Updated per session; four sections: Now / Open threads / Recent decisions / Watch. All append-only except Now, which drains as sessions close |
 
 Briefing structure: eager layer ≤6000 chars (current focus, open issues, recent decisions,
 personality, reflexion buffer) + archival sections (full session history, full decision log).
