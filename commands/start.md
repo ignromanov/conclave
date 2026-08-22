@@ -277,7 +277,18 @@ Then apply **Question shape** (above) to the approval gate:
 1. **Prose first** — name the tier you picked (Quick / Feature / Epic) and *why* (which signal from §2 fired), the skill chain you're about to load and what each skill in it costs (rough context budget / time-on-task), and the first concrete action you'd take. State explicit alternatives if the tier-pick was borderline ("could also run as Feature if you want spec.md upfront").
 2. **`AskUserQuestion`** — labels: "Proceed" / "Switch tier" / "Different skill chain" / "Abort" (≤ 5 words). Descriptions ≤ 1 sentence.
 
-For Quick tier — render a 3-line minimal version (just `focus`, `queue`, `next →` inside the same ▍-block) and skip the Ask gate unless the request is ambiguous; default to proceed.
+For Quick tier the render above is **mid-run**, not terminal: the Ask gate is skipped and the work
+proceeds inside the same operator turn, so a block here plus the work's own report would be two
+terminal objects for one run — `output-discipline.md` R1. Do not render a start-summary for Quick
+tier.
+
+Carry `focus` and `queue` into slot 2 (`required / assumed`) of the run's terminal block, and the
+first concrete action into slot 5. Nothing is lost: the same three facts arrive once, attached to
+the result they framed, instead of ahead of it.
+
+If the request is ambiguous, the run does not proceed on a guess — that is R7 case 1, so ask with
+`AskUserQuestion` and end the run there. The block above stays exactly as written for Feature and
+Epic, where the Ask gate that follows it makes it terminal under R8.
 
 ## Overlay loading
 

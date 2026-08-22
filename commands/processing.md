@@ -122,9 +122,23 @@ When a routing decision is non-obvious, log it:
 "Routed to [skill chain] because [reason]. Tier: [tier]."
 This helps /conclave:done understand what was attempted.
 
-## Routing Result (chat output)
+## Routing Result (carried into the terminal block, not rendered here)
 
-After mode + type + tier detected and skill chain identified, render the routing summary as the ▍-block per `output-formatting.md` (auto-imported). This makes the routing visible and reviewable — not a silent decision.
+After mode + type + tier are detected and the skill chain is identified, the routing is a
+**decision**, and under `output-discipline.md` R3 a decision is not streamed mid-run. Do not render
+a routing block here.
+
+Carry the routing forward and report it in the run's terminal ▍-block as slot 2 (`required /
+assumed`) — the mode, type, tier and chain are exactly the assumptions the work proceeded under, and
+that slot exists to make them reviewable. The visibility the old instruction wanted is preserved;
+what changes is that it arrives once, at the point the operator can still act on it, instead of
+scrolling away mid-run.
+
+If the routing is genuinely uncertain and the wrong choice would waste the run, that is R7 case 1 —
+a decision you are not authorised to make — so ask with `AskUserQuestion` and end the run. Do not
+narrate the doubt.
+
+The field set below is the shape slot 2 carries; it is no longer a block of its own.
 
 ▍ **{persona-emoji} {advisor} · routing · {date}**
 ▍
@@ -137,4 +151,4 @@ After mode + type + tier detected and skill chain identified, render the routing
 ▍
 ▍ **next →** {first action from chosen workflow}
 
-Quick Answer mode skips `type`/`tier` (no workflow). Meeting / Execution modes render only `mode` + the routing target.
+Quick Answer mode skips `type`/`tier` (no workflow). Meeting / Execution modes carry only `mode` + the routing target into the terminal block's slot 2.
