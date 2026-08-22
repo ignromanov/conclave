@@ -11,7 +11,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]  # repo root
 CONTRACTS = [
     "advisor-anti-patterns", "agent-data-policy", "autonomous-pipeline",
     "decision-framework", "executor-protocol", "feedback-protocol",
-    "first-launch-protocol", "github-issues-protocol", "output-formatting",
+    "first-launch-protocol", "github-issues-protocol", "output-discipline",
+    "output-formatting",
     "persona-voice", "quality-loop", "question-shape", "session-lifecycle",
     "spawned-advisor-brief", "spec-051-invariants",
 ]
@@ -78,3 +79,17 @@ def test_commands_inject_contracts_from_plugin_root():
                 injected = True
     assert not stray, f"stray @-import contract lines remain: {stray}"
     assert injected, "no command injects a contract via !`cat ${CLAUDE_PLUGIN_ROOT}/...`"
+
+
+def test_output_discipline_is_loaded_by_every_lifecycle_command():
+    """108 Constraint 3 — a protocol nothing loads is a document.
+
+    The registry already holds seven files nothing imports; this test exists so the
+    eighth is not added to that pile.
+    """
+    ref = "skills/advisor-contracts/references/output-discipline.md"
+    missing = [
+        name for name in ("start", "processing", "done", "handoff", "retro")
+        if ref not in (ROOT / "commands" / f"{name}.md").read_text(encoding="utf-8")
+    ]
+    assert not missing, f"commands not importing the contract: {missing}"

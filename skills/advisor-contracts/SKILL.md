@@ -31,6 +31,7 @@ loaded by path when needed.
 | `decision-framework.md` | confidence-graduated authority |
 | `quality-loop.md` | the per-task quality gate |
 | `feedback-protocol.md` | how advisors emit feedback into the notebook |
+| `output-discipline.md` | when an advisor may speak, and with what authority |
 | `output-formatting.md` | the ▍-framed output instantiation |
 | `question-shape.md` | the prose-context + condensed-Ask pattern |
 | `advisor-anti-patterns.md` | failure modes to avoid |

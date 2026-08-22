@@ -8,6 +8,7 @@ created: 2026-05-07
 ---
 
 !`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/output-formatting.md`
+!`cat ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/output-discipline.md`
 
 # /conclave:retro — Lightweight retrospective
 
