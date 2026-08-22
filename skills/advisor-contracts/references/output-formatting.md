@@ -1,9 +1,9 @@
 ---
 type: contract
 name: output-formatting
-schema_version: 3.4
+schema_version: 4.0
 applies_to: [team.done, team.start, team.processing, team.handoff, team.retro, team.forge, all advisor SKILL.md]
-supersedes: schema_version 1 (Render-B table + 27-glyph palette, 2026-05-18 5e63a34), schema_version 3 (bare-text minimalism — sections блекли), schema_version 3.1 (persona emoji вместе с decorative были излишне удалены), schema_version 3.2 (не покрывал fan-out / batch lists — advisor fan-out скатился к box-drawing)
+supersedes: schema_version 1 (Render-B table + 27-glyph palette, 2026-05-18 5e63a34), schema_version 3 (bare-text minimalism — sections блекли), schema_version 3.1 (persona emoji вместе с decorative были излишне удалены), schema_version 3.2 (не покрывал fan-out / batch lists — advisor fan-out скатился к box-drawing), schema_version 3.4 (render grammar only — carried no slot contract, so a report could render perfectly and still omit its evidence)
 stages: [clarify, design, implement, verify, deliver]
 tiers: [quick, work]
 task_types: [dev, content, research, review, advisory]
@@ -204,6 +204,39 @@ stand out from ▍-wrapped frame. Identity continuity preserved without per-row 
   the row with a brief reason and ⚠.
 - LLM impressions ("session went well") may NEVER cause a row to be omitted on the optimistic side.
 
+## Report slots (spec 113 §6)
+
+The ▍-render grammar above says how a block looks. This says what must be in it.
+
+**Lead with requirements and assumptions, never with a narrative of what you did.** This is
+counter-intuitive and it is measured: a process-oriented presentation of an agent's work had the
+*lowest* error-finding rate of the formats tested, and when readers missed an error it *raised*
+their confidence. A tidy story of what happened is the worst tested format and the one an
+unconstrained model produces by default.
+
+| # | Slot | Binding |
+|---|---|---|
+| 1 | **verdict** — one line + a token from `done · done-with-caveats · blocked · failed` | MUST |
+| 2 | **required / assumed** — what was asked, what you assumed to proceed | MUST |
+| 3 | **changed** — files, commands, resources. Facts, not adjectives | MUST |
+| 4 | **evidence** — test output, measurements, quotations with locations | MUST |
+| 5 | **actions** — numbered, owner-attributed, independently actionable | MUST when non-empty |
+| 6 | **not checked** — paths not executed, cases not covered, assumptions unverified | MUST |
+| 7 | **confidence** — from a fixed scale, plus what would change the verdict | SHOULD |
+| 8 | **where** — paths, IDs, branches. The re-entry points | MUST |
+
+**Slot 6 is the hardest to drop, not the easiest.** It is the slot compression deletes first and
+the one with the strongest evidence behind it: omission of observed detail, not invention, is the
+dominant failure of summarization. If a length budget bites, it bites slots 2 and 3. It may never
+bite 4 or 6.
+
+**Do not perform effort on a bad outcome.** On success keep the effort summary brief and let the
+result carry it. On partial failure or low confidence, lead with what is unknown. Showing effort
+alongside an unfavourable outcome rates *worse* than having shown nothing.
+
+**The report is not the only copy.** Slot 8 carries a stable path. A block that exists only in
+scrollback fails as a record.
+
 ## Anti-patterns
 
 | Pattern | Why bad |
@@ -341,7 +374,8 @@ identifiers, exception-only severity (⚠/✗), zero-state rows omitted, persona
 
 For artifacts written to filesystem (handoff `.md` files, retro `.md` files, session.md
 frontmatter) — the file format is separate from the chat output. Files use frontmatter +
-markdown headings as they always have; chat blocks use v3.2.
+markdown headings as they always have; chat blocks use this contract — the version is in
+frontmatter and the Changelog, never cited inline, so a reader cannot pick up a stale one.
 
 ## See also
 
@@ -360,6 +394,7 @@ markdown headings as they always have; chat blocks use v3.2.
 
 ## Changelog
 
+- **v4.0** (2026-08-21) — adds the slot contract (spec 113 §6). v3.4 governed the render and nothing else, so a report could render perfectly and still omit its evidence. Slots 4 and 6 are non-negotiable; the ordering leads with requirements and assumptions rather than with process, which is the measured direction. Render grammar unchanged.
 - **v3.4** (2026-05-20) — forbid HTML entities (`&nbsp;`, `&mdash;`) for ▍-row column alignment after advisors' 2026-05-18 Session Summaries rendered literal `&nbsp;` strings in chat. Adds anti-pattern row + explicit ASCII-spaces-only rule to §3. Closes fb-1779131089-1c86b3.
 - **v3.3** (2026-05-18) — add List rendering section (Patterns A/B/C/D) after an advisor's fan-out output reverted to a box-drawing table for 8 ops. Pattern B (grouped count + inline detail) is default; C (chevron) is fallback for long lists; D (numbered) reserved for ordered pipelines. Box-drawing tables explicitly forbidden in anti-patterns. Per-skill table gains `fan-out` row for batch-op summaries.
 - **v3.2** (2026-05-18 a24ff9f) — restore persona emoji as identity-anchors after the operator's "эмоджи адвайзеров, исполнителей и других агентов системы мы можем показывать, потому что они как раз создают визуальную связь" feedback. Header now leads with speaker emoji; cross-references to other agents keep their emoji in value cells. Per-row decorative emoji still forbidden.
