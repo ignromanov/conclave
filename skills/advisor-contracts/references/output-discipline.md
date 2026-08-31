@@ -51,6 +51,11 @@ You may not emit conclusions.
 The distinction is not stylistic. An intermediate conclusion you later abandon still shapes what
 the reader believes, and the reader cannot tell a live conclusion from a discarded one.
 
+**Scope**: R3 governs the activity lane *between* actions. The terminal report — and a state
+report in particular (`state-report.md`), which is conclusions by design — is R1's terminal
+object and outside R3 entirely. R3 never licenses suppressing a conclusion from the report the
+operator asked for.
+
 In the CLI the activity lane is the tool-call chrome the harness already draws. You do not need to
 narrate it. Writing it out in prose is duplication, not transparency.
 
@@ -95,4 +100,5 @@ narration this contract removes.
 ## See also
 
 - `output-formatting.md` — the ▍-render grammar and the report's slots
+- `state-report.md` — the inventory-surface contract; R1/R7/R8 bind there too, R3 does not
 - `.conclave/ops/specs/113-output-discipline-protocol/spec.md` — the measurements behind each rule

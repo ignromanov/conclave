@@ -1,14 +1,14 @@
 ---
 type: contract
 name: output-formatting
-schema_version: 4.0
+schema_version: 4.1
 applies_to: [team.done, team.start, team.processing, team.handoff, team.retro, team.forge, all advisor SKILL.md]
 supersedes: schema_version 1 (Render-B table + 27-glyph palette, 2026-05-18 5e63a34), schema_version 3 (bare-text minimalism — sections блекли), schema_version 3.1 (persona emoji вместе с decorative были излишне удалены), schema_version 3.2 (не покрывал fan-out / batch lists — advisor fan-out скатился к box-drawing), schema_version 3.4 (render grammar only — carried no slot contract, so a report could render perfectly and still omit its evidence)
 stages: [clarify, design, implement, verify, deliver]
 tiers: [quick, work]
 task_types: [dev, content, research, review, advisory]
 binding: required
-last_reviewed: "2026-08-12"
+last_reviewed: "2026-08-31"
 ---
 
 # Output Formatting Contract — Session Summary (▍-framed minimalism)
@@ -56,10 +56,15 @@ cross-reference to that agent.
 
 ## Rules
 
-### 1. Silence on success, signal on exception
+### 1. Silence on success, signal on exception — session-summary scope only
 
 A row is shown ONLY when it has content. Severity glyph (⚠ or ✗) appears ONLY on the row that
 deviates from "ok". A clean session has no ⚠/✗ anywhere — the absence IS the green signal.
+
+**Scope**: this rule governs the session summary and other *exception surfaces*, where the reader
+asks "did anything go wrong". It does NOT govern a **state report** — an *inventory surface*,
+where the reader asked for the successes too and "9 specs done" is load-bearing information. State
+reports state their positive claims in words and render zeros; see `state-report.md` (spec 115).
 
 | State | Render |
 |---|---|
@@ -156,6 +161,32 @@ Rules:
 - NEVER use ╭─╮ box-drawing; NEVER use ▌ (heavy half-block) — too dominant
 - See memory: `feedback_emphasis_frame_style.md`
 
+### 7. No bare identifiers — the referent travels with the pointer
+
+A GH issue number, spec number, slug, or SHA is a *pointer*, not a message. The operator does not
+hold the registry in memory (verbatim: «я не в контексте названия каждой, мне номер ни о чем не
+говорит»). Every identifier outside the header and `recorded`/`committed` rows carries an inline
+gloss in the same cell:
+
+```
+▍ **gh-bind**   #142 (102 чартерит поля, которых нет)     ← not: #142
+▍ **next →**    file GH#57 (engine status) cost comment    ← not: comment on #57
+```
+
+The unit is the screen, not the document — terminal output scrolls, so the gloss repeats per
+block (the `git log --oneline` model: the subject rides on every line). This applies to the
+`Concepts:` footer tags and to any glyph outside the functional four: a symbol is an identifier
+and gets a word beside it on first use per block. Evidence: curse-of-knowledge (Camerer 1989),
+GitHub hover-cards / git 50/72 / Bluebook 10.9 convergence — spec 115 `research/`.
+
+### 8. The voice is always named
+
+Every ▍-block opens with the speaker anchor — persona emoji + agent id (the header line §2 already
+mandates for summaries, generalized): an advisor's conclusions are never unattributed. Prose
+outside a ▍-block is working narration, not a finding; anything the reader is meant to act on
+arrives inside an attributed block. (Operator directive 2026-08-31: «адвайзер всегда должен
+напоминать что он работает в роли».)
+
 ## Example: clean session
 
 > The roster in these examples is **illustrative**. Your instance's advisor ids and emoji come from
@@ -230,6 +261,14 @@ the one with the strongest evidence behind it: omission of observed detail, not 
 dominant failure of summarization. If a length budget bites, it bites slots 2 and 3. It may never
 bite 4 or 6.
 
+**The report body has a budget.** A `quick`-tier report body targets one screen (~30 lines)
+without scrolling; a `work`-tier body targets two. Past the budget, slots 1–2 lead and slot 4/6
+detail moves to a file at a stable path, cited from slot 8 — progressive disclosure, not deletion
+(the rustc `--explain` model). Without this ceiling, "cut slots 2 and 3 first" never fires: R6
+caps every field *except* the one the operator reads, and the structure-costs-length tension its
+own research flagged (04-report-structure.md:127-129) was resolved by nobody. Evidence and
+not-checked are still never cut — they *move*, with their address left behind.
+
 **Do not perform effort on a bad outcome.** On success keep the effort summary brief and let the
 result carry it. On partial failure or low confidence, lead with what is unknown. Showing effort
 alongside an unfavourable outcome rates *worse* than having shown nothing.
@@ -249,7 +288,8 @@ scrollback fails as a record.
 | `╭─ ... ─╮` box-drawing frames | requires right-side alignment, looks ASCII-art, noisy |
 | Heavy `▌` left bar | dominates the text it's meant to support |
 | Decorative narrative tail ("zen closing line") | violates silence-on-success and inverted-pyramid |
-| Showing zero-state rows (`mentions: 0`, `defects: 0`) | terraform/npm convention — zeros aren't surfaced |
+| Showing zero-state rows (`mentions: 0`, `defects: 0`) | terraform/npm convention — zeros aren't surfaced. **Session-summary scope only**: on a state report zeros are load-bearing and render (see `state-report.md`) |
+| Bare identifiers (`#142`, `spec 109`, naked SHA) in any row the operator reads | violates rule 7 — a pointer without its referent reads as noise to anyone not holding the registry |
 | Box-drawing tables (┌┬┐, ╔╦╗) for batch ops | Same reasons v3 rejected markdown tables: alignment fragility, ASCII-art noise. Use Pattern B/C instead |
 | Mixing patterns within one ▍-block (B for one row, D for next) | One pattern per block; switch blocks if context truly changes |
 | HTML entities (`&nbsp;`, `&mdash;`) for column alignment | Chat output is monospace markdown — entities render as literal 6-char strings, not spaces. Use plain ASCII spaces |
@@ -379,6 +419,8 @@ frontmatter and the Changelog, never cited inline, so a reader cannot pick up a 
 
 ## See also
 
+- `state-report.md` — the *inventory surface* contract (state questions); scoped against this
+  file's §1 — spec 115
 - `team.done/SKILL.md` — invokes this contract
 - `team.start/SKILL.md` — invokes this contract (Step 7 + new Start Summary)
 - `team.processing/SKILL.md` — invokes this contract (Routing Result block)
@@ -394,6 +436,12 @@ frontmatter and the Changelog, never cited inline, so a reader cannot pick up a 
 
 ## Changelog
 
+- **v4.1** (2026-08-31) — closes the three legibility holes the operator named (spec 115): rule 7
+  (no bare identifiers — the referent travels with the pointer), rule 8 (the voice is always
+  named), a report-body length budget in Report slots (one screen quick / two work, overflow moves
+  to a file — R6 capped everything except what the operator reads), and explicit session-summary
+  scoping on §1 + the zero-rows anti-pattern so the new `state-report.md` (inventory surface) and
+  this file no longer contradict. Render grammar otherwise unchanged.
 - **v4.0** (2026-08-21) — adds the slot contract (spec 113 §6). v3.4 governed the render and nothing else, so a report could render perfectly and still omit its evidence. Slots 4 and 6 are non-negotiable; the ordering leads with requirements and assumptions rather than with process, which is the measured direction. Render grammar unchanged.
 - **v3.4** (2026-05-20) — forbid HTML entities (`&nbsp;`, `&mdash;`) for ▍-row column alignment after advisors' 2026-05-18 Session Summaries rendered literal `&nbsp;` strings in chat. Adds anti-pattern row + explicit ASCII-spaces-only rule to §3. Closes fb-1779131089-1c86b3.
 - **v3.3** (2026-05-18) — add List rendering section (Patterns A/B/C/D) after an advisor's fan-out output reverted to a box-drawing table for 8 ops. Pattern B (grouped count + inline detail) is default; C (chevron) is fallback for long lists; D (numbered) reserved for ordered pipelines. Box-drawing tables explicitly forbidden in anti-patterns. Per-skill table gains `fan-out` row for batch-op summaries.
