@@ -3,7 +3,7 @@
 Port of hot-md-init.sh and hot-md-append.sh. I/O-free of stdout/argparse/sys.exit
 (file I/O, subprocess for regen, clock OK).
 
-Most sections are append-only logs. `now` is not: it holds the sessions that are
+Most sections only ever grow. `now` is not: it holds the sessions that are
 open *right now*, so it needs a subtraction too — session_init appends on open,
 close_session removes the same line on close (#149). remove() is that counterpart.
 """
@@ -42,7 +42,7 @@ SESSION_OPEN = "session open"
 _TEMPLATE = """\
 # Hot — live memory
 
-> ≤500 words. Only scripts write here; every section is append-only except Now, which drains as sessions close. Compaction on overflow. Read at /team.start, written at /team.done + on file-decision/mention.
+> ≤500 words. Only scripts write here; every section only grows except Now, which drains as sessions close. Compaction on overflow. Read at /team.start, written at /team.done + on file-decision/mention.
 
 ## Now
 
