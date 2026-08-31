@@ -33,6 +33,7 @@ loaded by path when needed.
 | `feedback-protocol.md` | how advisors emit feedback into the notebook |
 | `output-discipline.md` | when an advisor may speak, and with what authority |
 | `output-formatting.md` | the ▍-framed output instantiation |
+| `state-report.md` | the inventory surface — what a state answer shows, and in what order |
 | `question-shape.md` | the prose-context + condensed-Ask pattern |
 | `advisor-anti-patterns.md` | failure modes to avoid |
 | `first-launch-protocol.md` | first-session bootstrap |
