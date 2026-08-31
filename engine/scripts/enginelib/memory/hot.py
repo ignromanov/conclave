@@ -1,12 +1,17 @@
-"""enginelib.memory.hot — initialize and append to agent-memory/hot.md.
+"""enginelib.memory.hot — initialize, append to and remove from agent-memory/hot.md.
 
 Port of hot-md-init.sh and hot-md-append.sh. I/O-free of stdout/argparse/sys.exit
 (file I/O, subprocess for regen, clock OK).
+
+Most sections only ever grow. `now` is not: it holds the sessions that are
+open *right now*, so it needs a subtraction too — session_init appends on open,
+close_session removes the same line on close (#149). remove() is that counterpart.
 """
 from __future__ import annotations
 
 import logging
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -23,10 +28,21 @@ _SECTION_MAP = {
     "watch": "## Watch",
 }
 
+# A seeded, contentless bullet: "- (none)", "- (waiting for first append)". Real
+# entries always start "- [<timestamp>] ", so the shapes cannot collide.
+_PLACEHOLDER_RE = re.compile(r"^- \([^\[\]]*\)\s*$")
+_EMPTY_PLACEHOLDER = "- (none)"
+
+# The Now entry's content, shared by the two ends of the session lifecycle:
+# session_init appends it, close_session removes by it. It lives here rather than
+# as a literal in each caller because a match key spelled twice is a match key that
+# will eventually be spelled two ways — the defect class that left Now empty (#149).
+SESSION_OPEN = "session open"
+
 _TEMPLATE = """\
 # Hot — live memory
 
-> ≤500 words. Only scripts write here, and only by appending; compaction on overflow. Read at /team.start, written at /team.done + on file-decision/mention.
+> ≤500 words. Only scripts write here; every section only grows except Now, which drains as sessions close. Compaction on overflow. Read at /team.start, written at /team.done + on file-decision/mention.
 
 ## Now
 
@@ -168,6 +184,10 @@ def append(section: str, advisor: str, line: str, no_compact: bool = False) -> s
                 out.append(entry)
                 out.append("")
                 in_section = False
+            elif in_section and _PLACEHOLDER_RE.match(raw_line):
+                # The seed bullet yields to the first real entry — otherwise a
+                # populated section still renders "- (none)" above its content (#149)
+                continue
             if raw_line == "## Last updated":
                 in_last = True
                 out.append(raw_line)
@@ -217,3 +237,97 @@ def append(section: str, advisor: str, line: str, no_compact: bool = False) -> s
             _log.warning("briefing regen for advisor failed unexpectedly", exc_info=True)
 
     return entry
+
+
+def remove(section: str, advisor: str, match: str) -> int:
+    """Remove the entries an advisor put in a section, by content match.
+
+    The subtraction half of the Now lifecycle (#149): session_init appends when a
+    session opens, close_session removes the same line when it closes, so the
+    section shows what is genuinely in flight rather than a log of everything that
+    ever started.
+
+    Matching is deliberately narrow — an entry must carry BOTH this advisor's
+    authorship marker and the `match` substring. Two advisors working the same slug
+    have two lines in Now, and closing one must not drain the other's.
+
+    Args:
+        section: one of: now, open-threads, recent-decisions, watch
+        advisor: advisor or executor identifier — the entry's author
+        match:   substring the entry's content must contain
+
+    Returns:
+        The number of entries removed (0 when nothing matched — not an error; a
+        session may legitimately close without ever having been registered).
+
+    Raises:
+        ValueError:        empty args, invalid section, or section header missing
+        FileNotFoundError: hot.md does not exist
+    """
+    if not section:
+        raise ValueError("section is required")
+    if not advisor:
+        raise ValueError("advisor is required")
+    if not match:
+        raise ValueError("match is required")
+
+    if section not in _SECTION_MAP:
+        raise ValueError(f"invalid section: {section}")
+    header = _SECTION_MAP[section]
+
+    hot = paths.hot_md_path()
+    if not hot.is_file():
+        raise FileNotFoundError(f"hot.md not found at {hot} — run engine memory hot-init")
+
+    author_marker = f"] {advisor}: "
+    lock_file = Path(os.environ.get("LOCK_DIR", "/tmp/conclave-locks")) / "hot-md.lock"
+
+    with with_lock(lock_file):
+        raw_lines = hot.read_text(encoding="utf-8").rstrip("\n").split("\n")
+
+        out: list[str] = []
+        in_section = False
+        header_found = False
+        removed = 0
+        kept_bullets = 0
+
+        def close_section() -> None:
+            # Exactly one placeholder, and only when the section ends up empty. Seeded
+            # placeholders are dropped on the way through rather than kept, because a
+            # legacy section can hold both a placeholder and real entries (live Watch
+            # does) — emitting them and then adding one here would leave two.
+            if kept_bullets == 0:
+                out.append(_EMPTY_PLACEHOLDER)
+
+        for raw_line in raw_lines:
+            if raw_line == header:
+                out.append(raw_line)
+                in_section = True
+                header_found = True
+                continue
+            if in_section and raw_line.startswith("## "):
+                close_section()
+                in_section = False
+                out.append(raw_line)
+                continue
+            if in_section and raw_line.startswith("- "):
+                if author_marker in raw_line and match in raw_line:
+                    removed += 1
+                    continue
+                if _PLACEHOLDER_RE.match(raw_line):
+                    continue  # re-emitted by close_section() only if still needed
+                kept_bullets += 1
+            out.append(raw_line)
+
+        if in_section:
+            close_section()
+
+        if not header_found:
+            raise ValueError(f"section header not found: {header}")
+
+        if not removed:
+            return 0
+
+        snapshot_write(hot, "\n".join(out) + "\n")
+
+    return removed
