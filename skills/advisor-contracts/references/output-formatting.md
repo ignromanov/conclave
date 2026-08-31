@@ -289,7 +289,7 @@ scrollback fails as a record.
 | Heavy `▌` left bar | dominates the text it's meant to support |
 | Decorative narrative tail ("zen closing line") | violates silence-on-success and inverted-pyramid |
 | Showing zero-state rows (`mentions: 0`, `defects: 0`) | terraform/npm convention — zeros aren't surfaced. **Session-summary scope only**: on a state report zeros are load-bearing and render (see `state-report.md`) |
-| Bare identifiers (`#142`, `spec 104`, naked SHA) in any row the operator reads | violates rule 7 — a pointer without its referent reads as noise to anyone not holding the registry |
+| Bare identifiers (`#142`, `spec 109`, naked SHA) in any row the operator reads | violates rule 7 — a pointer without its referent reads as noise to anyone not holding the registry |
 | Box-drawing tables (┌┬┐, ╔╦╗) for batch ops | Same reasons v3 rejected markdown tables: alignment fragility, ASCII-art noise. Use Pattern B/C instead |
 | Mixing patterns within one ▍-block (B for one row, D for next) | One pattern per block; switch blocks if context truly changes |
 | HTML entities (`&nbsp;`, `&mdash;`) for column alignment | Chat output is monospace markdown — entities render as literal 6-char strings, not spaces. Use plain ASCII spaces |

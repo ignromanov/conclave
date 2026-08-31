@@ -75,7 +75,7 @@ convention. On this surface, an omitted row is NOT a green signal (that rule is
 
 ### 4. No bare identifiers — the referent travels with the pointer
 
-`#142`, `spec 104`, a slug, a SHA: a pointer, not a message. Every identifier carries an inline
+`#142`, `spec 109`, a slug, a SHA: a pointer, not a message. Every identifier carries an inline
 gloss in the same cell — `104 (конституция: запустить пилот)`, `#150 (починка hot.md)`. The unit
 is the *screen*, not the document: terminal output scrolls, so the gloss repeats per block, like
 the subject line in `git log --oneline`. A symbol is an identifier too — any glyph outside the
