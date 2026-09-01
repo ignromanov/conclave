@@ -82,8 +82,11 @@ def test_index_propagates_verify_block(tmp_path):
     index = tmp_path / "ops" / "feedback" / "_index" / "index.jsonl"
     rows = [json.loads(line) for line in index.read_text().splitlines() if line.strip()]
     row = next(r for r in rows if r["item_id"] == "it-1")
+    # `root` is dumped from the model default, so a predicate written before #170 gains
+    # an explicit "project" in its index row — the tree it was already resolving against.
     assert row["verify"] == {
-        "kind": "grep-absent", "file": "a.sh", "path": None, "pattern": "BUG",
+        "kind": "grep-absent", "root": "project",
+        "file": "a.sh", "path": None, "pattern": "BUG",
     }
 
 def test_index_creates_jsonl(tmp_path):

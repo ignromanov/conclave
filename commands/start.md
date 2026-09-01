@@ -69,6 +69,9 @@ session start.
    reflexion extract (last-3 sessions), overlay scan, and feedback cadence check.
    If a line starting with `  feedback:` appears in the output, triage is due — include it in
    the session-start summary and suggest running `/conclave:triage` this session.
+   A `WARNING: CONCLAVE_ENGINE_ROOT points at …` line on stderr means the environment named a
+   different checkout than the one the script lives in; it runs its own copy's helpers and
+   tells you so (GH#187). Treat it as a signal that the hook and the tree have drifted apart.
 3. Read `.conclave/agent-memory/advisors/briefings/<advisor>.md` into context.
 4. Load `hot.md` **once** separately (AC8 — no longer embedded in briefings):
    ```bash
@@ -159,12 +162,32 @@ for REPO in $(PYTHONPATH="$ROOT/scripts" python3 -m engine lifecycle gh-repos); 
   gh issue list -R "$REPO" --label "advisor:$ADVISOR" --state open &
   # P0 blockers, including ones assigned to other advisors
   gh issue list -R "$REPO" --label p0 --state open &
+  # Possibly mis-routed: open p1 carrying SOMEONE ELSE'S advisor label. The p0 line above
+  # already reads cross-advisor; p1 did not, and that is the whole blind spot.
+  gh issue list -R "$REPO" --label p1 --state open --limit 200 \
+    --json number,title,labels,updatedAt \
+    --jq "[.[] | select([.labels[].name] | index(\"advisor:$ADVISOR\") | not)]
+          | sort_by(.updatedAt) | reverse
+          | \"possibly mis-routed p1: \\(length) open\",
+            (.[:5][] | \"  #\\(.number) \\(.title[:72])\")" &
 done
 wait
 ```
 
 Present open items in a compact table with source repo prefix (AI#N / GH#N).
 **Match user's request to an existing issue.** If matched → reference it throughout the session.
+
+**Mis-routing is invisible by construction.** The first query asks only for issues already
+labelled `advisor:$ADVISOR`, so an issue in this advisor's domain that was filed under someone
+else's label appears in no queue at all — it is not late, it is unseen, and nothing in the
+lifecycle ever surfaces it. The third query above is the join the first two never make.
+
+Render it as **a count plus the five most recently updated**, never the full list. The count is
+what makes the blind spot visible; the full table would be tens of rows of other advisors' work
+every session, and a wall nobody reads restores the invisibility it was meant to cure. Scan the
+five titles: if one is plainly this advisor's domain, say so and propose a relabel — do not
+silently adopt it, and do not relabel another advisor's queue without saying which issue and why.
+Widen the query (drop `--limit`, add `--label p2`) only when chasing a specific suspicion.
 
 **Alternative** — single Project Board query (shows both repos + all custom fields):
 ```bash
@@ -187,15 +210,66 @@ Present mismatches (if any) before proceeding. Don't fix now — `/conclave:done
 
 ### 4. Startup Audit (Feature/Epic only)
 
+Two lists are not an audit. Printing the worktrees and printing the PRs leaves the join — *is
+this branch's work already upstream?* — to a human who is not reading. Do the join here.
+
 ```bash
-gh pr list --state open &
-git branch --no-merged develop &
-ls worktrees/ 2>/dev/null &
-(cd .conclave && git status --short) &
-wait
+DEFAULT_BRANCH="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')"
+DEFAULT_BRANCH="${DEFAULT_BRANCH:-master}"
+git fetch --quiet --prune origin 2>/dev/null || true
+
+# The DATA root is a sibling of the CODE checkout, not of the cwd — from inside a
+# worktree `cd .conclave` finds nothing and the DATA repo goes unchecked in silence.
+DATA_ROOT="${CONCLAVE_AI_ROOT:-$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null | sed 's#/\.git$##')/.conclave}"
+if [ -d "$DATA_ROOT/.git" ]; then
+  (cd "$DATA_ROOT" && git status --short)
+else
+  echo "DATA root not found at $DATA_ROOT — set CONCLAVE_AI_ROOT"
+fi
+
+# ONE network call for every PR, then join locally. A `gh pr list` per branch is N round-trips
+# at every session start, and the audit that is slow is the audit that gets skipped.
+gh pr list --state all --limit 300 --json number,state,headRefName \
+  --jq '.[] | "\(.headRefName)\t#\(.number):\(.state)"' | sort -u > /tmp/pr-by-branch.tsv
+
+# Which branches have a worktree checked out
+git worktree list --porcelain | awk '/^branch /{sub("refs/heads/","",$2); print $2}' | sort > /tmp/wt-branches.txt
+
+git for-each-ref --format='%(refname:short)' refs/heads | while read -r BRANCH; do
+  [ "$BRANCH" = "$DEFAULT_BRANCH" ] && continue
+  LEFT=$(git cherry "$DEFAULT_BRANCH" "$BRANCH" 2>/dev/null | grep -c '^+')
+  PR=$(awk -F'\t' -v b="$BRANCH" '$1==b{printf "%s%s", sep, $2; sep=","}' /tmp/pr-by-branch.tsv)
+  WT=$(grep -qxF "$BRANCH" /tmp/wt-branches.txt && echo worktree || echo bare)
+  AGE=$(git log -1 --format=%cr "$BRANCH" 2>/dev/null)
+  printf '%-46s %-9s unshipped=%-4s pr=%-22s %s\n' "$BRANCH" "$WT" "$LEFT" "${PR:-none}" "$AGE"
+done
 ```
 
-Show results as a compact table. Flag mismatches (worktrees without PRs, branches without worktrees). Skip the table if everything is clean.
+Read the columns **together** — each signal is wrong on its own, in a different direction:
+
+| `unshipped` (`git cherry`) | PR state | Verdict |
+|---|---|---|
+| `0` | merged | **Fully shipped.** Every patch is upstream by patch-id and the PR landed. `git worktree remove` (if any) + `git branch -d`. |
+| `>0` | merged | **Look before removing.** Either commits landed *after* the merge (real work — keep), or the PR was squash-merged from more than one commit, whose combined patch-id matches none of its parts (already shipped — `git cherry` cannot see it). Read the log; do not guess. |
+| `>0` | open | Live work in flight. Leave it. |
+| `0` | none | The branch holds no patch of its own. Use the age column: minutes old = a worktree just created and not yet written in (**keep**); days old = work that landed by some other route (**stale**). |
+| `>0` | none | Unshipped and unproposed — the branch nobody is waiting on. Flag it with its age. |
+
+The `worktree` / `bare` column is the second join, and it is the one that answers *how* to clean up:
+a `bare` row needs only `git branch -d`, a `worktree` row needs `git worktree remove` first or the
+branch delete refuses. A `bare` row whose PR merged weeks ago is the ordinary residue of squash-merge
+— `git branch -d` refuses on it (see the row above), so it accumulates silently and forever.
+
+Why three signals and not the obvious one: `git log $DEFAULT_BRANCH..$BRANCH` counts commits, and for
+a squash-merged branch it counts commits that are already upstream — which is why `git branch -d`
+refuses on branches whose work has demonstrably shipped. `git cherry` fixes that by comparing
+patch-ids, but a squash of *N > 1* commits produces a patch-id matching none of its parts, so
+`cherry` reports the whole branch unshipped. Neither reads correctly alone; the PR state is what
+disambiguates, and the PR state alone would call a branch removable while it carries commits pushed
+after its merge.
+
+Show the joined result as a compact table. Skip it only when every row is live work in flight —
+never because the list is long. A long list *is* the finding.
 
 ### 4.5. Wiki Domain Context (Feature/Epic only)
 

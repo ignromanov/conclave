@@ -121,10 +121,30 @@ Complete `/conclave:feedback` before continuing. The gate is the
 
 ### Mandatory (always)
 
-1. ☐ **All changes committed** (both repos if applicable)
+1. ☐ **All changes committed AND the PR state re-read from the remote** (both repos if applicable)
    - Run: `git status` in both `/` and `.conclave/`
    - If uncommitted changes → commit or explain why not
-   - Gate: **Auto**
+   - `git status` is a **local** view. It cannot tell you that the PR you believe you are still
+     working on was squash-merged twenty minutes ago and its branch deleted — a session has
+     closed while holding exactly that belief. Before composing the Summary, ask the remote:
+     ```bash
+     git fetch --quiet --prune origin
+     # every branch this session pushed
+     for BRANCH in <branches-pushed-this-session>; do
+       gh pr list --head "$BRANCH" --state all --json number --jq '.[].number'
+     done | sort -u | while read -r N; do
+       gh pr view "$N" --json number,state,mergedAt,headRefName \
+         --jq '"#\(.number) \(.state) merged=\(.mergedAt // "—") head=\(.headRefName)"'
+     done
+     ```
+   - Report each PR as **merged / open / closed-unmerged** in the Summary, with its `mergedAt`.
+     A PR that merged during the session is a *result*, not a footnote — it is the arrival
+     evidence the whole checklist exists to produce.
+   - If a PR merged: the branch is likely gone from the remote and the local worktree is now
+     detached from anything live. Say so rather than leaving the next session to discover it.
+   - If a PR is still open, name what it is waiting on (review, CI, conflict). "Opened a PR" is
+     not an outcome; the state it is sitting in is.
+   - Gate: **Auto** (fetch + read) / **Notify** (anything merged or closed since the session began)
 
 2. ☐ **GH Issues synced** (both repos)
    - **Worked on issue** → comment with session result + update Project Board status
@@ -311,24 +331,32 @@ python -m engine lifecycle runlog-summary --advisor <advisor> --date <YYYY-MM-DD
 
 Output: one row body ready for the Summary column block. Examples:
 
-- Clean session (all exit 0) → script emits a clean signal; **row is OMITTED from Summary**
-- One failure → `1 script · gh-fetch exit=2`
-- P0 failure → row prefixed with `✗` instead of `⚠`
+- Clean session (all exit 0 or 2) → `🟢 6 scripts · 3204ms · 0 errors`; **row is OMITTED from Summary**
+- One failure → `🟡 6 scripts · 3204ms · 1 errors · engine memory memory-index exit=1`
+- P0 failure → `🔴 …` and the row is prefixed with `✗` instead of `⚠`
+
+`exit=2` is a successful refresh (ADR-0003 loop-discipline §2), so an exit-2 script is never
+the one named — the name always points at something that actually needs looking at.
 
 ### Severity → render
 
-- All scripts exit 0 → **omit the row entirely**
+- All scripts exit 0 **or 2** (2 = refresh = success) → **omit the row entirely**
 - Any non-zero exit, none P0 → emit row with `⚠`
 - Any P0 script failed (`engine briefing build`, `engine session close`, `engine file decision`) → emit row with `✗`
 
 ### Inline render
 
 ```
-▍ ⚠ **infra**    {script_count} scripts · {first_failing_script} exit={code}
+▍ ⚠ **infra**    {script_count} scripts · {total_ms}ms · {errors} errors · {first_failing_script} exit={code}
 ```
 
-Drop `total_ms` from default render — surface only on `--verbose` or when a script blew through
-a perf budget (future). Time-on-success is vanity per the output-formatting contract.
+`{first_failing_script} exit={code}` is appended only when something failed — on a clean session
+there is nothing to name, and that row is omitted anyway. Without it the operator learned that
+*something* broke and never what, which is what the row exists to tell them (GH#186).
+
+`total_ms` is retained: on the only row a human ever sees, one that already reports a failure, the
+duration distinguishes a timeout from a fast refusal. Whether to drop it is a display-contract
+question owned by kosmos-cxo, not something the summariser should decide by omission.
 
 ---
 

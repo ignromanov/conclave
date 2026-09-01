@@ -131,3 +131,55 @@ def test_non_p0_engine_command_exit_1_yields_yellow_not_red(tmp_path):
     assert "🟡" in r.stdout
     assert "🔴" not in r.stdout
     assert "1 errors" in r.stdout
+
+
+# ---------------------------------------------------------------------------
+# 8. A failure row names WHICH script failed and with what exit code (GH#186).
+#
+# The Infra row is the operator's only view of a lifecycle failure: the adapter
+# exits 0 by design (it succeeded at reporting), so severity alone left them with
+# "something went wrong" and nothing to act on. commands/done.md has promised
+# `{first_failing_script} exit={code}` since the row was specified.
+# ---------------------------------------------------------------------------
+def test_failure_row_names_the_first_failing_script_and_its_exit_code(tmp_path):
+    log = _log_file(tmp_path)
+    _row(log, "engine lifecycle gh-fetch", 2, "kai-cto")       # refresh — a success
+    _row(log, "engine memory memory-index", 1, "kai-cto")      # the FIRST real failure
+    _row(log, "engine mention mention-create", 3, "kai-cto")   # a later one
+
+    r = run_engine("lifecycle", "runlog-summary", "--advisor", "kai-cto", env=_env(tmp_path))
+    assert r.returncode == 0
+    assert "engine memory memory-index exit=1" in r.stdout
+    # exit 2 is a success (ADR-0003): naming it would send the operator after a healthy script.
+    assert "gh-fetch" not in r.stdout
+
+
+def test_failure_row_of_a_p0_script_names_it_too(tmp_path):
+    log = _log_file(tmp_path)
+    _row(log, "engine file file-decision", 1, "kai-cto")
+
+    r = run_engine("lifecycle", "runlog-summary", "--advisor", "kai-cto", env=_env(tmp_path))
+    assert "🔴" in r.stdout
+    assert "engine file file-decision exit=1" in r.stdout
+
+
+def test_clean_row_names_no_script(tmp_path):
+    """Nothing failed, so there is no name to give — the row must not invent one."""
+    log = _log_file(tmp_path)
+    _row(log, "engine lifecycle gh-fetch", 0, "kai-cto")
+    _row(log, "engine lifecycle git-fetch", 2, "kai-cto")
+
+    r = run_engine("lifecycle", "runlog-summary", "--advisor", "kai-cto", env=_env(tmp_path))
+    assert "🟢" in r.stdout
+    assert "exit=" not in r.stdout
+
+
+def test_another_advisors_failure_is_not_reported_as_mine(tmp_path):
+    """`mine` filters by advisor; the named script must come from the same filtered set."""
+    log = _log_file(tmp_path)
+    _row(log, "engine memory memory-index", 1, "someone-else")
+    _row(log, "engine lifecycle gh-fetch", 0, "kai-cto")
+
+    r = run_engine("lifecycle", "runlog-summary", "--advisor", "kai-cto", env=_env(tmp_path))
+    assert "🟢" in r.stdout
+    assert "memory-index" not in r.stdout
