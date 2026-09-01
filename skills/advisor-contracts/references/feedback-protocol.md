@@ -100,7 +100,9 @@ The agent fills `items[]` honestly (cap 3–5, `evidence` mandatory), then sets
 
 ## Cadence triage
 
-`/conclave:start` (via `session_init.py`) checks the `_index/last-triage` marker:
+`/conclave:start` (via `session_init.py`) checks the `_index/last-triage` marker, which
+carries the timestamp of the last *completed* triage (Step 6 writes it; per-item `--set`
+does not). An existing but empty marker means no triage has ever completed:
 
 ```
 now − last_triage > 7 days   OR   new reviews since last triage ≥ 15
@@ -119,6 +121,7 @@ Invoke `/conclave:triage` (the facilitator role + Forge) to run the triage pipel
 | 3 | `feedback_triage.py --set` — writes `status` + `owner` back to review file |
 | 4 | `accepted` → open GitHub Issue, record target sprint |
 | 5 | `feedback_archive.py` — archive resolved reviews; append finding to `hot.md` |
+| 6 | `feedback_triage.py --complete-triage` — record the completion timestamp; the only write that resets the cadence clock |
 
 Monthly: `feedback_triage.py --monthly` closes zombie items older than 90 days.
 

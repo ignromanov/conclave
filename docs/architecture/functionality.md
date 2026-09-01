@@ -231,19 +231,23 @@ rejected); closed enums for `category`, `layer`, `frequency`. `_draft: false` se
 
 ### Triage (weekly cadence)
 
-Triggered by `session_init.py` when `now − last_triage > 7 days` OR new reviews ≥ 15:
+Triggered by `session_init.py` when `now − last_triage > 7 days` OR new reviews ≥ 15,
+where `last_triage` is the timestamp recorded in `_index/last-triage` by
+`--complete-triage` at the end of a session (an empty marker means never):
 
 ```bash
 python .claude/skills/team.forge/scripts/feedback/feedback_triage.py --digest
 ```
 
-Five-step pipeline:
+Six-step pipeline:
 
 1. **Validation gate** — schema-invalid `_draft:false` reviews abort triage immediately.
 2. **Dedup digest** — fingerprint dedup; duplicates increment `hit_count`.
 3. **Cluster classify** — group by category/layer; surface high-`hit_count` clusters.
 4. **Status-write** — set `status: accepted | rejected | deferred` on each review file.
 5. **GH issues + archive** — open GH issue per `accepted` item; archive `resolved` reviews.
+6. **Record completion** — `--complete-triage` stamps `_index/last-triage`; the only
+   write that resets the cadence clock.
 
 ---
 

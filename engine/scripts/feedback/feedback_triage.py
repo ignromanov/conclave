@@ -9,11 +9,14 @@ First step always: run feedback_index.py rebuild (defensive — resolves B2).
            3-column digest (what · why · urgency); critical-severity rows sorted top.
            --status <s> scopes the digest to one status (e.g. open); --json emits a
            machine-readable array carrying feedback_id/item_id per row for direct --set.
---check    Compare last-triage marker mtime + new-review count → print
+--check    Compare the last-triage marker's recorded timestamp + new-review count → print
            triage_due=<true|false>.
 --set      Write status/owner/issue/waiver/resolved_at back into the review file via
            frontmatter_io.read_commented + write (comment-preserving); bump updated_at.
-           Touch the last-triage marker when a triage session completes.
+           Does NOT move the cadence clock — see --complete-triage.
+--complete-triage
+           Record that a triage session finished (writes the timestamp into the
+           last-triage marker). The only write that resets the cadence clock.
 --monthly  List items with status in {open, deferred} older than 90 days.
 """
 from __future__ import annotations
@@ -211,6 +214,38 @@ def _created_ts(row: dict) -> float | None:
         return None
 
 
+def _last_triage_ts(marker: Path) -> float | None:
+    """When the last triage session completed, or None when none ever has.
+
+    The marker records the completion timestamp in its body. Its mtime cannot carry
+    that: every write to the file moves the mtime, and before this the writes were
+    `--set` and `--set-verify` — per-item edits, run once per item, which reset the
+    cadence clock on each classified item. So an unreadable or empty marker is `None`
+    (never triaged), never "triaged when the file was last touched": absence and zero
+    must not render alike (state-report.md rule 6), and the live instance carries
+    exactly that file — 0 bytes with a fresh mtime, from the last --set-verify."""
+    if not marker.exists():
+        return None
+    try:
+        raw = marker.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.splitlines()[0].strip()).timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
+def _mark_triage_complete(marker: Path) -> str:
+    """Record that a triage session finished. The only write that moves the clock."""
+    stamp = datetime.now(UTC).isoformat()
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(stamp + "\n", encoding="utf-8")
+    return stamp
+
+
 def _new_review_count(rows: list[dict], since_ts: float | None) -> int:
     """Distinct reviews created after `since_ts` (all of them when never triaged).
 
@@ -230,16 +265,15 @@ def cmd_check(rows: list[dict], triage_marker: Path) -> None:
     """Print the cadence verdict and, beside it, both quantities it was computed from."""
     open_count = sum(1 for r in rows if r.get("status") == "open")
 
-    if not triage_marker.exists():
-        marker_mtime = None
+    last_triage = _last_triage_ts(triage_marker)
+    if last_triage is None:
         days_since_str = "never"
         triage_due = True
     else:
-        marker_mtime = triage_marker.stat().st_mtime
-        days_since = (datetime.now(UTC).timestamp() - marker_mtime) / 86400
+        days_since = (datetime.now(UTC).timestamp() - last_triage) / 86400
         days_since_str = f"{days_since:.1f}"
         triage_due = days_since > TRIAGE_CADENCE_DAYS
-    new_reviews = _new_review_count(rows, marker_mtime)
+    new_reviews = _new_review_count(rows, last_triage)
     triage_due = triage_due or new_reviews >= TRIAGE_NEW_REVIEW_THRESHOLD
 
     print(f"triage_due={'true' if triage_due else 'false'}")
@@ -282,7 +316,7 @@ def cmd_monthly(rows: list[dict]) -> None:
 
 
 def cmd_set(root: Path, feedback_id: str, item_id: str, status: str,
-            owner: str | None, triage_marker: Path, issue: int | None = None,
+            owner: str | None, issue: int | None = None,
             waiver: str | None = None) -> int:
     """Write status/owner/issue/waiver/resolved_at back to the review file."""
     if status not in _VALID_STATUSES:
@@ -383,10 +417,6 @@ def cmd_set(root: Path, feedback_id: str, item_id: str, status: str,
     meta["updated_at"] = now_str
     write_preserving_header(review_path, meta, body)
 
-    # Touch the last-triage marker
-    triage_marker.parent.mkdir(parents=True, exist_ok=True)
-    triage_marker.touch()
-
     print(f"Updated {feedback_id}/{item_id}: status={status}" +
           (f" owner={owner}" if owner else "") +
           (f" issue=#{issue}" if issue else "") +
@@ -395,7 +425,7 @@ def cmd_set(root: Path, feedback_id: str, item_id: str, status: str,
 
 
 def cmd_set_verify(root: Path, feedback_id: str, item_id: str,
-                   predicate: dict, triage_marker: Path) -> int:
+                   predicate: dict) -> int:
     """Attach a verify: predicate to an existing item (093 P1 T3).
 
     Sanctioned write path so feeding an accepted backlog never needs hand-editing
@@ -425,8 +455,6 @@ def cmd_set_verify(root: Path, feedback_id: str, item_id: str,
         return 1
     meta["updated_at"] = datetime.now(UTC).isoformat()
     write_preserving_header(review_path, meta, body)
-    triage_marker.parent.mkdir(parents=True, exist_ok=True)
-    triage_marker.touch()
     print(f"Attached verify to {feedback_id}/{item_id}: kind={predicate.get('kind')}")
     return 0
 
@@ -444,6 +472,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="Emit --digest as machine-readable JSON (feedback_id/item_id per row)")
     parser.add_argument("--check", action="store_true", help="Check if triage is due")
     parser.add_argument("--monthly", action="store_true", help="List zombie items > 90 days")
+    parser.add_argument("--complete-triage", action="store_true",
+                        help="Record that a triage session finished — the one write that "
+                             "resets the cadence clock. Run it as the last step of "
+                             "/conclave:triage, never per item.")
     parser.add_argument("--set", nargs=3, metavar=("FEEDBACK_ID", "ITEM_ID", "STATUS"),
                         help="Write status back to review file")
     parser.add_argument("--owner", default=None, help="Owner to assign with --set")
@@ -487,7 +519,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.set:
             feedback_id, item_id, status = args.set
-            set_rc = cmd_set(root, feedback_id, item_id, status, args.owner, triage_marker,
+            set_rc = cmd_set(root, feedback_id, item_id, status, args.owner,
                              issue=args.issue, waiver=args.waiver)
             if set_rc == 0:
                 # Reconcile the cache with the review we just wrote. The rebuild above runs
@@ -510,7 +542,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.monthly:
             cmd_monthly(rows)
 
-        if not any([args.digest, args.check, args.monthly, args.set]):
+        if args.complete_triage:
+            stamp = _mark_triage_complete(triage_marker)
+            print(f"triage recorded complete at {stamp}")
+
+        if not any([args.digest, args.check, args.monthly, args.set,
+                    args.complete_triage]):
             parser.print_help()
 
         return 0

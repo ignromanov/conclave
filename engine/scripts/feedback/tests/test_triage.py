@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 from briefing.frontmatter_io import read as fm_read
@@ -196,16 +195,23 @@ def test_set_without_owner(tmp_path):
 
 # --- #89: the cadence is 7 days OR >=15 new reviews, in the code as well as the docs ---
 
-def _fresh_marker(tmp_path, age_seconds: int = 3600):
-    """A marker well inside the 7-day window, backdated so reviews written by the test
-    land *after* the last triage — which is the only ordering the rule is about."""
-    import os
+def _completed_triage(tmp_path, age_seconds: int = 3600) -> Path:
+    """A marker recording a triage that completed `age_seconds` ago."""
+    from datetime import UTC, datetime, timedelta
     marker = tmp_path / "ops" / "feedback" / "_index" / "last-triage"
     marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
-    when = time.time() - age_seconds
-    os.utime(marker, (when, when))
+    when = datetime.now(UTC) - timedelta(seconds=age_seconds)
+    marker.write_text(when.isoformat() + "\n", encoding="utf-8")
     return marker
+
+
+def _fresh_marker(tmp_path, age_seconds: int = 3600):
+    """A triage that completed well inside the 7-day window, backdated so reviews
+    written by the test land *after* it — the only ordering the rule is about.
+
+    The completion time is the marker's recorded content, not its mtime: mtime moves on
+    every write to the file and so cannot mean "when a triage finished"."""
+    return _completed_triage(tmp_path, age_seconds=age_seconds)
 
 
 def _new_reviews(tmp_path, n: int):
@@ -291,9 +297,7 @@ def test_check_no_open_items_fresh_marker(tmp_path):
     _write_review(tmp_path, "2026-05-22", "atlas-res.md",
                   _valid_review_meta(feedback_id="fb-res-222222",
                                      items=[resolved_item]))
-    marker = tmp_path / "ops" / "feedback" / "_index" / "last-triage"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    _fresh_marker(tmp_path)
 
     result = run_triage(tmp_path, ["--check"])
     assert result.returncode == 0, result.stderr
@@ -739,3 +743,65 @@ def test_set_overwrites_an_ordinary_owner_freely(tmp_path, owner):
                                 "--owner", "verify:auto"])
     assert res.returncode == 0, res.stderr
     assert fm_read(path)[0]["items"][0]["owner"] == "verify:auto"
+
+
+# --- the marker records a completed triage, not the last item anyone edited ---
+#
+# `--set` is documented to run once per item ("run it once per item", commands/triage.md),
+# so touching the marker from inside it resets the cadence clock on every classified item —
+# and on every `--set-verify` too. The clock therefore measures "when did anyone last edit
+# one item", which is not the quantity either shipped document names.
+
+def test_set_does_not_reset_the_cadence_clock(tmp_path):
+    """Classifying one item is not a triage. An overdue notice must survive it."""
+    _write_review(tmp_path, "2026-05-22", "atlas-clock.md",
+                  _valid_review_meta(feedback_id="fb-clock-111111"))
+    _completed_triage(tmp_path, age_seconds=int(8 * 86400))   # overdue by a day
+
+    set_result = run_triage(tmp_path, ["--set", "fb-clock-111111", "it-1", "deferred"])
+    assert set_result.returncode == 0, set_result.stderr
+
+    result = run_triage(tmp_path, ["--check"])
+    assert result.returncode == 0, result.stderr
+    assert "triage_due=true" in result.stdout, (
+        "a single --set reset the 8-day-old clock — the marker is measuring item edits, "
+        f"not triage sessions:\n{result.stdout}"
+    )
+
+
+def test_empty_marker_reads_as_never_triaged(tmp_path):
+    """An existing-but-empty marker means no triage has ever completed.
+
+    state-report.md rule 6: absence and zero must never render alike. The live instance
+    carries exactly this file — 0 bytes, mtime bumped by the last --set-verify — and
+    mtime alone reports it as a triage that finished minutes ago."""
+    _write_review(tmp_path, "2026-05-22", "atlas-empty.md",
+                  _valid_review_meta(feedback_id="fb-empty-222222"))
+    marker = tmp_path / "ops" / "feedback" / "_index" / "last-triage"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()   # exists, fresh mtime, records nothing
+
+    result = run_triage(tmp_path, ["--check"])
+    assert result.returncode == 0, result.stderr
+    assert "days_since=never" in result.stdout, (
+        f"an empty marker was read as a completed triage:\n{result.stdout}"
+    )
+    assert "triage_due=true" in result.stdout
+
+
+def test_complete_triage_records_the_timestamp_and_resets_the_clock(tmp_path):
+    """--complete-triage is the one write that means a triage session finished."""
+    _write_review(tmp_path, "2026-05-22", "atlas-done.md",
+                  _valid_review_meta(feedback_id="fb-done-333333"))
+    _completed_triage(tmp_path, age_seconds=int(30 * 86400))
+
+    done = run_triage(tmp_path, ["--complete-triage"])
+    assert done.returncode == 0, done.stderr
+
+    marker = tmp_path / "ops" / "feedback" / "_index" / "last-triage"
+    assert marker.read_text(encoding="utf-8").strip(), "marker must record when, not just that"
+
+    result = run_triage(tmp_path, ["--check"])
+    assert result.returncode == 0, result.stderr
+    assert "triage_due=false" in result.stdout, result.stdout
+    assert "days_since=never" not in result.stdout
