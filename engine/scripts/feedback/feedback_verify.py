@@ -154,6 +154,20 @@ def _load_archive_rows(root: Path) -> list[dict]:
     return out
 
 
+def predicate_coverage(rows: list[dict]) -> tuple[int, int, int]:
+    """(covered, waived, accepted) over the accepted pool — the loop's fuel gauge (#165).
+
+    Only `accepted` items are counted: they are the pool the sweep drains, and the only
+    pool where a missing predicate costs anything. A waiver is counted apart from a
+    predicate rather than folded into it, so "deliberately unverifiable" never inflates
+    the number that says how much of the backlog can close itself.
+    """
+    accepted = [r for r in rows if r.get("status") == "accepted"]
+    covered = sum(1 for r in accepted if r.get("verify"))
+    waived = sum(1 for r in accepted if not r.get("verify") and r.get("verify_waiver"))
+    return covered, waived, len(accepted)
+
+
 def sweep(rows: list[dict], root: Path, limit: int = 40) -> SweepResult:
     """Classify accepted rows into auto-close / llm-candidate; scan for nominations.
 
@@ -279,6 +293,9 @@ def main(argv=None) -> int:
     parser.add_argument("--file", default=None, help="predicate target file (grep/contains)")
     parser.add_argument("--pattern", default=None, help="predicate regex (grep/contains)")
     parser.add_argument("--path", default=None, help="predicate path (file-absent)")
+    parser.add_argument("--force", action="store_true",
+                        help="attach a predicate that does not evaluate to 'fail' "
+                             "(see the admission test in the --set-verify branch)")
     args = parser.parse_args(argv)
 
     root = repo_root()
@@ -287,6 +304,28 @@ def main(argv=None) -> int:
         from feedback_triage import cmd_set_verify
         fid, iid, kind = args.set_verify
         pred = {"kind": kind, "file": args.file, "pattern": args.pattern, "path": args.path}
+        # Admission test: evaluate the predicate BEFORE attaching it. A verify predicate is
+        # an oracle for a fix that has not landed yet, so 'fail' is the only healthy verdict
+        # at attach time. The other two are silent failures that shape validation cannot see:
+        #   broken -> target unreadable or outside the project root. The sweep reports it
+        #             broken on every run and the item can never close (the state the 103
+        #             move left two 093 predicates in, unnoticed for seven weeks).
+        #   pass   -> the next sweep auto-closes the item although nothing was fixed,
+        #             manufacturing a resolution that never happened. That is the worse of
+        #             the two: a false close is indistinguishable from a real one afterwards.
+        try:
+            verdict = classify_predicate(Predicate(**pred), project_root())
+        except Exception as exc:  # noqa: BLE001 — surfaced, not swallowed
+            print(f"ERROR: invalid predicate: {exc}", file=sys.stderr)
+            return 1
+        if verdict != "fail" and not args.force:
+            why = ("already passes — the next sweep would close the item with nothing fixed"
+                   if verdict == "pass" else
+                   "cannot be evaluated — its target is unreadable or escapes the project root")
+            print(f"ERROR: refusing to attach: the predicate {why} (verdict={verdict}).\n"
+                  f"       Point it at the marker the fix will leave, or re-run with --force "
+                  f"if the item really is already resolved.", file=sys.stderr)
+            return 1
         lock_dir = root / ".triage-lock"
         if not snapshot.acquire_lock(lock_dir, 5):
             print("ERROR: could not acquire triage lock (concurrent session?)", file=sys.stderr)
@@ -332,6 +371,13 @@ def main(argv=None) -> int:
 
         print(f"auto-close={len(res.auto_close)} candidates={len(res.llm_candidates)} "
               f"nominations={len(res.nominations)} broken={len(res.broken)}")
+        # The sweep can only drain what Step 3.6 fed it, so the fuel gauge is printed
+        # beside the yield. Without it the ratio gets recounted by hand every time
+        # someone asks why the loop closed nothing (#165).
+        covered, waived, accepted_n = predicate_coverage(rows)
+        pct = (100.0 * covered / accepted_n) if accepted_n else 0.0
+        print(f"predicate-coverage: {covered}/{accepted_n} ({pct:.1f}%) "
+              f"waived={waived} uncovered={accepted_n - covered - waived}")
         for fid, iid, rel in res.broken:
             print(f"  BROKEN {fid}/{iid}: predicate target unreadable/escaping -> {rel} "
                   f"(operator: fix the path or re-author)", file=sys.stderr)

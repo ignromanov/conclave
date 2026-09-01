@@ -154,6 +154,7 @@ def _process_reviews(dirs: list[Path], existing: dict[str, str], check: bool) ->
                     "migrated": item.migrated,
                     "legacy_source": item.legacy_source,
                     "verify": item.verify.model_dump() if item.verify else None,
+                    "verify_waiver": item.verify_waiver,
                 }
                 rows.append(row)
 

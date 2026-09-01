@@ -259,6 +259,14 @@ disk, never marked. The closing loop automates the verify-before-fold pass.
 code exists; what's missing is *inputs*: no `verify:` predicates are authored and `hit_count`
 is never written, so on live data it yields 0 auto-closes and 0 nominations. The migration
 task is to **feed** it (author predicates, wire `hit_count`), not to build it.
+
+> **Update (2026-08-31)**: two thirds of that list are done. `hit_count` is derived at sweep
+> time by grouping on `fingerprint` (no persistence), nominations route to 091 L1, rotted
+> predicates are reported `broken` instead of silently read as "not done yet", and the loop
+> has closed items on their own predicates for the first time (MTTR 52d and 42d). What is
+> still missing is only the first item — **authored predicates**: 2 of 171 accepted items
+> carry one. The sweep now prints that ratio beside its yield, and `/conclave:triage` Step 3.6
+> is the step that writes them.
 **Conclave role:** Component-zero — smallest shippable slice proving the self-improvement thesis
 
 **Two outputs from one verification pass:**

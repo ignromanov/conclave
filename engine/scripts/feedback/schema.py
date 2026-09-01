@@ -87,6 +87,10 @@ class FeedbackItem(BaseModel):
     reopened_from: str | None = None    # 093 — provenance "fid:iid" when status re-occurred
     notes: str | None = None  # DEPRECATED 2026-05-26 (spec 086, ELEPHANT §2/3.2/5); read-only for legacy graceful-read, not emitted by feedback_emit.py
     verify: Predicate | None = None     # 093 — structured resolution check
+    # 093/#165 — the recorded reason an item can carry NO predicate. A real field, not a
+    # convention, so predicate coverage can distinguish a deliberate waiver from an
+    # omission: an unmeasurable waiver is indistinguishable from forgetting.
+    verify_waiver: str | None = None
 
     @field_validator("location", mode="before")
     @classmethod

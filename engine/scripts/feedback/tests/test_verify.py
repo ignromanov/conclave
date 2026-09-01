@@ -239,12 +239,22 @@ def _accepted_no_verify_meta() -> dict:
                        "evidence": "tc:1", "status": "accepted"}]}
 
 
+def _setverify_layout(tmp_path, target_text: str | None = "still has the BUG\n"):
+    """Checkout layout for --set-verify: DATA root under .conclave, predicate target a
+    sibling at the checkout root. `target_text=None` leaves the target absent."""
+    data_root = tmp_path / ".conclave"
+    if target_text is not None:
+        (tmp_path / "foo.py").write_text(target_text)
+    path = _write_review_file(data_root, "sage-setverify.md", _accepted_no_verify_meta())
+    return data_root, path
+
+
 def test_set_verify_attaches_predicate(tmp_path):
     """--set-verify attaches a predicate to an accepted item via the sanctioned write
     path; the finalized frontmatter stays schema-valid (093 P1 T3)."""
-    path = _write_review_file(tmp_path, "sage-setverify.md", _accepted_no_verify_meta())
-    res = _run_verify(tmp_path, ["--set-verify", "fb-sv-aaaaaa", "i1", "grep-absent",
-                                 "--file", "foo.py", "--pattern", "BUG"])
+    data_root, path = _setverify_layout(tmp_path)
+    res = _run_verify(data_root, ["--set-verify", "fb-sv-aaaaaa", "i1", "grep-absent",
+                                  "--file", "foo.py", "--pattern", "BUG"])
     assert res.returncode == 0, res.stderr
     from briefing.frontmatter_io import read_commented
     from feedback.schema import Review
@@ -253,6 +263,47 @@ def test_set_verify_attaches_predicate(tmp_path):
     assert item["verify"]["kind"] == "grep-absent"
     assert item["verify"]["pattern"] == "BUG"
     Review.model_validate(meta2)  # re-validates cleanly
+
+
+# --- #165: the admission test on a freshly authored predicate ---
+
+def test_set_verify_refuses_a_predicate_that_already_passes(tmp_path):
+    """A predicate that passes the moment it is attached auto-closes its item on the
+    next sweep with nothing fixed. That manufactures a resolution, and afterwards a
+    false close is indistinguishable from a real one — so it is refused at the door."""
+    data_root, path = _setverify_layout(tmp_path, "the fix already landed\n")
+    res = _run_verify(data_root, ["--set-verify", "fb-sv-aaaaaa", "i1", "grep-absent",
+                                  "--file", "foo.py", "--pattern", "BUG"])
+    assert res.returncode == 1
+    assert "already passes" in res.stderr
+
+    from briefing.frontmatter_io import read_commented
+    item = next(i for i in read_commented(path)[0]["items"] if i["id"] == "i1")
+    assert "verify" not in item, "a refused predicate must not be written"
+
+
+def test_set_verify_refuses_a_predicate_born_broken(tmp_path):
+    """Shape validation cannot see an unreadable target. Attaching one gives the item a
+    predicate that reports BROKEN on every sweep and can never close it — the state the
+    103 move left two of 093's own predicates in, unnoticed for seven weeks."""
+    data_root, _ = _setverify_layout(tmp_path, target_text=None)
+    res = _run_verify(data_root, ["--set-verify", "fb-sv-aaaaaa", "i1", "grep-absent",
+                                  "--file", "foo.py", "--pattern", "BUG"])
+    assert res.returncode == 1
+    assert "cannot be evaluated" in res.stderr
+
+
+def test_set_verify_force_attaches_an_already_passing_predicate(tmp_path):
+    """--force is the escape hatch for the honest case: the item really is resolved and
+    the operator wants the sweep to close it on the record rather than by hand."""
+    data_root, path = _setverify_layout(tmp_path, "the fix already landed\n")
+    res = _run_verify(data_root, ["--set-verify", "fb-sv-aaaaaa", "i1", "grep-absent",
+                                  "--file", "foo.py", "--pattern", "BUG", "--force"])
+    assert res.returncode == 0, res.stderr
+
+    from briefing.frontmatter_io import read_commented
+    item = next(i for i in read_commented(path)[0]["items"] if i["id"] == "i1")
+    assert item["verify"]["pattern"] == "BUG"
 
 
 def _checkout_layout_meta() -> dict:
@@ -402,3 +453,27 @@ def test_sweep_escaping_predicate_is_broken_not_closed(tmp_path):
     res = sweep(rows, root=tmp_path)
     assert res.auto_close == [], "escaping file-absent must NOT auto-close vacuously"
     assert any((fid, iid) == ("fb-1", "it-1") for fid, iid, _rel in res.broken), res.broken
+
+
+# --- #165: the fuel gauge on the accepted pool ---
+
+def test_predicate_coverage_counts_only_the_accepted_pool():
+    """`accepted` is the pool the sweep drains; a predicate on anything else is not fuel."""
+    from feedback_verify import predicate_coverage
+    rows = [
+        {"status": "accepted", "verify": {"kind": "file-absent", "path": "x"}},
+        {"status": "accepted"},
+        {"status": "accepted", "verify_waiver": "no file-readable oracle"},
+        {"status": "deferred", "verify": {"kind": "file-absent", "path": "y"}},
+        {"status": "resolved", "verify": {"kind": "file-absent", "path": "z"}},
+    ]
+    assert predicate_coverage(rows) == (1, 1, 3)
+
+
+def test_a_waiver_never_counts_as_coverage():
+    """A waiver says the item can never close mechanically. Folding it into the covered
+    count would report the loop as fuelled by the very items it can never drain."""
+    from feedback_verify import predicate_coverage
+    rows = [{"status": "accepted", "verify_waiver": "judgement call"} for _ in range(5)]
+    covered, waived, accepted_n = predicate_coverage(rows)
+    assert (covered, waived, accepted_n) == (0, 5, 5)
