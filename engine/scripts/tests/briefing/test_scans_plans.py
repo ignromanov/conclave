@@ -142,6 +142,42 @@ class TestDerivedState:
         assert "1 broken" in out
         assert "0 unverifiable" in out
 
+    def test_a_code_rooted_predicate_resolves_against_the_code_tree(
+        self, tmp_path: Path, monkeypatch: object
+    ) -> None:
+        """#170/#197 — `root: code` must reach the engine tree, not the project root.
+
+        This is the one state a passing suite would not have caught. `classify_predicate`
+        RAISES when a predicate declares `root: code` and no `code_root` is supplied, and
+        `_derive_state` folds every raise into `broken`. So a correct predicate would have
+        been rendered as *"verify: target is gone — repoint or drop it"*: a false
+        accusation, on the surface whose whole job is to be trusted about state.
+
+        Dropping the `root` key from the frontmatter parser does not avoid this either —
+        it silently resolves the path against the wrong tree instead.
+        """
+        import enginelib.paths
+
+        code_tree = tmp_path / "codedist"
+        _write(code_tree / "engine" / "scripts" / "briefing" / "render.py", 'x = "plans"\n')
+        monkeypatch.setattr(  # type: ignore[attr-defined]
+            enginelib.paths, "engine_root", lambda: code_tree / "engine"
+        )
+
+        ctx = make_ctx(tmp_path)
+        _spec_plan(
+            ctx,
+            "116-code-rooted",
+            _verify_fm(
+                "file-contains",
+                root="code",
+                file="engine/scripts/briefing/render.py",
+                pattern="plans",
+            ),
+        )
+        out = plans.build(ctx)
+        assert "1 landed" in out
+        assert "0 broken" in out
 
 class TestRender:
     def test_zeros_render_with_their_scope_noun(self, tmp_path: Path) -> None:
