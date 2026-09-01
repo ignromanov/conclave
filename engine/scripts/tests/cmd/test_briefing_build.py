@@ -16,11 +16,29 @@ import pytest
 from tests.cmd.helpers import run_engine
 
 
-def _seed_progress(ai_root: Path) -> None:
-    """Create a minimal progress-summary.md so project-state scan has content."""
-    p = ai_root / "progress-summary.md"
-    if not p.exists():
-        p.write_text("# Progress Summary\n\n**Phase**: P1 | **v1.0 DEPLOYED** Mar 28\n")
+def _decisions_dir(ai_root: Path) -> Path:
+    return ai_root / "agent-memory" / "advisors" / "decisions"
+
+
+def _seed_decision(ai_root: Path, slug: str = "2026-01-01-kai-cto-seed") -> Path:
+    """Seed a decision so the decisions scan has content.
+
+    Was `_seed_progress`, seeding progress-summary.md — a file no producer in the
+    engine ever wrote, so the two scans reading it rendered a placeholder in every
+    briefing ever built (spec 116 P0). A decision is the nearest equivalent that is
+    actually produced: `enginelib/filing.py` writes this directory.
+
+    `slug` varies the FILENAME, not the body: the decisions scan renders links, so a
+    same-name rewrite is not an input change and would make the build-and-compare test
+    below pass for the wrong reason.
+    """
+    d = _decisions_dir(ai_root)
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / f"{slug}.md"
+    p.write_text(
+        "---\nby: kai-cto\nscope: cross-cutting\n---\n\nA ruling.\n", encoding="utf-8"
+    )
+    return p
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +80,7 @@ def test_unknown_advisor_exit1(ai_root):
 
 # #52 — --advisor alias mirrors the positional form (parity with file/session CLIs)
 def test_advisor_flag_alias_builds(ai_root):
-    _seed_progress(ai_root)
+    _seed_decision(ai_root)
     r = run_engine("briefing", "build", "--advisor", "kai-cto")
     assert r.returncode == 0, f"stderr: {r.stderr[:400]}"
     assert (ai_root / "agent-memory" / "advisors" / "briefings" / "kai-cto.md").is_file()
@@ -88,7 +106,7 @@ def test_personality_resolves_from_project_root(ai_root, tmp_path, monkeypatch):
     that does not exist. On the dev instance the two trees are symlinked together,
     which is exactly why the defect stayed invisible here.
     """
-    _seed_progress(ai_root)
+    _seed_decision(ai_root)
     project = tmp_path / "consumer-project"
     persona = project / ".claude" / "skills" / "conclave-kai-cto" / "memory" / "personality.md"
     persona.parent.mkdir(parents=True)
@@ -105,7 +123,7 @@ def test_personality_resolves_from_project_root(ai_root, tmp_path, monkeypatch):
 
 def test_missing_personality_still_placeholders(ai_root, tmp_path, monkeypatch):
     """Repointing the anchor must not turn a genuinely absent persona into a crash."""
-    _seed_progress(ai_root)
+    _seed_decision(ai_root)
     project = tmp_path / "empty-project"
     (project / ".claude" / "skills").mkdir(parents=True)
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project))
@@ -126,7 +144,7 @@ def test_missing_personality_still_placeholders(ai_root, tmp_path, monkeypatch):
 # Enumerate on the roster; gate on lifecycle membership.
 
 def test_forge_meta_advisor_builds(ai_root):
-    _seed_progress(ai_root)
+    _seed_decision(ai_root)
     r = run_engine("briefing", "build", "forge-chro")
     assert "is not in the instance registry" not in r.stderr
     assert r.returncode == 0, f"stderr: {r.stderr[:400]}"
@@ -140,7 +158,7 @@ def test_forge_meta_advisor_regenerates(ai_root):
     `file decision` / `session close` / `mention create` / the post-commit hook all
     declined to refresh forge — and returned 0, leaving the refusal invisible.
     """
-    _seed_progress(ai_root)
+    _seed_decision(ai_root)
     scripts_dir = Path(__file__).resolve().parents[2]  # engine/scripts
     r = subprocess.run(
         [sys.executable, "-m", "briefing.regen", "forge-chro"],
@@ -162,7 +180,7 @@ def test_forge_meta_advisor_regenerates(ai_root):
 # against what is on disk, and writes only on a real difference.
 
 def test_rebuild_with_unchanged_inputs_does_not_rewrite(ai_root):
-    _seed_progress(ai_root)
+    _seed_decision(ai_root)
     path = ai_root / "agent-memory" / "advisors" / "briefings" / "kai-cto.md"
 
     first = run_engine("briefing", "build", "kai-cto")
@@ -180,7 +198,7 @@ def test_rebuild_with_unchanged_inputs_does_not_rewrite(ai_root):
 def test_timestamp_drift_alone_is_not_a_change(ai_root):
     """generated_at is stamped into every render, so it must be excluded from the
     comparison — otherwise every build looks like a change and the fix is a no-op."""
-    _seed_progress(ai_root)
+    _seed_decision(ai_root)
     path = ai_root / "agent-memory" / "advisors" / "briefings" / "kai-cto.md"
 
     run_engine("briefing", "build", "kai-cto")
@@ -194,15 +212,13 @@ def test_timestamp_drift_alone_is_not_a_change(ai_root):
 
 
 def test_rebuild_after_input_change_rewrites(ai_root):
-    _seed_progress(ai_root)
+    _seed_decision(ai_root)
     path = ai_root / "agent-memory" / "advisors" / "briefings" / "kai-cto.md"
 
     run_engine("briefing", "build", "kai-cto")
     before = path.read_text(encoding="utf-8")
 
-    (ai_root / "progress-summary.md").write_text(
-        "# Progress Summary\n\n**Phase**: P2 | **v2.0 SHIPPED** Jul 27\n", encoding="utf-8"
-    )
+    _seed_decision(ai_root, slug="2026-02-02-kai-cto-later")
 
     after_run = run_engine("briefing", "build", "kai-cto")
     assert after_run.returncode == 0, f"stderr: {after_run.stderr[:400]}"
@@ -215,7 +231,7 @@ def test_unreadable_existing_briefing_is_rewritten_not_raised(ai_root):
     corrupt file quietly repaired itself on the next write. Build-and-compare added
     a read for the comparison — an unreadable file must still self-heal, not raise
     (which would wedge every future session start at exit 1)."""
-    _seed_progress(ai_root)
+    _seed_decision(ai_root)
     path = ai_root / "agent-memory" / "advisors" / "briefings" / "kai-cto.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"\xff\xfe not valid utf-8 \x80\x81")
@@ -233,7 +249,7 @@ def test_unreadable_existing_briefing_is_rewritten_not_raised(ai_root):
 @pytest.fixture
 def kai_cto_built(ai_root):
     """Run `engine briefing build kai-cto` once; return (result, briefing_path)."""
-    _seed_progress(ai_root)
+    _seed_decision(ai_root)
     r = run_engine("briefing", "build", "kai-cto")
     briefing_path = ai_root / "agent-memory" / "advisors" / "briefings" / "kai-cto.md"
     return r, briefing_path
@@ -252,7 +268,6 @@ def test_briefing_section_headers(kai_cto_built):
     content = path.read_text()
     for header in (
         "## Who I am",
-        "## Project state",
         "## My open queue",
         "## Last sessions",
         "## Mentions",
@@ -276,7 +291,7 @@ def test_wrote_contains_filename(kai_cto_built):
 
 # Case 8: build does NOT commit (git HEAD unchanged)
 def test_no_commit(ai_root):
-    _seed_progress(ai_root)
+    _seed_decision(ai_root)
     subprocess.run(["git", "init", "-q"], cwd=str(ai_root), check=True)
     subprocess.run(["git", "config", "user.email", "test@test"], cwd=str(ai_root), check=True)
     subprocess.run(["git", "config", "user.name", "test"], cwd=str(ai_root), check=True)
@@ -301,7 +316,7 @@ def test_no_commit(ai_root):
 # ---------------------------------------------------------------------------
 
 def test_file_decision_triggers_regen(ai_root, tmp_path):
-    _seed_progress(ai_root)
+    _seed_decision(ai_root)
 
     # Seed initial briefing (mtime baseline).
     briefing_path = ai_root / "agent-memory" / "advisors" / "briefings" / "kai-cto.md"

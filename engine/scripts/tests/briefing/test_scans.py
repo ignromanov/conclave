@@ -18,7 +18,6 @@ from briefing.scans import (
     identity,
     mentions,
     p0,
-    project_state,
     queue,
     sessions,
 )
@@ -39,7 +38,8 @@ def make_ctx(tmp_path: Path, advisor: str = "kai-cto") -> ScanCtx:
         mentions_dir=tmp_path / "agent-memory" / "advisors" / "mentions",
         gh_cache_dir=tmp_path / "agent-memory" / "gh-cache",
         personality_path=tmp_path / ".claude" / "skills" / f"team.{advisor}" / "memory" / "personality.md",
-        progress_path=tmp_path / "progress-summary.md",
+        project_root=tmp_path,
+        plans_dir=tmp_path / ".claude" / "plans",
     )
 
 
@@ -109,59 +109,6 @@ class TestIdentity:
             "which does not exist"
         )
         assert len(result) > 10
-
-
-# ---------------------------------------------------------------------------
-# project_state
-# ---------------------------------------------------------------------------
-
-class TestProjectState:
-    def test_missing_file_returns_placeholder(self, tmp_path):
-        ctx = make_ctx(tmp_path)
-        result = project_state.build(ctx)
-        assert result == "_(progress-summary.md missing)_"
-
-    def test_skips_top_level_heading(self, tmp_path):
-        ctx = make_ctx(tmp_path)
-        _write(ctx.progress_path, "# Progress Summary\n\n**Phase**: P1\n")
-        result = project_state.build(ctx)
-        assert "# Progress Summary" not in result
-        assert "**Phase**: P1" in result
-
-    def test_skips_blockquote_lines(self, tmp_path):
-        ctx = make_ctx(tmp_path)
-        _write(ctx.progress_path, "> meta note\n\n**Phase**: P1\n")
-        result = project_state.build(ctx)
-        assert "> meta note" not in result
-        assert "**Phase**: P1" in result
-
-    def test_head_20_truncation(self, tmp_path):
-        ctx = make_ctx(tmp_path)
-        lines = [f"Line {i}" for i in range(30)]
-        _write(ctx.progress_path, "\n".join(lines))
-        result = project_state.build(ctx)
-        result_lines = result.splitlines()
-        assert len(result_lines) == 20
-        assert result_lines[0] == "Line 0"
-        assert result_lines[-1] == "Line 19"
-
-    def test_trims_leading_blanks(self, tmp_path):
-        ctx = make_ctx(tmp_path)
-        _write(ctx.progress_path, "\n\n\nActual content\n")
-        result = project_state.build(ctx)
-        assert result.startswith("Actual content")
-
-    @_NEEDS_INSTANCE
-    def test_real_progress_summary(self, live_ctx):
-        """Integration: project_state honours its contract on whichever branch the live tree
-        lands in. progress-summary.md is optional per-instance DATA, so 'absent' is a
-        legitimate state — asserting only the present branch is what made this skip."""
-        result = project_state.build(live_ctx)
-        if live_ctx.progress_path.is_file():
-            assert result != "_(progress-summary.md missing)_"
-            assert len(result.splitlines()) <= 20
-        else:
-            assert result == "_(progress-summary.md missing)_"
 
 
 # ---------------------------------------------------------------------------

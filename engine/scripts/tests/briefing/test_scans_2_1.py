@@ -33,7 +33,8 @@ def make_ctx(tmp_path: Path, advisor: str = "kai-cto") -> ScanCtx:
         mentions_dir=tmp_path / "agent-memory" / "advisors" / "mentions",
         gh_cache_dir=tmp_path / "agent-memory" / "gh-cache",
         personality_path=tmp_path / ".claude" / "skills" / f"team.{advisor}" / "memory" / "personality.md",
-        progress_path=tmp_path / "progress-summary.md",
+        project_root=tmp_path,
+        plans_dir=tmp_path / ".claude" / "plans",
     )
 
 
@@ -117,24 +118,39 @@ class TestCurrentWork:
         result = current_work.build(ctx)
         assert "The next task" in result
 
+    # These two used to seed `agent-memory/git-cache/log.md` and call it "inject fake
+    # git log via git-cache file". That fixture was the ONLY writer of that filename
+    # anywhere: the real producer (lifecycle/git_fetch.py) writes `state.md`, a
+    # worktree snapshot with no commit log in it. So the cache branch was green in the
+    # suite and dead in every instance — a branch written solely by its own test, which
+    # is exactly what the #149 gate exists to catch. The branch is gone (spec 116 F1);
+    # what these tests actually assert — commits render, task-IDs parse — now runs
+    # through the live-git path that has produced this section all along.
     def test_commits_block_present_when_git_works(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         ctx = make_ctx(tmp_path)
-        # Inject fake git log via git-cache file.
-        cache_log = tmp_path / "agent-memory" / "git-cache" / "log.md"
-        _write(
-            cache_log,
-            "abc1234 feat(084): implement phase 2\ndef5678 fix: patch something\n",
+        monkeypatch.setattr(
+            current_work,
+            "_run_git_log",
+            lambda _root: [
+                "abc1234 feat(084): implement phase 2",
+                "def5678 fix: patch something",
+            ],
         )
         result = current_work.build(ctx)
         assert "Recent commits" in result
         assert "feat(084)" in result
 
-    def test_task_ids_parsed_from_commits(self, tmp_path: Path) -> None:
+    def test_task_ids_parsed_from_commits(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         ctx = make_ctx(tmp_path)
-        cache_log = tmp_path / "agent-memory" / "git-cache" / "log.md"
-        _write(cache_log, "abc1234 chore(084): T2.1 implement scans\n")
+        monkeypatch.setattr(
+            current_work,
+            "_run_git_log",
+            lambda _root: ["abc1234 chore(084): T2.1 implement scans"],
+        )
         result = current_work.build(ctx)
         # Task-ID pattern should be extracted.
         assert "084" in result or "2.1" in result

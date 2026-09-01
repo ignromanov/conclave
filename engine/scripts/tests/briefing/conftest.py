@@ -12,7 +12,7 @@ Determinism contract:
     engine_root() / templates_dir() — __file__-relative, never reads from
     a live instance root (D2: instance-agnostic).
   - Mutable agent-memory inputs (decisions, sessions, mentions, gh-cache,
-    hot.md, progress-summary.md) are written as SYNTHETIC inline fixtures —
+    hot.md) are written as SYNTHETIC inline fixtures —
     no live reads, fully reproducible per-commit regardless of agent-memory state.
 """
 from __future__ import annotations
@@ -77,7 +77,8 @@ def live_ctx():
         mentions_dir=paths.mentions_dir(),
         gh_cache_dir=paths.gh_cache_dir(),
         personality_path=advisor_personality_path(advisor),
-        progress_path=root / "progress-summary.md",
+        project_root=paths.project_root(),
+        plans_dir=paths.project_plans_dir(),
     )
 
 
@@ -89,7 +90,7 @@ def kai_cto_tmp_root(tmp_path: Path) -> Path:
     instance root is read (D2: instance-agnostic).
 
     Mutable agent-memory (decisions, sessions, mentions, gh-cache, hot.md,
-    progress-summary.md) — written as synthetic inline fixtures, fully
+    written as synthetic inline fixtures, fully
     deterministic across runs.
     """
     advisor = "kai-cto"
@@ -117,13 +118,6 @@ def kai_cto_tmp_root(tmp_path: Path) -> Path:
 
     am = tmp_path / "agent-memory"
     am.mkdir(parents=True, exist_ok=True)
-
-    # progress-summary.md — per-instance DATA, synthesized inline
-    _write(tmp_path / "progress-summary.md", """\
-        # Progress Summary
-
-        **Phase**: P1 (Post-Launch) | **v1.0 DEPLOYED** Mar 28
-    """)
 
     # hot.md — one-liner synthetic
     _write(am / "hot.md", """\

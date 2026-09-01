@@ -26,7 +26,8 @@ class ScanCtx:
         mentions_dir:      agent-memory/advisors/mentions/
         gh_cache_dir:      agent-memory/gh-cache/
         personality_path:  .claude/skills/team.<advisor>/memory/personality.md
-        progress_path:     <repo_root>/progress-summary.md
+        project_root:      CODE checkout root — the tree plan predicates resolve against
+        plans_dir:         .claude/plans/ (harness plan convention)
     """
 
     advisor: str
@@ -37,4 +38,5 @@ class ScanCtx:
     mentions_dir: Path
     gh_cache_dir: Path
     personality_path: Path
-    progress_path: Path
+    project_root: Path
+    plans_dir: Path

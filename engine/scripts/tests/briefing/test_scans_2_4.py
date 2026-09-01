@@ -28,7 +28,8 @@ def make_ctx(tmp_path: Path, advisor: str = "kai-cto") -> ScanCtx:
         mentions_dir=tmp_path / "agent-memory" / "advisors" / "mentions",
         gh_cache_dir=tmp_path / "agent-memory" / "gh-cache",
         personality_path=tmp_path / ".claude" / "skills" / f"team.{advisor}" / "memory" / "personality.md",
-        progress_path=tmp_path / "progress-summary.md",
+        project_root=tmp_path,
+        plans_dir=tmp_path / ".claude" / "plans",
     )
 
 

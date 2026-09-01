@@ -105,8 +105,7 @@ def main(argv: list[str] | None = None) -> int:
         mentions,
         owed,
         p0,
-        project_digest,
-        project_state,
+        plans,
         queue,
         roadmap,
         sessions,
@@ -134,19 +133,14 @@ def main(argv: list[str] | None = None) -> int:
         # in CODE under the SKILL's name, so the project anchor is empty for it by
         # construction. The resolver handles both kinds.
         personality_path=advisor_personality_path(advisor),
-        # progress-summary.md IS per-instance DATA (tests/briefing/conftest.py:76), so
-        # this one correctly stays on the DATA root — it is not the same defect.
-        progress_path=root / "progress-summary.md",
+        project_root=paths.project_root(),
+        plans_dir=paths.project_plans_dir(),
     )
 
     # Run scans individually so each step can be timed.
     t0 = _now_ms()
     who_i_am = identity.build(ctx)
     _emit_step("who-i-am", t0)
-
-    t0 = _now_ms()
-    proj_state = project_state.build(ctx)
-    _emit_step("project-state", t0)
 
     t0 = _now_ms()
     recent_decisions = decisions.build(ctx)
@@ -193,8 +187,8 @@ def main(argv: list[str] | None = None) -> int:
     _emit_step("interrupted", t0)
 
     t0 = _now_ms()
-    project_digest_body = project_digest.build(ctx)
-    _emit_step("project-digest", t0)
+    plans_body = plans.build(ctx)
+    _emit_step("plans", t0)
 
     t0 = _now_ms()
     closeability_body = closeability.build(ctx)
@@ -208,7 +202,6 @@ def main(argv: list[str] | None = None) -> int:
         "advisor": advisor,
         "generated_at": _generated_at(),
         "who_i_am": who_i_am,
-        "project_state": proj_state,
         "recent_decisions": recent_decisions,
         "my_queue": my_queue,
         "p0_blockers": p0_blockers,
@@ -220,7 +213,7 @@ def main(argv: list[str] | None = None) -> int:
         "roadmap": roadmap_body,
         "drift": drift_body,
         "interrupted": interrupted_body,
-        "project_digest": project_digest_body,
+        "plans": plans_body,
         "closeability": closeability_body,
         "code_repo": code_repo_body,
     }

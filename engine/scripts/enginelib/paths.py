@@ -168,6 +168,13 @@ def project_agents_dir() -> Path:
     return project_claude_dir() / "agents"
 
 
+def project_plans_dir() -> Path:
+    """Harness-convention plans (.claude/plans/). The OTHER plan convention is
+    `ops/specs/<NNN-slug>/plan*.md` in DATA, reachable from repo_root(); spec 116
+    covers both because both are measured and neither is engine canon."""
+    return project_claude_dir() / "plans"
+
+
 def project_skills_dir() -> Path:
     """Project-side skills dir (.claude/skills/, live-reloaded router homes)."""
     return project_claude_dir() / "skills"

@@ -764,3 +764,320 @@ def test_hot_section_gate_catches_a_section_with_no_producer(tmp_path):
     assert declared == {"written", "orphan"}
     assert written == {"written"}, "a test-only call must not count as a producer"
     assert sorted(declared - written) == ["orphan"]
+
+
+# --- briefing scan sources (#182, spec 116) ---------------------------------
+#
+# #149 gates hot.md's _SECTION_MAP. This gates one layer over: a briefing SCAN whose
+# source no producer writes. The two are the same defect at different addresses —
+# `progress-summary.md` was read by two scans, written by nothing anywhere in the
+# engine, and had never existed in this instance's DATA history. Both sections rendered
+# `_(progress-summary.md missing)_` in every briefing from the root commit onward: 8
+# placeholders across 4 of 4 advisors, and nothing ever failed.
+#
+# AST, not grep, for the same reason #149 gives: every filename here is also spelled in
+# a docstring. `current_work.py` named `log.md` in its module docstring, its function
+# docstring AND its code, while the producer wrote `state.md` — a grep gate is green on
+# the prose alone.
+#
+# Two independent assertions, because the defect had two independent tells:
+#   1. the source filename had no writer                    -> _scan_source_filenames
+#   2. the ScanCtx field was the only one built by raw
+#      concatenation instead of a paths.py resolver         -> the ScanCtx test below
+
+_SCANS_DIR = SCRIPTS_ROOT / "briefing" / "scans"
+_BRIEFING_MAIN = SCRIPTS_ROOT / "briefing" / "__main__.py"
+
+# Calls that put bytes on disk. A module that names a file but never writes is a reader
+# (enginelib/audit/specs_registry.py names REGISTRY.md and only audits it) — counting it
+# as a producer is how REGISTRY.md would slip through for the wrong reason.
+_WRITE_CALLS = frozenset({"write_text", "write_bytes", "snapshot_write", "writelines"})
+
+# Sources with no engine writer BY DESIGN: the operator or an advisor authors them.
+# The value is not a comment, it is the registration — it must name what creates the
+# file. This is the escape hatch and it is deliberately narrow: `progress-summary.md`
+# could never have used it, because in a Conclave instance nothing and nobody creates
+# it (the VoidPay original was hand-written under a lifecycle this engine does not
+# ship). An unregistered, unwritten source is the defect.
+_OPERATOR_AUTHORED = {
+    "REGISTRY.md": "authored by advisors; CLAUDE.md requires every spec listed the moment it exists",
+    "plan.md": "authored by advisors beside their spec; CLAUDE.md 'plans go in DATA'",
+}
+
+
+_GLOB_METHODS = frozenset({"glob", "rglob"})
+
+
+def _md_sources_in_path_exprs(tree: ast.AST) -> set[str]:
+    """Every '*.md' filename a module names as a FILE it touches.
+
+    Two shapes, because the codebase uses both and a gate that saw only one would
+    under-credit a real producer — `enginelib/spec.py` reaches its files through
+    ``glob("*/spec.md")`` and would look like a non-producer to a BinOp-only reader:
+
+      1. path construction     ``x / "name.md"``
+      2. glob patterns         ``x.glob("*/name.md")`` — final segment only, and only
+                               when that segment carries no wildcard
+
+    Deliberately NOT counted: a literal in a comparison. `interrupted.py` tests
+    `md.name == "INDEX.md"` in order to SKIP that file; a filter is not a source, and a
+    gate that flagged it would report the opposite of the truth.
+    """
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            right = node.right
+            if (
+                isinstance(right, ast.Constant)
+                and isinstance(right.value, str)
+                and right.value.endswith(".md")
+            ):
+                found.add(right.value)
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in _GLOB_METHODS
+            and node.args
+        ):
+            arg = node.args[0]
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                tail = arg.value.rsplit("/", 1)[-1]
+                if tail.endswith(".md") and "*" not in tail and "?" not in tail:
+                    found.add(tail)
+    return found
+
+
+def _iter_production_modules(scripts_root: pathlib.Path):
+    """Production .py files under scripts_root: no tests, no caches, no venvs."""
+    for path in sorted(scripts_root.rglob("*.py")):
+        parts = path.relative_to(scripts_root).parts
+        if any(p in {"tests", "__pycache__", ".venv", "site-packages"} for p in parts):
+            continue
+        try:
+            yield path, ast.parse(path.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError):  # pragma: no cover - defensive
+            continue
+
+
+def _ctx_field_sources(main_module: pathlib.Path) -> dict[str, str]:
+    """Map ``ScanCtx`` field -> the '*.md' filename it is constructed from.
+
+    Load-bearing, and it is the whole reason this gate is not vacuous. The scans that
+    read `progress-summary.md` never spell it: they read `ctx.progress_path`, and the
+    filename appears only here, in the constructor. A first version of this gate looked
+    at `briefing/scans/*.py` alone, passed its synthetic meta-test, and then PASSED
+    against the real defect restored from master — the mutation caught what the
+    meta-test could not. A scan's source may be one indirection away, so the gate has
+    to follow the field.
+    """
+    tree = ast.parse(main_module.read_text(encoding="utf-8"))
+    mapping: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not (isinstance(node.func, ast.Name) and node.func.id == "ScanCtx"):
+            continue
+        for kw in node.keywords:
+            if kw.arg is None:
+                continue
+            names = _md_sources_in_path_exprs(ast.Module(body=[ast.Expr(kw.value)],
+                                                         type_ignores=[]))
+            if names:
+                mapping[kw.arg] = sorted(names)[0]
+    return mapping
+
+
+def _scan_source_filenames(scans_dir: pathlib.Path,
+                           ctx_sources: dict[str, str] | None = None) -> set[str]:
+    """'*.md' sources the briefing scans read — directly, or via a ScanCtx field."""
+    ctx_sources = ctx_sources or {}
+    found: set[str] = set()
+    for path in sorted(scans_dir.glob("*.py")):
+        if path.name == "__init__.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        found |= _md_sources_in_path_exprs(tree)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in ctx_sources:
+                found.add(ctx_sources[node.attr])
+    if not found:
+        raise AssertionError(
+            f"scan-source gate is vacuous: no '*.md' sources found in {scans_dir}"
+        )
+    return found
+
+
+def _written_md_filenames(scripts_root: pathlib.Path, exclude_pkg: str) -> set[str]:
+    """'*.md' filenames built into a path by a module that also writes.
+
+    The write call need only be present in the same module — resolving which path a
+    given write targets is undecidable in general, and this is the coarse direction:
+    it over-credits a mixed module, never under-credits a real producer, so a FAIL is
+    always a real orphan.
+    """
+    written: set[str] = set()
+    for path, tree in _iter_production_modules(scripts_root):
+        if path.relative_to(scripts_root).parts[0] == exclude_pkg:
+            continue
+        names = _md_sources_in_path_exprs(tree)
+        if not names:
+            continue
+        writes = any(
+            isinstance(n, ast.Call)
+            and (
+                (isinstance(n.func, ast.Attribute) and n.func.attr in _WRITE_CALLS)
+                or (isinstance(n.func, ast.Name) and n.func.id in _WRITE_CALLS)
+            )
+            for n in ast.walk(tree)
+        )
+        if writes:
+            written |= names
+    return written
+
+
+def test_every_briefing_scan_source_has_a_producer():
+    """A scan reading a file nobody writes renders its placeholder forever (#182)."""
+    sources = _scan_source_filenames(_SCANS_DIR, _ctx_field_sources(_BRIEFING_MAIN))
+    written = _written_md_filenames(SCRIPTS_ROOT, exclude_pkg="briefing")
+    orphans = sorted(sources - written - set(_OPERATOR_AUTHORED))
+
+    assert not orphans, (
+        "scan-source gate FAIL — read by a briefing scan, written by no production "
+        f"code: {orphans}\n"
+        "Either give the source a producer, drop the scan, or — only if a human or an "
+        "advisor genuinely authors it — add it to _OPERATOR_AUTHORED naming what creates it."
+    )
+
+
+def test_every_scan_ctx_path_is_built_from_a_resolver():
+    """ScanCtx path fields come from paths.py, never from raw concatenation (#182).
+
+    The structural tell, and the cheapest one: of the nine ScanCtx fields,
+    `progress_path=root / "progress-summary.md"` was the ONLY one assembled by
+    concatenation rather than by calling a resolver. Every field with a producer had a
+    helper that both sides shared; the field with no producer had no helper to share.
+    The anomaly was visible in the constructor's shape before anyone read a scan.
+    """
+    tree = ast.parse(_BRIEFING_MAIN.read_text(encoding="utf-8"))
+    offenders: list[str] = []
+    found_ctor = False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not (isinstance(node.func, ast.Name) and node.func.id == "ScanCtx"):
+            continue
+        found_ctor = True
+        for kw in node.keywords:
+            if isinstance(kw.value, ast.BinOp) and isinstance(kw.value.op, ast.Div):
+                offenders.append(f"{kw.arg}=<concatenation>")
+
+    assert found_ctor, f"no ScanCtx(...) construction found in {_BRIEFING_MAIN}"
+    assert not offenders, (
+        "ScanCtx gate FAIL — path field built by concatenation instead of a paths.py "
+        f"resolver: {offenders}\n"
+        "A field with no shared resolver is a field whose producer and consumer never "
+        "had to agree. Add a helper to enginelib/paths.py and use it on both sides."
+    )
+
+
+def test_scan_source_gate_catches_a_source_with_no_producer(tmp_path):
+    """The detector, detected.
+
+    Plants an orphan and four decoys. The decoys matter as much as the orphan: a gate
+    that reported all five would be exactly as useless as one that reported none.
+    Rooted under a directory literally named `tests` so that the exclusion, which
+    matches on parts RELATIVE to the root, cannot pass by matching the absolute path.
+    """
+    root = tmp_path / "tests" / "instance"
+    scans = root / "briefing" / "scans"
+    scans.mkdir(parents=True)
+    (scans / "__init__.py").write_text("", encoding="utf-8")
+    (scans / "orphan_scan.py").write_text(
+        'def build(ctx):\n'
+        '    """mentions also-not-written.md — a docstring writes nothing"""\n'
+        '    src = ctx.repo_root / "nobody-writes-this.md"\n'
+        '    other = ctx.repo_root / "produced.md"\n'
+        '    if src.name == "SKIPPED.md":\n'
+        '        return ""\n'
+        '    return src.read_text() + other.read_text()\n',
+        encoding="utf-8",
+    )
+    producer = root / "enginelib"
+    producer.mkdir(parents=True)
+    (producer / "filing.py").write_text(
+        'def file_it(root):\n'
+        '    (root / "produced.md").write_text("x")\n',
+        encoding="utf-8",
+    )
+    # decoy: a module that NAMES the orphan but only reads it is not a producer
+    (producer / "audit.py").write_text(
+        'def audit(root):\n'
+        '    return (root / "nobody-writes-this.md").read_text()\n',
+        encoding="utf-8",
+    )
+    # decoy: a test-only writer must not count
+    tests_pkg = root / "tests"
+    tests_pkg.mkdir(parents=True)
+    (tests_pkg / "test_seed.py").write_text(
+        'def test_seed(tmp_path):\n'
+        '    (tmp_path / "nobody-writes-this.md").write_text("fixture")\n',
+        encoding="utf-8",
+    )
+
+    # The indirection that made the first version of this gate vacuous: a scan whose
+    # source is named ONLY in the ScanCtx constructor, never in the scan itself.
+    (scans / "indirect_scan.py").write_text(
+        "def build(ctx):\n"
+        "    return ctx.phantom_path.read_text()\n",
+        encoding="utf-8",
+    )
+    main_mod = root / "briefing" / "__main__.py"
+    main_mod.write_text(
+        "ctx = ScanCtx(\n"
+        "    decisions_dir=paths.decisions_dir(),\n"
+        '    phantom_path=root / "named-only-in-the-ctor.md",\n'
+        ")\n",
+        encoding="utf-8",
+    )
+    ctx_sources = _ctx_field_sources(main_mod)
+    assert ctx_sources == {"phantom_path": "named-only-in-the-ctor.md"}, ctx_sources
+
+    sources = _scan_source_filenames(scans, ctx_sources)
+    written = _written_md_filenames(root, exclude_pkg="briefing")
+
+    assert sources == {
+        "nobody-writes-this.md",
+        "produced.md",
+        "named-only-in-the-ctor.md",
+    }, sources
+    assert written == {"produced.md"}, (
+        "a read-only module and a test-only writer must not count as producers"
+    )
+    assert sorted(sources - written) == [
+        "named-only-in-the-ctor.md",
+        "nobody-writes-this.md",
+    ], "a source named only in the ScanCtx ctor must still be seen"
+
+
+def test_scan_ctx_gate_catches_a_concatenated_field(tmp_path):
+    """The second detector, detected — a concatenated field must fail the gate."""
+    mod = tmp_path / "main_with_concat.py"
+    mod.write_text(
+        'ctx = ScanCtx(\n'
+        '    advisor=advisor,\n'
+        '    decisions_dir=paths.decisions_dir(),\n'
+        '    progress_path=root / "progress-summary.md",\n'
+        ')\n',
+        encoding="utf-8",
+    )
+    tree = ast.parse(mod.read_text(encoding="utf-8"))
+    offenders = [
+        kw.arg
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "ScanCtx"
+        for kw in node.keywords
+        if isinstance(kw.value, ast.BinOp) and isinstance(kw.value.op, ast.Div)
+    ]
+    assert offenders == ["progress_path"], offenders

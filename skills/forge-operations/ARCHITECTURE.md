@@ -301,7 +301,7 @@ All 59 non-test scripts. Row count equals `find scripts -name '*.sh' -not -path 
 | audit-phantom-skills.sh | audit.md cat.2 | skills/team.*/SKILL.md | none | Prints WARN |
 | audit-registry-consistency.sh | audit.md cat.5 | CLAUDE.md, agents/*.md | none | Prints CRIT |
 | audit-versions.sh | audit.md cat.1 | skills/team.*/SKILL.md frontmatter | none | Prints OK/WARN/CRIT |
-| briefing-build.sh | hire.md post-hire, team.done | progress-summary.md, gh-cache, git-cache, sessions, decisions, mentions | briefings/<a>.md | Reads lifecycle/ snapshots |
+| briefing-build.sh | hire.md post-hire, team.done | gh-cache, sessions, decisions, mentions | briefings/<a>.md | Reads lifecycle/ snapshots |
 | bump-model-version.sh | hire.md Ph3c, evolve.md St6 | agent-model-version.md | skills/team.*/SKILL.md | Stamps forge.model-version |
 | close-session.sh | team.done | agent-memory/ session | none (orchestrates) | Calls resolve-mention, file-handoff |
 | engine advisor create | hire.md Ph3a | templates/*.md | skills/team.<id>/ tree | Scaffolds advisor |

@@ -31,7 +31,8 @@ def make_ctx(tmp_path: Path, advisor: str = "kai-cto") -> ScanCtx:
         mentions_dir=tmp_path / "agent-memory" / "advisors" / "mentions",
         gh_cache_dir=tmp_path / "agent-memory" / "gh-cache",
         personality_path=tmp_path / ".claude" / "skills" / f"team.{advisor}" / "memory" / "personality.md",
-        progress_path=tmp_path / "progress-summary.md",
+        project_root=tmp_path,
+        plans_dir=tmp_path / ".claude" / "plans",
     )
 
 
@@ -174,7 +175,6 @@ class TestRenderBuild:
         render_build(ctx, out)
         content = out.read_text(encoding="utf-8")
         assert "_(personality.md not yet written" in content
-        assert "_(progress-summary.md missing)_" in content
         assert "_(no decisions recorded yet)_" in content
         assert "_(no prior sessions recorded)_" in content
         assert "_(no open mentions)_" in content
