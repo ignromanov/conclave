@@ -216,9 +216,21 @@ PYTHONPATH=engine/scripts \
   python engine/scripts/feedback/feedback_verify.py
 ```
 
-Prints `auto-close=N candidates=M nominations=K`.
+Prints `auto-close=N held-unshipped=H candidates=M nominations=K broken=B`.
 
-- **auto-close items**: predicate-passing items confirmed resolved on disk. Re-run with `--apply` to write `status=resolved` via `feedback_triage.py --set` (no duplicate writer — routes through the audited path).
+- **auto-close items**: predicate-passing items whose evidence is *also* in the shipped
+  ref. Re-run with `--apply` to write `status=resolved` via `feedback_triage.py --set`
+  (no duplicate writer — routes through the audited path).
+- **held-unshipped** (#160): the predicate passes on disk, but the file it read differs
+  from the ref — the work is uncommitted, untracked, or committed on a branch that never
+  landed. These are **not** closed. They stay `accepted`, are printed by name, and close
+  themselves on the first sweep after the work ships. Holding is a wait, not a refusal:
+  a close recorded against a branch that is later abandoned is permanently and silently
+  false, and `feedback_index.py --rebuild` would keep re-asserting it. Each line names
+  the snapshot it compared against — the branch upstream, else `origin/HEAD`, else
+  `HEAD`. On an instance where the engine is an unpacked plugin rather than a checkout
+  there is no ref to compare with; the installed tree **is** the released artefact, so
+  those close normally and the line says so.
 - **candidates** (`_verify/verify-candidates-<date>.md`): LLM-judge each — is the fix present on disk? For each confirmed: run `feedback_triage.py --set <feedback_id> <item_id> resolved`.
 - **nominations** (`ops/feedback/nominations/<slug>-<fingerprint>.md`): recurring high-frequency
   clusters, one file per cluster. The consumer is **spec 091 L1** (Forge-evolve, operator approves

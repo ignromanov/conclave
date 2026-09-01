@@ -601,3 +601,61 @@ def test_set_verify_without_root_code_still_refuses_an_engine_target(tmp_path):
                       env_extra={"CONCLAVE_ENGINE_ROOT": str(code_root / "engine")})
     assert res.returncode == 1
     assert "cannot be evaluated" in res.stderr
+
+
+# --- #160: a close must rest on evidence that shipped, not on the working tree ---
+
+import subprocess as _subprocess
+
+
+def _git_checkout_layout(tmp_path, committed: str):
+    """A real git checkout holding the predicate target, with .conclave as its DATA root.
+
+    The existing --apply tests run in a plain tmp dir, which is not a repo at all — so
+    they exercise the 'installed tree' branch and say nothing about this one."""
+    checkout = tmp_path / "checkout"
+    (checkout / "engine").mkdir(parents=True)
+    target = checkout / "engine" / "x.py"
+    target.write_text(committed)
+    for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t"),
+                 ("config", "user.name", "t"), ("add", "engine/x.py"),
+                 ("commit", "-qm", "seed")):
+        _subprocess.run(["git", "-C", str(checkout), *args], check=True,
+                        capture_output=True, text=True)
+    data_root = checkout / ".conclave"
+    path = _write_review_file(data_root, "sage-checkout.md", _checkout_layout_meta())
+    return data_root, target, path
+
+
+def test_apply_holds_a_close_whose_evidence_is_only_in_the_working_tree(tmp_path):
+    """The measured defect: the fix is on disk and in no commit, the predicate reads it
+    as done, and --apply would record `resolved` against work that may never merge.
+    Abandoning the branch would leave a permanently, silently false closure."""
+    data_root, target, path = _git_checkout_layout(tmp_path, "no marker yet\n")
+    target.write_text("# MARKER: the fix landed\n")   # uncommitted
+
+    res = _run_verify(data_root, ["--apply"])
+    assert res.returncode == 0, res.stderr
+
+    from briefing.frontmatter_io import read_commented
+    status = read_commented(path)[0]["items"][0]["status"]
+    assert status == "accepted", "closed on evidence that exists in no commit"
+    assert "HELD" in res.stderr, f"a held close must be reported by name\n{res.stderr}"
+    assert "held-unshipped=1" in res.stdout
+
+
+def test_apply_closes_once_the_evidence_is_committed(tmp_path):
+    """The other half: holding must not be a permanent block. The same item closes as
+    soon as the work lands, which is what makes 'held' a wait rather than a refusal."""
+    data_root, target, path = _git_checkout_layout(tmp_path, "no marker yet\n")
+    target.write_text("# MARKER: the fix landed\n")
+    _subprocess.run(["git", "-C", str(target.parent.parent), "commit", "-qam", "fix"],
+                    check=True, capture_output=True, text=True)
+
+    res = _run_verify(data_root, ["--apply"])
+    assert res.returncode == 0, res.stderr
+
+    from briefing.frontmatter_io import read_commented
+    status = read_commented(path)[0]["items"][0]["status"]
+    assert status == "resolved", f"{res.stdout}{res.stderr}"
+    assert "held-unshipped=0" in res.stdout
