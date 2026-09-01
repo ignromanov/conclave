@@ -375,7 +375,12 @@ uv run --project engine/scripts/feedback \
   --check
 ```
 
-Prints `triage_due=<true|false>` and `open_items=<N>` without mutating anything.
+Prints `triage_due=<true|false>`, `open_items=<N>`, `new_reviews=<N>` and
+`days_since=<N|never>` without mutating anything. The verdict is the documented
+cadence — `days_since > 7` **or** `new_reviews >= 15` — and the two quantities it
+was computed from are printed beside it, so a due notice says *why* it is due (#89).
+`open_items` is reported but is no longer a trigger: when it was, finishing a triage
+re-armed the notice demanding one, and the banner carried no information.
 Used by `/conclave:start` cadence guard.
 
 ## Summary format

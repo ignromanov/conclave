@@ -184,21 +184,71 @@ def cmd_digest(rows: list[dict], as_json: bool = False) -> None:
         print(f"{what:<45} {why:<30} {urgency}")
 
 
+# #89 — the cadence, as commands/triage.md and feedback-protocol.md both state it:
+#     now - last_triage > 7 days   OR   new reviews since last triage >= 15
+# The code used to read `days_since > 7 or open_count > 0` — an ITEM count against a
+# threshold of one. So a completed triage re-armed the notice that demands a triage: the
+# session's own freshly filed review left open items behind. The banner then appeared at
+# every SessionStart forever and carried no information, a backlog of 27 and a backlog of
+# 1 being indistinguishable. It also implemented precisely the behaviour the protocol's
+# own anti-patterns table forbids ("running triage outside the weekly window for a single
+# urgent item").
+TRIAGE_CADENCE_DAYS = 7
+TRIAGE_NEW_REVIEW_THRESHOLD = 15
+
+
+def _created_ts(row: dict) -> float | None:
+    """Epoch seconds of a row's `created`, or None when it cannot be read.
+
+    Index rows carry both `2026-05-22T10:00:00Z` and `2026-08-18 22:32:07+00:00`;
+    fromisoformat takes both on 3.11+."""
+    raw = row.get("created")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw)).timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
+def _new_review_count(rows: list[dict], since_ts: float | None) -> int:
+    """Distinct reviews created after `since_ts` (all of them when never triaged).
+
+    Counted per feedback_id, not per row: a review carries several items and the
+    documented rule counts REVIEWS. Conflating the two is the original defect."""
+    seen = set()
+    for r in rows:
+        if since_ts is not None:
+            ts = _created_ts(r)
+            if ts is None or ts <= since_ts:
+                continue
+        seen.add(r.get("feedback_id"))
+    return len(seen)
+
+
 def cmd_check(rows: list[dict], triage_marker: Path) -> None:
-    """Print triage_due=<true|false> based on marker mtime + new-review count."""
+    """Print the cadence verdict and, beside it, both quantities it was computed from."""
     open_count = sum(1 for r in rows if r.get("status") == "open")
 
     if not triage_marker.exists():
+        marker_mtime = None
+        days_since_str = "never"
         triage_due = True
     else:
         marker_mtime = triage_marker.stat().st_mtime
-        now = datetime.now(UTC).timestamp()
-        # 7 days cadence
-        days_since = (now - marker_mtime) / 86400
-        triage_due = days_since > 7 or open_count > 0
+        days_since = (datetime.now(UTC).timestamp() - marker_mtime) / 86400
+        days_since_str = f"{days_since:.1f}"
+        triage_due = days_since > TRIAGE_CADENCE_DAYS
+    new_reviews = _new_review_count(rows, marker_mtime)
+    triage_due = triage_due or new_reviews >= TRIAGE_NEW_REVIEW_THRESHOLD
 
     print(f"triage_due={'true' if triage_due else 'false'}")
+    # open_items is no longer the trigger, but it is still the backlog size an operator
+    # wants beside the verdict — and it is an ITEM count, which the banner used to render
+    # as "open reviews".
     print(f"open_items={open_count}")
+    print(f"new_reviews={new_reviews}")
+    print(f"days_since={days_since_str}")
 
 
 def cmd_monthly(rows: list[dict]) -> None:

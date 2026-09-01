@@ -498,9 +498,12 @@ def _step_cadence_guard() -> list[str]:
             f"skipping cadence check"
         ]
 
-    # Parse triage_due=<true|false> and open_items=<n> from stdout
+    # Parse triage_due=<true|false>, open_items=<n> and new_reviews=<n> from stdout.
+    # new_reviews is absent on an engine older than #89; the clause it feeds is dropped
+    # rather than rendered as 0, which would assert a fact this run did not measure.
     triage_due = False
     open_items = 0
+    new_reviews: int | None = None
     for line in result.stdout.splitlines():
         if line.startswith("triage_due="):
             triage_due = line.split("=", 1)[1].strip().lower() == "true"
@@ -509,9 +512,19 @@ def _step_cadence_guard() -> list[str]:
                 open_items = int(line.split("=", 1)[1].strip())
             except ValueError:
                 pass
+        elif line.startswith("new_reviews="):
+            try:
+                new_reviews = int(line.split("=", 1)[1].strip())
+            except ValueError:
+                pass
 
     if triage_due:
-        return [f"  feedback: triage due — {open_items} open reviews, run /conclave:triage"]
+        # "open reviews" named the wrong unit: the value is an ITEM count, and it printed
+        # "27 open reviews" for 27 items spread across 4 reviews (#89).
+        why = (f", {new_reviews} new reviews since the last triage"
+               if new_reviews is not None else "")
+        return [f"  feedback: triage due — {open_items} open items{why}, "
+                f"run /conclave:triage"]
     return []
 
 
