@@ -218,6 +218,13 @@ DEFAULT_BRANCH="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/d
 DEFAULT_BRANCH="${DEFAULT_BRANCH:-master}"
 git fetch --quiet --prune origin 2>/dev/null || true
 
+# Compare against the REMOTE-tracking ref, not the local branch. `git fetch` advances
+# origin/<default>; it does not advance the local <default>, and in a worktree the local one is
+# often days behind. Comparing against it reports every branch merged since as unshipped — which
+# is precisely the branches most likely to be removable.
+BASE="origin/$DEFAULT_BRANCH"
+git rev-parse --verify --quiet "$BASE" >/dev/null || BASE="$DEFAULT_BRANCH"
+
 # The DATA root is a sibling of the CODE checkout, not of the cwd — from inside a
 # worktree `cd .conclave` finds nothing and the DATA repo goes unchecked in silence.
 DATA_ROOT="${CONCLAVE_AI_ROOT:-$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null | sed 's#/\.git$##')/.conclave}"
@@ -237,7 +244,7 @@ git worktree list --porcelain | awk '/^branch /{sub("refs/heads/","",$2); print 
 
 git for-each-ref --format='%(refname:short)' refs/heads | while read -r BRANCH; do
   [ "$BRANCH" = "$DEFAULT_BRANCH" ] && continue
-  LEFT=$(git cherry "$DEFAULT_BRANCH" "$BRANCH" 2>/dev/null | grep -c '^+')
+  LEFT=$(git cherry "$BASE" "$BRANCH" 2>/dev/null | grep -c '^+')
   PR=$(awk -F'\t' -v b="$BRANCH" '$1==b{printf "%s%s", sep, $2; sep=","}' /tmp/pr-by-branch.tsv)
   WT=$(grep -qxF "$BRANCH" /tmp/wt-branches.txt && echo worktree || echo bare)
   AGE=$(git log -1 --format=%cr "$BRANCH" 2>/dev/null)
@@ -250,7 +257,7 @@ Read the columns **together** — each signal is wrong on its own, in a differen
 | `unshipped` (`git cherry`) | PR state | Verdict |
 |---|---|---|
 | `0` | merged | **Fully shipped.** Every patch is upstream by patch-id and the PR landed. `git worktree remove` (if any) + `git branch -d`. |
-| `>0` | merged | **Look before removing.** Either commits landed *after* the merge (real work — keep), or the PR was squash-merged from more than one commit, whose combined patch-id matches none of its parts (already shipped — `git cherry` cannot see it). Read the log; do not guess. |
+| `>0` | merged | **Look before removing.** Either commits landed *after* the merge (real work — keep), or `git cherry` cannot see the squash: its patch-id matches none of the branch's own commits when the PR squashed more than one, and it can miss even a single-commit squash once the base has moved under it. Read the log; do not guess. |
 | `>0` | open | Live work in flight. Leave it. |
 | `0` | none | The branch holds no patch of its own. Use the age column: minutes old = a worktree just created and not yet written in (**keep**); days old = work that landed by some other route (**stale**). |
 | `>0` | none | Unshipped and unproposed — the branch nobody is waiting on. Flag it with its age. |
@@ -260,13 +267,15 @@ a `bare` row needs only `git branch -d`, a `worktree` row needs `git worktree re
 branch delete refuses. A `bare` row whose PR merged weeks ago is the ordinary residue of squash-merge
 — `git branch -d` refuses on it (see the row above), so it accumulates silently and forever.
 
-Why three signals and not the obvious one: `git log $DEFAULT_BRANCH..$BRANCH` counts commits, and for
+Why three signals and not the obvious one: `git log $BASE..$BRANCH` counts commits, and for
 a squash-merged branch it counts commits that are already upstream — which is why `git branch -d`
 refuses on branches whose work has demonstrably shipped. `git cherry` fixes that by comparing
 patch-ids, but a squash of *N > 1* commits produces a patch-id matching none of its parts, so
-`cherry` reports the whole branch unshipped. Neither reads correctly alone; the PR state is what
-disambiguates, and the PR state alone would call a branch removable while it carries commits pushed
-after its merge.
+`cherry` reports the whole branch unshipped. Even a *single*-commit squash can slip past it: the
+patch-ids stay equal, but only if the comparison base is the ref that actually received the merge —
+which is why `BASE` above is `origin/<default>` and not the local branch of the same name.
+Neither signal reads correctly alone; the PR state is what disambiguates, and the PR state alone
+would call a branch removable while it carries commits pushed after its merge.
 
 Show the joined result as a compact table. Skip it only when every row is live work in flight —
 never because the list is long. A long list *is* the finding.
