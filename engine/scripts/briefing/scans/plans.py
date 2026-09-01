@@ -144,6 +144,7 @@ def _derive_state(path: Path, project_root: Path) -> str:
     if pred is None:
         return _UNVERIFIABLE
     try:
+        from enginelib.paths import engine_root
         from feedback.feedback_verify import classify_predicate
         from feedback.schema import Predicate
     except Exception:  # pragma: no cover - defensive; feedback pkg always ships
@@ -152,7 +153,17 @@ def _derive_state(path: Path, project_root: Path) -> str:
         # `pred` is untyped frontmatter; Predicate's own validator is the gate that
         # decides whether it is usable, so the cast is deliberate and the raise below
         # is the handled path, not an unexpected one.
-        verdict = classify_predicate(Predicate(**pred), project_root)  # type: ignore[arg-type]
+        #
+        # `code_root` is not optional in practice (#170/#197): a predicate declaring
+        # `root: code` makes classify_predicate RAISE when it is missing, and the
+        # `except` below would fold that raise into `broken` -- accusing a perfectly
+        # valid predicate of pointing at a vanished file. A caller that cannot say
+        # where the CODE tree is must not be the one rendering the verdict.
+        verdict = classify_predicate(
+            Predicate(**pred),  # type: ignore[arg-type]
+            project_root,
+            engine_root().parent,
+        )
     except Exception:
         # A malformed predicate is declared-but-unusable: that is `broken`, not
         # `unverifiable`. The two are different facts and the remedy differs.
@@ -163,9 +174,12 @@ def _derive_state(path: Path, project_root: Path) -> str:
 def _declared_predicate(path: Path) -> dict[str, str] | None:
     """Parse a ``verify:`` block out of the plan's frontmatter, or None.
 
-    Deliberately shallow: only the four keys the Predicate model accepts, and only from
+    Deliberately shallow: only the keys the Predicate model accepts, and only from
     frontmatter. Nothing in the plan's BODY is consulted — the body is where a plan
     describes its own progress, and that is the input this whole section refuses.
+
+    `root` is among them because dropping it does not make a `root: code` predicate
+    safe, it makes it silently resolve against the wrong tree (#170).
     """
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
@@ -185,7 +199,7 @@ def _declared_predicate(path: Path) -> dict[str, str] | None:
         if in_verify:
             if line and not line.startswith((" ", "\t")):
                 break  # dedent ends the block
-            kv = re.match(r"^\s+(kind|file|path|pattern):\s*(.+?)\s*$", line)
+            kv = re.match(r"^\s+(kind|root|file|path|pattern):\s*(.+?)\s*$", line)
             if kv:
                 out[kv.group(1)] = kv.group(2).strip("'\"")
     return out or None
