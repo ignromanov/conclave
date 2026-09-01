@@ -244,14 +244,24 @@ def cmd_set(root: Path, feedback_id: str, item_id: str, status: str,
     found = False
     for item in items:
         if item.get("id") == item_id:
+            previous = item.get("status")
             item["status"] = status
             if owner is not None:
                 item["owner"] = owner
             if issue is not None:
                 item["issue"] = issue
-            if status in ("resolved", "rejected"):
+            # A lifecycle timestamp records a TRANSITION, not the act of writing the field.
+            # triage.md Step 4 binds an issue by re-passing the item's current status
+            # (`--set <id> <item> accepted --owner ... --issue N`), so stamping on every
+            # write made the documented binding step reset the acceptance date it walked
+            # past: 53 of 53 items lost up to 58 days of age in one migration, on the field
+            # cmd_monthly reads to find items older than 90 days (#164). The `or not ...`
+            # clause keeps a missing timestamp backfillable without overwriting a present one.
+            if status in ("resolved", "rejected") and (
+                    status != previous or not item.get("resolved_at")):
                 item["resolved_at"] = now_str
-            if status == "accepted":
+            if status == "accepted" and (
+                    status != previous or not item.get("accepted_at")):
                 item["accepted_at"] = now_str
             found = True
             break

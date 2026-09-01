@@ -159,6 +159,12 @@ that guards against wrong nominations.
 > so it yields 0 auto-closes and 0 nominations on the live 339-row index. C-006 needs
 > *feeding* (author predicates, wire `hit_count`, re-route nominations to L1), not building.
 
+> **Update (2026-08-31)**: `hit_count` and the L1 re-route both shipped, so the two flags above
+> are closed; the nomination-routing flag no longer describes the code. The starvation is now
+> down to a single cause — **no one authors predicates** (2 of 171 accepted items carry one).
+> `feedback_verify.py` prints `predicate-coverage:` on every sweep, and `--set-verify` refuses
+> a predicate that is already passing or already unreadable at attach time.
+
 **Conclave-canonical**: spec 093. The canonical home for 093 is Conclave (not VoidPay) —
 it was designed as a Conclave component that dogfoods on VoidPay's feedback store.
 

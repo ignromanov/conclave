@@ -256,6 +256,62 @@ def test_set_resolved_does_not_stamp_accepted_at(tmp_path):
     assert item.get("accepted_at") is None, "accepted_at must not be set on resolved"
 
 
+# --- #164: a lifecycle timestamp marks a transition, not the act of writing the field ---
+
+def test_rebinding_an_accepted_item_keeps_its_original_accepted_at(tmp_path):
+    """triage.md Step 4 binds an issue by re-passing the item's CURRENT status.
+
+    That call must change owner/issue and nothing else. Stamping accepted_at on every
+    write reset the acceptance date of every item the binding step touched — 53 of 53 in
+    one live migration, on the field cmd_monthly reads to find zombies over 90 days old.
+    """
+    _write_review(tmp_path, "2026-05-22", "atlas-bind.md",
+                  _valid_review_meta(feedback_id="fb-bind-111111"))
+    assert run_triage(tmp_path, ["--set", "fb-bind-111111", "it-1",
+                                 "accepted"]).returncode == 0
+    path = tmp_path / "ops" / "feedback" / "2026-05-22" / "atlas-bind.md"
+    original = fm_read(path)[0]["items"][0]["accepted_at"]
+
+    result = run_triage(tmp_path, ["--set", "fb-bind-111111", "it-1", "accepted",
+                                   "--owner", "forge", "--issue", "164"])
+    assert result.returncode == 0, result.stderr
+
+    item = fm_read(path)[0]["items"][0]
+    assert item["accepted_at"] == original, "re-set must not re-date the acceptance"
+    assert item["owner"] == "forge"
+    assert item["issue"] == 164
+
+
+def test_re_resolving_keeps_the_original_resolved_at(tmp_path):
+    """The same trap on resolved_at: overwriting it destroys that item's MTTR, which is
+    the one number spec 093 exists to move."""
+    _write_review(tmp_path, "2026-05-22", "atlas-res3.md",
+                  _valid_review_meta(feedback_id="fb-res3-222222"))
+    assert run_triage(tmp_path, ["--set", "fb-res3-222222", "it-1",
+                                 "resolved"]).returncode == 0
+    path = tmp_path / "ops" / "feedback" / "2026-05-22" / "atlas-res3.md"
+    original = fm_read(path)[0]["items"][0]["resolved_at"]
+
+    assert run_triage(tmp_path, ["--set", "fb-res3-222222", "it-1", "resolved",
+                                 "--owner", "verify:auto"]).returncode == 0
+    assert fm_read(path)[0]["items"][0]["resolved_at"] == original
+
+
+def test_accepted_at_backfills_when_the_item_carries_none(tmp_path):
+    """Guarding on the transition must not make a MISSING timestamp unfillable — the
+    notebook predates the field, so items exist that are accepted without one."""
+    item = _valid_item("it-1")
+    item["status"] = "accepted"
+    _write_review(tmp_path, "2026-05-22", "atlas-backfill.md",
+                  _valid_review_meta(feedback_id="fb-backfill-333333", items=[item]))
+
+    result = run_triage(tmp_path, ["--set", "fb-backfill-333333", "it-1", "accepted"])
+    assert result.returncode == 0, result.stderr
+
+    after = fm_read(tmp_path / "ops" / "feedback" / "2026-05-22" / "atlas-backfill.md")
+    assert after[0]["items"][0].get("accepted_at") is not None
+
+
 def test_triage_aborts_when_draft_false_invalid(tmp_path):
     """Triage must refuse to proceed when a _draft:false review fails schema validation.
 
