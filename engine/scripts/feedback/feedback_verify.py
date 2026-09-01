@@ -61,6 +61,29 @@ def _contained(root: Path, target: Path) -> bool:
         return False
 
 
+def predicate_target(pred: Predicate, root: Path,
+                     code_root: Path | None = None) -> tuple[Path, Path]:
+    """(base_root, absolute target) — the file a predicate reads its evidence from.
+
+    Split out so the impure layer can ask which file to check for shipped-ness (#160)
+    without re-deriving the root and path rules classify_predicate applies.
+    """
+    base = root
+    if pred.root == "code":
+        if code_root is None:
+            # Not a rotted predicate — a caller that cannot say where the CODE tree is.
+            # Folding this to "broken" would hide a wiring bug inside the very verdict
+            # that reports rot, which is the defect shape #170 is about.
+            raise ValueError(
+                "Predicate declares root='code' but no code_root was supplied "
+                "(pass engine_root().parent)"
+            )
+        base = code_root
+    rel = (_required(pred.path, "path", pred.kind) if pred.kind == "file-absent"
+           else _required(pred.file, "file", pred.kind))
+    return base, _resolve(base, rel)
+
+
 def classify_predicate(pred: Predicate, root: Path, code_root: Path | None = None) -> str:
     """Tri-state resolution check: 'pass' | 'fail' | 'broken'.
 
@@ -77,20 +100,7 @@ def classify_predicate(pred: Predicate, root: Path, code_root: Path | None = Non
     neither root is derived from the environment here, because the module's callers are
     the ones that know the instance topology.
     """
-    base = root
-    if pred.root == "code":
-        if code_root is None:
-            # Not a rotted predicate — a caller that cannot say where the CODE tree is.
-            # Folding this to "broken" would hide a wiring bug inside the very verdict
-            # that reports rot, which is the defect shape #170 is about.
-            raise ValueError(
-                "Predicate declares root='code' but no code_root was supplied "
-                "(pass engine_root().parent)"
-            )
-        base = code_root
-    rel = (_required(pred.path, "path", pred.kind) if pred.kind == "file-absent"
-           else _required(pred.file, "file", pred.kind))
-    target = _resolve(base, rel)
+    base, target = predicate_target(pred, root, code_root)
     if not _contained(base, target):
         return "broken"  # escapes its declared root — refuse, never evaluate (T6)
 
@@ -296,6 +306,7 @@ def main(argv=None) -> int:
     from datetime import datetime
 
     from feedback_triage import _load_index, _rebuild_index, cmd_set
+    from shipped import is_shipped
 
     import enginelib.snapshot as snapshot
     from briefing.paths import repo_root
@@ -400,8 +411,33 @@ def main(argv=None) -> int:
         if res.nominations:
             write_nominations(res.nominations, fb_root / "nominations")
 
-        print(f"auto-close={len(res.auto_close)} candidates={len(res.llm_candidates)} "
+        # #160 — the sweep reads the working tree. That is the right snapshot for
+        # reporting and for the admission test, and the wrong one for --apply, which
+        # writes `resolved`: an edit in no commit closes an item exactly as well as
+        # shipped code, and afterwards a false close cannot be told from a true one.
+        # So every close is re-checked against the ref, and one that is not there yet is
+        # HELD — still accepted, reported by name, and closed by the next sweep once the
+        # work lands. The snapshot each verdict was read against is printed, because
+        # neither instrument in this loop used to say which one it read.
+        by_key = {(r.get("feedback_id"), r.get("item_id")): r for r in rows}
+        closable: list[tuple[str, str]] = []
+        held: list[tuple[str, str, str, str]] = []
+        for fid, iid in res.auto_close:
+            vraw = (by_key.get((fid, iid)) or {}).get("verify") or {}
+            _, target = predicate_target(Predicate(**vraw), project_root(),
+                                         engine_root().parent)
+            ok, snap = is_shipped(target)
+            if ok:
+                closable.append((fid, iid))
+            else:
+                held.append((fid, iid, str(target), snap))
+
+        print(f"auto-close={len(closable)} held-unshipped={len(held)} "
+              f"candidates={len(res.llm_candidates)} "
               f"nominations={len(res.nominations)} broken={len(res.broken)}")
+        for fid, iid, tgt, snap in held:
+            print(f"  HELD {fid}/{iid}: evidence is not in {snap} -> {tgt} "
+                  f"(land the work; the next sweep closes it)", file=sys.stderr)
         # The sweep can only drain what Step 3.6 fed it, so the fuel gauge is printed
         # beside the yield. Without it the ratio gets recounted by hand every time
         # someone asks why the loop closed nothing (#165).
@@ -414,7 +450,7 @@ def main(argv=None) -> int:
                   f"(operator: fix the path or re-author)", file=sys.stderr)
         if args.apply:
             marker = last_triage_marker()
-            for fid, iid in res.auto_close:
+            for fid, iid in closable:
                 cmd_set(root, fid, iid, "resolved", "verify:auto", marker)
             # Reconcile the index against the just-written review files so no stale
             # 'accepted' rows linger (phantom rows — critic Missing-item).
