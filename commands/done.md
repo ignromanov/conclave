@@ -121,10 +121,30 @@ Complete `/conclave:feedback` before continuing. The gate is the
 
 ### Mandatory (always)
 
-1. ☐ **All changes committed** (both repos if applicable)
+1. ☐ **All changes committed AND the PR state re-read from the remote** (both repos if applicable)
    - Run: `git status` in both `/` and `.conclave/`
    - If uncommitted changes → commit or explain why not
-   - Gate: **Auto**
+   - `git status` is a **local** view. It cannot tell you that the PR you believe you are still
+     working on was squash-merged twenty minutes ago and its branch deleted — a session has
+     closed while holding exactly that belief. Before composing the Summary, ask the remote:
+     ```bash
+     git fetch --quiet --prune origin
+     # every branch this session pushed
+     for BRANCH in <branches-pushed-this-session>; do
+       gh pr list --head "$BRANCH" --state all --json number --jq '.[].number'
+     done | sort -u | while read -r N; do
+       gh pr view "$N" --json number,state,mergedAt,headRefName \
+         --jq '"#\(.number) \(.state) merged=\(.mergedAt // "—") head=\(.headRefName)"'
+     done
+     ```
+   - Report each PR as **merged / open / closed-unmerged** in the Summary, with its `mergedAt`.
+     A PR that merged during the session is a *result*, not a footnote — it is the arrival
+     evidence the whole checklist exists to produce.
+   - If a PR merged: the branch is likely gone from the remote and the local worktree is now
+     detached from anything live. Say so rather than leaving the next session to discover it.
+   - If a PR is still open, name what it is waiting on (review, CI, conflict). "Opened a PR" is
+     not an outcome; the state it is sitting in is.
+   - Gate: **Auto** (fetch + read) / **Notify** (anything merged or closed since the session began)
 
 2. ☐ **GH Issues synced** (both repos)
    - **Worked on issue** → comment with session result + update Project Board status
