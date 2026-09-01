@@ -56,6 +56,17 @@ from feedback.paths import index_path, last_triage_marker  # noqa: E402
 # ---------------------------------------------------------------------------
 
 _SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+# #163 — a number parked in a name field. Before the issue: field existed, an item's GH
+# binding was written as `owner: forge:#102`; 53 accepted items held their link ONLY there
+# and none carried an `issue:`. `owner` is overwritten unconditionally and
+# `feedback_verify --apply` always supplies owner="verify:auto", so each of them was one
+# auto-close away from losing the binding with no trace and no warning. It happened once,
+# to fb-1783808596-f85349/i1, and the link survives only in git. An item with no issue link
+# is a defect the next session re-observes and triage re-accepts as new — the index dedups
+# on fingerprint and knows nothing about GitHub — so 53 lost bindings would have
+# manufactured 53 future duplicates. Matches forge:#102, forge:102 and forge:AI#12.
+LEGACY_OWNER_ISSUE_RE = re.compile(r"^[^:]+:(AI)?#?\d+$")
+
 import typing as _typing  # noqa: E402
 
 from feedback.schema import Status as _Status  # noqa: E402
@@ -274,6 +285,24 @@ def cmd_set(root: Path, feedback_id: str, item_id: str, status: str,
                     f"       Or record why no mechanical predicate is possible, on this "
                     f"same call:\n"
                     f"         --waiver \"<reason>\"",
+                    file=sys.stderr)
+                return 1
+            # Guard before the write, not after: the audited path is where both the
+            # manual and the auto-close routes pass, so it is the only place that sees
+            # every overwrite.
+            prev_owner = item.get("owner")
+            if (owner is not None and prev_owner and issue is None
+                    and not item.get("issue")
+                    and LEGACY_OWNER_ISSUE_RE.match(str(prev_owner))):
+                print(
+                    f"ERROR: refusing to overwrite owner on {feedback_id}/{item_id}: "
+                    f"{prev_owner!r} is this item's only issue link, and the item "
+                    f"carries no issue: field.\n"
+                    f"       Overwriting it would drop the binding with no trace, and "
+                    f"the next triage would re-accept the defect as new.\n"
+                    f"       Carry the number across on this same call:\n"
+                    f"         --set {feedback_id} {item_id} {status} "
+                    f"--owner <name> --issue <n>",
                     file=sys.stderr)
                 return 1
             item["status"] = status

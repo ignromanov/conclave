@@ -450,8 +450,16 @@ def main(argv=None) -> int:
                   f"(operator: fix the path or re-author)", file=sys.stderr)
         if args.apply:
             marker = last_triage_marker()
+            # cmd_set can refuse a write (#163: the owner field holding an item's only
+            # issue link). Its own stderr names the item; what the loop owes is not to
+            # let `auto-close=N` stand as a count of closes that happened.
+            refused = 0
             for fid, iid in closable:
-                cmd_set(root, fid, iid, "resolved", "verify:auto", marker)
+                if cmd_set(root, fid, iid, "resolved", "verify:auto", marker) != 0:
+                    refused += 1
+            if refused:
+                print(f"  {refused} of {len(closable)} closes were REFUSED by the write "
+                      f"path (errors above); those items stay accepted", file=sys.stderr)
             # Reconcile the index against the just-written review files so no stale
             # 'accepted' rows linger (phantom rows — critic Missing-item).
             _rebuild_index(root)

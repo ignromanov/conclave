@@ -306,6 +306,15 @@ uv run --project engine/scripts/feedback \
 `--issue` writes a real `issue:` field on the item (the older `--owner "forge:AI#N"`
 string hack is superseded — it put a number in a name field where nothing could read it).
 
+**A legacy owner is now protected (#163).** `--set` refuses to overwrite an `owner`
+matching `<name>:#<n>` while the item carries no `issue:` field, because that string is
+then the item's only issue link and `feedback_verify --apply` overwrites `owner` with
+`verify:auto` on every close. Migrate it on one audited write instead:
+
+```bash
+--set <feedback_id> <item_id> <status> --owner <name> --issue <n>
+```
+
 An item with no issue link is a defect the next session re-observes, re-emits, and
 triage re-accepts as new — the feedback index dedups on `fingerprint` within itself and
 knows nothing about GitHub. Measured 2026-08-18: at least 11 of 41 accepted items already
