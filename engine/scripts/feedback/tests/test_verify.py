@@ -659,3 +659,27 @@ def test_apply_closes_once_the_evidence_is_committed(tmp_path):
     status = read_commented(path)[0]["items"][0]["status"]
     assert status == "resolved", f"{res.stdout}{res.stderr}"
     assert "held-unshipped=0" in res.stdout
+
+
+# --- #163: a refused write must not be counted as a close ---
+
+def test_apply_reports_a_close_the_write_path_refused(tmp_path):
+    """cmd_set refuses to overwrite an owner that holds the item's only issue link. The
+    apply loop used to discard the return value, so `auto-close=1` stood for a close that
+    never happened."""
+    checkout = tmp_path
+    data_root = checkout / ".conclave"
+    (checkout / "engine").mkdir(parents=True)
+    (checkout / "engine" / "x.py").write_text("# MARKER: the fix landed\n")
+    meta = _checkout_layout_meta()
+    meta["items"][0]["owner"] = "forge:#102"          # the only issue link
+    path = _write_review_file(data_root, "sage-163.md", meta)
+
+    res = _run_verify(data_root, ["--apply"])
+    assert res.returncode == 0, res.stderr
+    assert "REFUSED" in res.stderr, res.stderr
+
+    from briefing.frontmatter_io import read_commented
+    item = read_commented(path)[0]["items"][0]
+    assert item["status"] == "accepted"
+    assert item["owner"] == "forge:#102", "the link the guard protects must survive"

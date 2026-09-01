@@ -593,3 +593,73 @@ def test_set_reconciles_the_index_with_the_review_it_just_wrote(tmp_path):
     assert row["status"] == "accepted", "index must carry the status just written"
     assert row["owner"] == "sage-cto", "index must carry the owner just written"
     assert row["issue"] == 424, "index must carry the issue binding just written"
+
+
+# --- #163: the owner field held 53 items' only issue link, and was overwritten blind ---
+
+import pytest as _pytest
+
+
+def _legacy_owner_review(tmp_path, owner: str, issue: int | None = None):
+    """An accepted item whose issue number lives in `owner`, the superseded form."""
+    item = _valid_item("it-1")
+    item.update({"status": "accepted", "owner": owner,
+                 "verify_waiver": "legacy row, no mechanical oracle"})
+    if issue is not None:
+        item["issue"] = issue
+    meta = _valid_review_meta(feedback_id="fb-163-aaaaaa", items=[item])
+    return _write_review(tmp_path, "2026-05-22", "atlas-163.md", meta)
+
+
+@_pytest.mark.parametrize("owner", ["forge:#102", "forge:102", "forge:AI#12"])
+def test_set_refuses_to_overwrite_an_owner_holding_the_only_issue_link(tmp_path, owner):
+    """`feedback_verify --apply` always passes owner="verify:auto", and cmd_set wrote it
+    unconditionally. 53 accepted items held their only issue link in this field and none
+    carried an `issue:` — every one was a single auto-close from losing it with no trace.
+    It happened once, to fb-1783808596-f85349/i1, and the binding survives only in git."""
+    path = _legacy_owner_review(tmp_path, owner)
+    res = run_triage(tmp_path, ["--set", "fb-163-aaaaaa", "it-1", "resolved",
+                                "--owner", "verify:auto"])
+    assert res.returncode == 1, res.stdout
+    assert "it-1" in res.stderr and "--issue" in res.stderr, res.stderr
+
+    item = fm_read(path)[0]["items"][0]
+    assert item["owner"] == owner, "a refused write must leave the field untouched"
+    assert item["status"] == "accepted", "the status must not move either"
+
+
+def test_set_allows_the_overwrite_when_the_issue_moves_in_the_same_call(tmp_path):
+    """The migration path the refusal points at: carry the number into `issue:` on the
+    same audited write, and the owner becomes a name again."""
+    path = _legacy_owner_review(tmp_path, "forge:#102")
+    res = run_triage(tmp_path, ["--set", "fb-163-aaaaaa", "it-1", "accepted",
+                                "--owner", "forge", "--issue", "102"])
+    assert res.returncode == 0, res.stderr
+
+    item = fm_read(path)[0]["items"][0]
+    assert item["owner"] == "forge"
+    assert item["issue"] == 102
+
+
+def test_set_allows_the_overwrite_when_the_item_already_carries_the_issue(tmp_path):
+    """Once `issue:` exists the owner string is redundant, so nothing is lost by
+    overwriting it — the guard must not strand already-migrated rows."""
+    path = _legacy_owner_review(tmp_path, "forge:#102", issue=102)
+    res = run_triage(tmp_path, ["--set", "fb-163-aaaaaa", "it-1", "resolved",
+                                "--owner", "verify:auto"])
+    assert res.returncode == 0, res.stderr
+
+    item = fm_read(path)[0]["items"][0]
+    assert item["owner"] == "verify:auto"
+    assert item["issue"] == 102, "the link the guard exists to protect must survive"
+
+
+@_pytest.mark.parametrize("owner", ["forge", "sage-cto", "verify:auto", "forge:noise"])
+def test_set_overwrites_an_ordinary_owner_freely(tmp_path, owner):
+    """The guard fires on a number in a name field, and on nothing else. A rule that
+    refused ordinary owners would block the auto-close path it is meant to protect."""
+    path = _legacy_owner_review(tmp_path, owner)
+    res = run_triage(tmp_path, ["--set", "fb-163-aaaaaa", "it-1", "resolved",
+                                "--owner", "verify:auto"])
+    assert res.returncode == 0, res.stderr
+    assert fm_read(path)[0]["items"][0]["owner"] == "verify:auto"
