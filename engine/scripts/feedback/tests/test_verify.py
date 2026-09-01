@@ -203,12 +203,16 @@ _SCRIPTS = Path(__file__).parent.parent.parent
 _FEEDBACK = Path(__file__).parent.parent
 
 
-def _run_verify(root: Path, extra: list[str]) -> _sp.CompletedProcess:
+def _run_verify(root: Path, extra: list[str],
+                env_extra: dict[str, str] | None = None) -> _sp.CompletedProcess:
+    env = {"PYTHONPATH": str(_SCRIPTS), "CONCLAVE_AI_ROOT": str(root),
+           "PATH": "/usr/bin:/bin"}
+    # The env is built from scratch, not inherited, so a test that needs a second root
+    # (e.g. #170's CONCLAVE_ENGINE_ROOT) has to name it here rather than export it.
+    env.update(env_extra or {})
     return _sp.run(
         [_sys.executable, str(_FEEDBACK / "feedback_verify.py"), *extra],
-        capture_output=True, text=True,
-        env={"PYTHONPATH": str(_SCRIPTS), "CONCLAVE_AI_ROOT": str(root),
-             "PATH": "/usr/bin:/bin"},
+        capture_output=True, text=True, env=env,
     )
 
 
@@ -477,3 +481,123 @@ def test_a_waiver_never_counts_as_coverage():
     rows = [{"status": "accepted", "verify_waiver": "judgement call"} for _ in range(5)]
     covered, waived, accepted_n = predicate_coverage(rows)
     assert (covered, waived, accepted_n) == (0, 5, 5)
+
+
+# --- #170: a predicate may name the CODE tree, which in plugin mode is not under the project ---
+
+import pytest as _pytest
+
+
+def _plugin_layout(tmp_path, target_text: str = "still has the BUG\n"):
+    """Plugin-mode topology: the DATA root sits under the operator's project, and the
+    engine distribution (engine/, skills/, commands/) is a separate checkout entirely.
+
+    This is the supported distribution mode, and it is the one the dogfooding instance
+    cannot exhibit: there the project root IS the CODE checkout, so both roots name the
+    same directory and a single-root resolver looks correct.
+
+    Returns (data_root, code_root, review_path)."""
+    data_root = tmp_path / "project" / ".conclave"
+    code_root = tmp_path / "plugin"
+    src = code_root / "engine" / "scripts" / "feedback"
+    src.mkdir(parents=True)
+    (src / "thing.py").write_text(target_text)
+    path = _write_review_file(data_root, "sage-setverify.md", _accepted_no_verify_meta())
+    return data_root, code_root, path
+
+
+def test_code_predicate_is_broken_when_resolved_against_the_project(tmp_path):
+    """The defect. With one root for every predicate, an engine-layer target lies outside
+    the project on any instance where the engine is a separate checkout, containment
+    refuses it, and the #165 accept-gate is left with nothing but a waiver — which is the
+    unfalsifiable self-report that gate exists to prevent."""
+    _plugin_layout(tmp_path)
+    assert classify_predicate(
+        Predicate(kind="grep-absent", file="engine/scripts/feedback/thing.py",
+                  pattern="BUG"), root=tmp_path / "project") == "broken"
+
+
+def test_code_predicate_resolves_against_the_code_root(tmp_path):
+    """root='code' resolves against the engine distribution root instead, so the same
+    predicate becomes an oracle again: `fail` while the bug is there, `pass` once it is
+    gone."""
+    _, code_root, _ = _plugin_layout(tmp_path)
+    project = tmp_path / "project"
+    p = Predicate(kind="grep-absent", file="engine/scripts/feedback/thing.py",
+                  pattern="BUG", root="code")
+    assert classify_predicate(p, root=project, code_root=code_root) == "fail"
+    (code_root / "engine" / "scripts" / "feedback" / "thing.py").write_text("fixed\n")
+    assert classify_predicate(p, root=project, code_root=code_root) == "pass"
+
+
+def test_predicate_root_defaults_to_project(tmp_path):
+    """Back-compat: every predicate written before #170 carries no root and must keep
+    resolving exactly where it did."""
+    assert Predicate(kind="file-absent", path="x").root == "project"
+    (tmp_path / "here.py").write_text("BUG\n")
+    assert classify_predicate(
+        Predicate(kind="grep-absent", file="here.py", pattern="BUG"), root=tmp_path) == "fail"
+
+
+def test_code_predicate_containment_holds_against_the_code_root(tmp_path):
+    """T6 is re-based, never widened: a traversal out of the CODE root is refused, and
+    so is one that would land inside the project root. Two allowed trees, not a
+    filesystem-wide read oracle."""
+    _, code_root, _ = _plugin_layout(tmp_path)
+    project = tmp_path / "project"
+    (tmp_path / "sibling.txt").write_text("PWNED\n")
+    assert classify_predicate(
+        Predicate(kind="file-contains", file="../sibling.txt", pattern="PWNED",
+                  root="code"), root=project, code_root=code_root) == "broken"
+
+
+def test_code_predicate_without_a_code_root_raises(tmp_path):
+    """A caller that cannot say where the CODE tree is has a wiring bug, not a rotted
+    predicate. Raise rather than fold to 'broken': a silent degradation here is the exact
+    shape of the defect being fixed."""
+    with _pytest.raises(ValueError, match="code_root"):
+        classify_predicate(
+            Predicate(kind="grep-absent", file="a.py", pattern="x", root="code"),
+            root=tmp_path)
+
+
+def test_sweep_evaluates_code_rows_against_the_code_root(tmp_path):
+    """End to end: a CODE-rooted row auto-closes on the sweep that runs from the DATA
+    root, with the project and the engine in different trees."""
+    _, code_root, _ = _plugin_layout(tmp_path, target_text="fixed\n")
+    rows = [{"feedback_id": "fb-1", "item_id": "i1", "status": "accepted",
+             "verify": {"kind": "grep-absent", "root": "code",
+                        "file": "engine/scripts/feedback/thing.py", "pattern": "BUG"}}]
+    res = sweep(rows, tmp_path / "project", code_root=code_root)
+    assert res.auto_close == [("fb-1", "i1")]
+    assert res.broken == []
+
+
+def test_set_verify_attaches_a_code_root_predicate(tmp_path):
+    """The operator-facing path: `--root code` gets an engine-layer predicate past the
+    admission test on an instance where the engine is not under the project."""
+    data_root, code_root, path = _plugin_layout(tmp_path)
+    res = _run_verify(data_root, ["--set-verify", "fb-sv-aaaaaa", "i1", "grep-absent",
+                                  "--file", "engine/scripts/feedback/thing.py",
+                                  "--pattern", "BUG", "--root", "code"],
+                      env_extra={"CONCLAVE_ENGINE_ROOT": str(code_root / "engine")})
+    assert res.returncode == 0, res.stderr
+
+    from briefing.frontmatter_io import read_commented
+    from feedback.schema import Review
+    meta, _ = read_commented(path)
+    item = next(i for i in meta["items"] if i["id"] == "i1")
+    assert item["verify"]["root"] == "code"
+    Review.model_validate(meta)
+
+
+def test_set_verify_without_root_code_still_refuses_an_engine_target(tmp_path):
+    """The same attach without `--root code` is refused as born-broken — the refusal an
+    operator on a plugin instance hits today on every engine-layer item."""
+    data_root, code_root, _ = _plugin_layout(tmp_path)
+    res = _run_verify(data_root, ["--set-verify", "fb-sv-aaaaaa", "i1", "grep-absent",
+                                  "--file", "engine/scripts/feedback/thing.py",
+                                  "--pattern", "BUG"],
+                      env_extra={"CONCLAVE_ENGINE_ROOT": str(code_root / "engine")})
+    assert res.returncode == 1
+    assert "cannot be evaluated" in res.stderr

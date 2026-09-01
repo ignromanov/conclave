@@ -1,7 +1,8 @@
 """feedback_verify.py — spec 093 self-healing closing loop.
 
 Pure, side-effect-free predicate evaluation (file-read + regex; NO shell exec).
-Resolves the path against `root`; an absolute path in the predicate is used as-is.
+Resolves the path against the tree the predicate declares — `root` (the project) or
+`code_root` (the engine distribution); an absolute path in the predicate is used as-is.
 """
 from __future__ import annotations
 
@@ -60,22 +61,38 @@ def _contained(root: Path, target: Path) -> bool:
         return False
 
 
-def classify_predicate(pred: Predicate, root: Path) -> str:
+def classify_predicate(pred: Predicate, root: Path, code_root: Path | None = None) -> str:
     """Tri-state resolution check: 'pass' | 'fail' | 'broken'.
 
     - pass:   the predicate confirms the item is resolved.
     - fail:   the predicate can be evaluated and the fix is not done yet.
     - broken: the predicate cannot be trusted — its target file has vanished (a
-      grep/contains oracle with nothing to READ) or its path escapes the project root
+      grep/contains oracle with nothing to READ) or its path escapes its declared root
       (containment refusal, T6). A `broken` predicate is NEVER a pass and NEVER a plain
       fail: it is surfaced to the operator, because "cannot confirm" and "not done yet"
       are different facts (spec 105 §1 correction — the 2 predicates the 103 move rotted).
+
+    `root` is the project root; `code_root` is the engine distribution root, required
+    only for a predicate that declares `root: code` (#170). This function stays pure —
+    neither root is derived from the environment here, because the module's callers are
+    the ones that know the instance topology.
     """
+    base = root
+    if pred.root == "code":
+        if code_root is None:
+            # Not a rotted predicate — a caller that cannot say where the CODE tree is.
+            # Folding this to "broken" would hide a wiring bug inside the very verdict
+            # that reports rot, which is the defect shape #170 is about.
+            raise ValueError(
+                "Predicate declares root='code' but no code_root was supplied "
+                "(pass engine_root().parent)"
+            )
+        base = code_root
     rel = (_required(pred.path, "path", pred.kind) if pred.kind == "file-absent"
            else _required(pred.file, "file", pred.kind))
-    target = _resolve(root, rel)
-    if not _contained(root, target):
-        return "broken"  # escapes project root — refuse, never evaluate (T6)
+    target = _resolve(base, rel)
+    if not _contained(base, target):
+        return "broken"  # escapes its declared root — refuse, never evaluate (T6)
 
     if pred.kind == "file-absent":
         # a missing target IS the success condition here — never broken
@@ -92,10 +109,10 @@ def classify_predicate(pred: Predicate, root: Path) -> str:
     return "fail"
 
 
-def evaluate_predicate(pred: Predicate, root: Path) -> bool:
+def evaluate_predicate(pred: Predicate, root: Path, code_root: Path | None = None) -> bool:
     """True => the item is resolved. Backward-compatible bool view of classify_predicate:
     both 'fail' and 'broken' fold to False (a broken predicate never auto-closes)."""
-    return classify_predicate(pred, root) == "pass"
+    return classify_predicate(pred, root, code_root) == "pass"
 
 
 @dataclass
@@ -168,7 +185,8 @@ def predicate_coverage(rows: list[dict]) -> tuple[int, int, int]:
     return covered, waived, len(accepted)
 
 
-def sweep(rows: list[dict], root: Path, limit: int = 40) -> SweepResult:
+def sweep(rows: list[dict], root: Path, limit: int = 40,
+          code_root: Path | None = None) -> SweepResult:
     """Classify accepted rows into auto-close / llm-candidate; scan for nominations.
 
     Predicate items are ALWAYS evaluated — the `limit` bounds only the LLM-candidate tail,
@@ -206,7 +224,7 @@ def sweep(rows: list[dict], root: Path, limit: int = 40) -> SweepResult:
         vraw = row.get("verify")
         if vraw:
             # cheap + deterministic → never capped
-            verdict = classify_predicate(Predicate(**vraw), root)
+            verdict = classify_predicate(Predicate(**vraw), root, code_root)
             if verdict == "pass":
                 res.auto_close.append(key)
             elif verdict == "broken":
@@ -281,7 +299,7 @@ def main(argv=None) -> int:
 
     import enginelib.snapshot as snapshot
     from briefing.paths import repo_root
-    from enginelib.paths import project_root
+    from enginelib.paths import engine_root, project_root
     from feedback.paths import index_path, last_triage_marker
 
     parser = argparse.ArgumentParser(description="093 self-healing verify/close sweep")
@@ -293,6 +311,12 @@ def main(argv=None) -> int:
     parser.add_argument("--file", default=None, help="predicate target file (grep/contains)")
     parser.add_argument("--pattern", default=None, help="predicate regex (grep/contains)")
     parser.add_argument("--path", default=None, help="predicate path (file-absent)")
+    parser.add_argument("--root", choices=("project", "code"), default="project",
+                        help="tree the predicate path is relative to: 'project' (default) "
+                             "or 'code' — the engine distribution root holding engine/, "
+                             "skills/, agents/, commands/. Use 'code' for any engine-layer "
+                             "target; on a plugin-mode instance that tree is not under the "
+                             "project and 'project' resolves it as broken (#170)")
     parser.add_argument("--force", action="store_true",
                         help="attach a predicate that does not evaluate to 'fail' "
                              "(see the admission test in the --set-verify branch)")
@@ -303,7 +327,11 @@ def main(argv=None) -> int:
     if args.set_verify:
         from feedback_triage import cmd_set_verify
         fid, iid, kind = args.set_verify
-        pred = {"kind": kind, "file": args.file, "pattern": args.pattern, "path": args.path}
+        pred = {"kind": kind, "root": args.root, "file": args.file,
+                "pattern": args.pattern, "path": args.path}
+        # The CODE tree is the engine's own parent — the dir that holds engine/ beside
+        # skills/, agents/ and commands/ (mirrors paths.plugin_agents_dir()).
+        code_root = engine_root().parent
         # Admission test: evaluate the predicate BEFORE attaching it. A verify predicate is
         # an oracle for a fix that has not landed yet, so 'fail' is the only healthy verdict
         # at attach time. The other two are silent failures that shape validation cannot see:
@@ -314,7 +342,7 @@ def main(argv=None) -> int:
         #             manufacturing a resolution that never happened. That is the worse of
         #             the two: a false close is indistinguishable from a real one afterwards.
         try:
-            verdict = classify_predicate(Predicate(**pred), project_root())
+            verdict = classify_predicate(Predicate(**pred), project_root(), code_root)
         except Exception as exc:  # noqa: BLE001 — surfaced, not swallowed
             print(f"ERROR: invalid predicate: {exc}", file=sys.stderr)
             return 1
@@ -352,12 +380,15 @@ def main(argv=None) -> int:
         counts = _derive_hit_counts(rows, archive_rows)
         for r in rows:
             r["hit_count"] = counts.get(r.get("fingerprint"), 1)
-        # Predicate paths are checkout-relative, NOT DATA-root-relative: after the 103
-        # code/data split the DATA root is <checkout>/.conclave, but predicate targets
-        # (engine code, repo-root docs) live at the checkout root — a sibling of .conclave.
-        # Resolve them against project_root() (the checkout root), which still contains
-        # .conclave/ so DATA-targeting predicates stay reachable via a .conclave/... path.
-        res = sweep(rows, project_root())
+        # Two roots, because an instance can have two trees (#170). A predicate's paths
+        # are relative to the tree it declares:
+        #   root: project (default) -> project_root(), which contains .conclave/, so a
+        #       DATA-targeting predicate stays reachable via a .conclave/... path.
+        #   root: code -> the engine distribution root. On the dogfooding instance these
+        #       are the same directory; in plugin mode the engine is a separate checkout
+        #       and an engine-layer path resolved against the project escapes containment,
+        #       which left every engine-layer item waiver-only.
+        res = sweep(rows, project_root(), code_root=engine_root().parent)
 
         date = datetime.now(UTC).strftime("%Y-%m-%d")
         fb_root = root / "ops" / "feedback"
