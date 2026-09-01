@@ -56,13 +56,13 @@ def test_archived_handoff_leaves_resume_scan(tmp_path):
     d = root / "ops" / "handoffs"
     h = _write_handoff(d, "2026-07-09-forge-charter-shipped.md")
 
-    found_before = _step1b_resume_scan("forge", root)
+    found_before, _ = _step1b_resume_scan("forge", root)
     assert any(h.name in line for line in found_before), "setup: handoff not surfaced before archiving"
 
     r = run_engine("lifecycle", "archive-handoff", h.name, "--handoffs-dir", str(d))
     assert r.returncode == 0, f"stderr: {r.stderr[:400]}"
 
-    found_after = _step1b_resume_scan("forge", root)
+    found_after, _ = _step1b_resume_scan("forge", root)
     assert not any(h.name in line for line in found_after), "archived handoff still resurfaces"
 
 
@@ -143,3 +143,55 @@ def test_archives_several(tmp_path):
     for n in names:
         assert not (d / n).exists(), f"{n} still live"
         assert (d / "archive" / n).is_file(), f"{n} missing from archive/"
+
+
+# ---------------------------------------------------------------------------
+# 8. #55 — until someone archives it, an exhausted handoff must not read as live work
+# ---------------------------------------------------------------------------
+def _resume_scan(advisor: str, root: Path):
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lifecycle"))
+    from session_init import _step1b_resume_scan
+    return _step1b_resume_scan(advisor, root)
+
+
+def test_an_untouched_handoff_is_demoted_to_stale(tmp_path):
+    """archive-handoff gives handoffs a terminal state, but nothing invokes it, and the
+    scan ranks by mtime alone — two handoffs were surfacing as interrupted work at 1374h
+    and 1226h, both tracking PRs merged in July. Age stands in for the consumed-state the
+    format still lacks.
+    """
+    import os
+    import time
+
+    root = tmp_path / "data"
+    d = root / "ops" / "handoffs"
+    old = _write_handoff(d, "2026-07-09-forge-shipped-in-july.md")
+    fresh = _write_handoff(d, "2026-08-30-forge-still-live.md")
+    ancient = time.time() - 400 * 3600
+    os.utime(old, (ancient, ancient))
+
+    live, stale = _resume_scan("forge", root)
+    assert any(fresh.name in ln for ln in live), "a fresh handoff must still read as live"
+    assert not any(old.name in ln for ln in live), "400h handoff still presented as live work"
+    assert any(old.name in ln for ln in stale), "stale handoff was dropped, not demoted"
+
+
+def test_the_stale_threshold_is_operator_settable(tmp_path):
+    """A long-running thread is a real thing; the default must be raisable, not a wall."""
+    import os
+    import time
+
+    root = tmp_path / "data"
+    d = root / "ops" / "handoffs"
+    h = _write_handoff(d, "2026-07-09-forge-slow-but-live.md")
+    ancient = time.time() - 400 * 3600
+    os.utime(h, (ancient, ancient))
+
+    os.environ["CONCLAVE_HANDOFF_STALE_HOURS"] = "1000"
+    try:
+        live, stale = _resume_scan("forge", root)
+    finally:
+        del os.environ["CONCLAVE_HANDOFF_STALE_HOURS"]
+    assert any(h.name in ln for ln in live)
+    assert not stale

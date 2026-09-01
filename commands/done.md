@@ -88,7 +88,8 @@ Complete `/conclave:feedback` before continuing. The gate is the
      [--resolves-mentions <id,id>] \
      [--handoff-file /tmp/handoff-<slug>.md \
       --handoff-to <advisor> --handoff-priority <p0|p1|p2|p3> \
-      --handoff-title <title> --handoff-slug <slug>] \
+      --handoff-title <title> --handoff-slug <slug> \
+      (--handoff-issue <#N|AI#N|owner/repo#N|URL> | --handoff-no-issue "<why>")] \
      [--issues-touched AI#N,AI#N] \
      [--reflexion "<one-sentence post-mortem; '—' if nothing notable>"]
    ```
@@ -98,8 +99,12 @@ Complete `/conclave:feedback` before continuing. The gate is the
    of this advisor. See `${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/output-formatting.md` for the sidecar lane spec.
 
    The `--handoff-file` arg files a **new** handoff inline — it requires all four
-   companions (`--handoff-to`, `--handoff-priority`, `--handoff-title`, `--handoff-slug`);
-   omitting any one aborts the call. If the handoff was already created separately via
+   companions (`--handoff-to`, `--handoff-priority`, `--handoff-title`, `--handoff-slug`)
+   plus exactly one of `--handoff-issue` / `--handoff-no-issue`; omitting any one aborts
+   the call *before* the session document is written, so a refused handoff never leaves a
+   closed session behind. A handoff has no terminal state, and the resume-scan ranks by
+   mtime — a resolvable reference is what lets a later reader answer "did this ship?"
+   without opening the file (#55). Free text and bare numbers are refused. If the handoff was already created separately via
    `python -m engine file handoff`, omit `--handoff-file` entirely and reference the handoff path in
    the session body prose.
 

@@ -21,7 +21,7 @@ description: >-
 ```markdown
 # Resume: [task name]
 
-> Created: YYYY-MM-DD | Agent: [name] [emoji] | GH Issue: #N
+> Created: YYYY-MM-DD | Agent: [name] [emoji] | GH Issue: #N   ← required, resolvable
 
 ## Status: IN_PROGRESS | BLOCKED
 ## Task: one-line description
@@ -50,7 +50,33 @@ python -m engine file handoff \
   --date <ISO-date> --priority <p0|p1|p2> \
   --title "<title>" --slug <slug> \
   --body-file /tmp/handoff-<slug>.md \
-  [--policy <ref>] [--gh-issue AI#N]
+  --gh-issue <#N | AI#N | owner/repo#N | https://github.com/o/r/issues/N> \
+  [--policy <ref>]
+```
+
+**The reference is required (#55).** A handoff has no terminal state: the resume-scan ranks
+by mtime and never learns that the work shipped, so an exhausted handoff resurfaces as
+"interrupted work" forever — two were surfacing at 1374h and 1226h, both tracking PRs that
+merged in July. A resolvable reference is what lets a reader answer *is this still live?*
+without reading the file. Free text is refused: a bare `113` names nothing, and `AI#113` was
+once written meaning **spec** 113 while GH#113 was an unrelated merged PR.
+
+When there is genuinely nothing to reference — an exploratory spike, a thread that has not
+been filed — record *why*, and the reason is written into the document:
+
+```bash
+  --no-issue "exploratory spike on X, nothing filed yet"
+```
+
+Through `/conclave:done` the same pair is `--handoff-issue` / `--handoff-no-issue` on
+`engine session close`, validated before the session document is written.
+
+**Handoffs go stale.** `session_init` demotes any handoff untouched for more than 336h out
+of "interrupted work" and into a `stale handoffs` list that names the archive command. When
+a handoff's work has shipped, retire it — the move is reversible, never a delete:
+
+```bash
+python -m engine lifecycle archive-handoff <filename.md>
 ```
 
 Commit is part of the enclosing `/conclave:done` aggregate. Handoffs filed outside `/conclave:done` require explicit `git add` + `git commit` by caller.
@@ -60,7 +86,9 @@ Commit is part of the enclosing `/conclave:done` aggregate. Handoffs filed outsi
 Before invoking the script, verify:
 
 1. All file paths in "Current State" exist → `ls` each path
-2. GH Issue (if referenced) is still open → `gh issue view #N --json state`
+2. GH Issue is still open → `gh issue view <N> -R <code-repo> --json state`. A closed one
+   means the handoff is already exhausted: file nothing, or reference the successor issue.
+   Pass `-R` — issues live in the CODE repo, never in DATA.
 3. Next Steps are actionable — not vague ("finish implementation" ❌)
 4. Required Skills are real skill names — check against available skills list
 
@@ -74,7 +102,7 @@ After `engine file handoff` writes the .md artifact, render the ▍-block confir
 ▍ **to**         {persona-emoji} {recipient}          ← cross-ref keeps recipient emoji
 ▍ **slug**       `{slug}`
 ▍ **file**       `ops/handoffs/{date}-{advisor}-{slug}.md`
-▍ **gh-issue**   AI#{N}                              ← OMIT if no issue ref
+▍ **gh-issue**   AI#{N}                              ← or `none — {reason}`
 ▍ **priority**   {p0 | p1 | p2 | p3}
 ▍ ⚠ **blocker**  {one-line if BLOCKED}                ← OMIT if IN_PROGRESS
 ▍
@@ -86,6 +114,7 @@ After `engine file handoff` writes the .md artifact, render the ▍-block confir
 - ❌ Missing file paths (forces next agent to search)
 - ❌ Vague next steps ("continue work on feature")
 - ❌ Unlisted required skills
+- ❌ An unresolvable reference ("see the PR", a bare spec number)
 - ✅ Structured fields with concrete values
 - ✅ Verified file paths
 - ✅ Numbered next steps with specific actions

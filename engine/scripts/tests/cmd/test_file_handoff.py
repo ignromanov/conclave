@@ -30,6 +30,10 @@ def _run_handoff(body: Path, *, frm: str = "kai-cto", to: str = "spark-cmo",
         "--slug", slug,
         "--body-file", str(body),
     ]
+    # Every handoff carries a resolvable reference or a recorded reason (#55). Tests that
+    # are not about the reference get a valid one so they keep measuring what they measured.
+    if "gh_issue" not in kwargs and "no_issue" not in kwargs:
+        args += ["--gh-issue", "AI#12"]
     for k, v in kwargs.items():
         args += [f"--{k.replace('_', '-')}", str(v)]
     return run_engine(*args)
@@ -108,3 +112,65 @@ def test_required_args_enforced(seed_advisors, tmp_path):
     r = run_engine("file", "handoff", "--from", "kai-cto")
     assert r.returncode != 0
     assert "required" in r.stderr
+
+
+# --- #55: a handoff must reference something a later reader can resolve ---
+
+def test_handoff_without_a_reference_is_refused(seed_advisors, tmp_path):
+    """Handoffs have no terminal state: resume-scan ranks by mtime and never learns the
+    work shipped, so an exhausted one resurfaces forever (two observed at 1374h and
+    1226h, both tracking PRs merged in July). A resolvable reference is the cheapest
+    thing that lets a reader answer "is this still live?" without reading the whole file.
+    """
+    seed_advisors("kai-cto", "spark-cmo", "nexus-ceo")
+    body = tmp_path / "body.md"
+    body.write_text("Body.\n")
+    r = _run_handoff(body, slug="noref", title="Test", no_issue="")
+    assert r.returncode == 1
+    assert "--no-issue" in r.stderr
+    assert not (handoffs_dir() / f"{_DATE}-kai-cto-noref.md").exists()
+
+
+def test_unresolvable_reference_is_refused(seed_advisors, tmp_path):
+    """A bare number names nothing. That is not hypothetical: `AI#113` was written meaning
+    spec 113 while GH#113 was an unrelated merged PR about executors."""
+    seed_advisors("kai-cto", "spark-cmo", "nexus-ceo")
+    body = tmp_path / "body.md"
+    body.write_text("Body.\n")
+    for bad in ("113", "see the PR", "spec 093", "#"):
+        r = _run_handoff(body, slug="bad", title="Test", gh_issue=bad)
+        assert r.returncode == 1, f"accepted unresolvable reference {bad!r}"
+        assert "resolvable" in r.stderr
+
+
+def test_resolvable_reference_shapes_are_accepted(seed_advisors, tmp_path):
+    seed_advisors("kai-cto", "spark-cmo", "nexus-ceo")
+    body = tmp_path / "body.md"
+    body.write_text("Body.\n")
+    for i, ref in enumerate(("#12", "AI#12", "ignromanov/conclave#12",
+                             "https://github.com/ignromanov/conclave/pull/166")):
+        r = _run_handoff(body, slug=f"ok{i}", title="Test", gh_issue=ref)
+        assert r.returncode == 0, f"{ref}: {r.stderr}"
+        assert ref in (handoffs_dir() / f"{_DATE}-kai-cto-ok{i}.md").read_text()
+
+
+def test_no_issue_records_the_reason_in_the_document(seed_advisors, tmp_path):
+    """The escape hatch has to leave a trace, or it is indistinguishable from the omission
+    it replaces — the same reason verify_waiver: is a field rather than a convention."""
+    seed_advisors("kai-cto", "spark-cmo", "nexus-ceo")
+    body = tmp_path / "body.md"
+    body.write_text("Body.\n")
+    r = _run_handoff(body, slug="spike", title="Test",
+                     no_issue="exploratory spike, nothing filed yet")
+    assert r.returncode == 0, r.stderr
+    content = (handoffs_dir() / f"{_DATE}-kai-cto-spike.md").read_text()
+    assert "exploratory spike, nothing filed yet" in content
+
+
+def test_both_reference_and_reason_is_refused(seed_advisors, tmp_path):
+    seed_advisors("kai-cto", "spark-cmo", "nexus-ceo")
+    body = tmp_path / "body.md"
+    body.write_text("Body.\n")
+    r = _run_handoff(body, slug="both", title="Test", gh_issue="AI#12", no_issue="also this")
+    assert r.returncode == 1
+    assert "not both" in r.stderr

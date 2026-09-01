@@ -11,7 +11,7 @@ First step always: run feedback_index.py rebuild (defensive — resolves B2).
            machine-readable array carrying feedback_id/item_id per row for direct --set.
 --check    Compare last-triage marker mtime + new-review count → print
            triage_due=<true|false>.
---set      Write status/owner/resolved_at back into the review markdown file via
+--set      Write status/owner/issue/waiver/resolved_at back into the review file via
            frontmatter_io.read_commented + write (comment-preserving); bump updated_at.
            Touch the last-triage marker when a triage session completes.
 --monthly  List items with status in {open, deferred} older than 90 days.
@@ -221,8 +221,9 @@ def cmd_monthly(rows: list[dict]) -> None:
 
 
 def cmd_set(root: Path, feedback_id: str, item_id: str, status: str,
-            owner: str | None, triage_marker: Path, issue: int | None = None) -> int:
-    """Write status/owner/issue/resolved_at back to the review file."""
+            owner: str | None, triage_marker: Path, issue: int | None = None,
+            waiver: str | None = None) -> int:
+    """Write status/owner/issue/waiver/resolved_at back to the review file."""
     if status not in _VALID_STATUSES:
         print(f"ERROR: invalid status={status!r} (allowed: {sorted(_VALID_STATUSES)})",
               file=sys.stderr)
@@ -245,6 +246,36 @@ def cmd_set(root: Path, feedback_id: str, item_id: str, status: str,
     for item in items:
         if item.get("id") == item_id:
             previous = item.get("status")
+            if waiver is not None:
+                item["verify_waiver"] = waiver
+            # 093/#165 — accepting an item is the one moment the protocol has the
+            # operator's attention on its closing condition, and the cheapest moment to
+            # state it. An accepted item carrying neither a predicate nor a recorded
+            # waiver can never be closed by the verify sweep: it is backlog nobody can
+            # drain. When this gate was written 2 of 171 accepted items carried a
+            # predicate and the loop had closed nothing in seven weeks.
+            # The gate fires only on a GENUINE transition (status != previous), so the
+            # documented issue-binding step of triage.md Step 4 — which re-passes an
+            # already-accepted item's own status — still works, and so does every later
+            # correction to the items that predate the rule. Enforcing on every write
+            # would push operators into hand-editing finalized frontmatter, a second
+            # writer, which is worse than the gap it closes.
+            if (status == "accepted" and status != previous
+                    and not item.get("verify") and not item.get("verify_waiver")):
+                print(
+                    f"ERROR: refusing to accept {feedback_id}/{item_id}: it carries no "
+                    f"verify: predicate and no verify_waiver.\n"
+                    f"       Accepting it now would add one more item the verify sweep "
+                    f"can never close.\n"
+                    f"       Attach a predicate first:\n"
+                    f"         python feedback_verify.py --set-verify {feedback_id} "
+                    f"{item_id} <grep-absent|file-contains|file-absent> "
+                    f"--file <path> --pattern <regex>\n"
+                    f"       Or record why no mechanical predicate is possible, on this "
+                    f"same call:\n"
+                    f"         --waiver \"<reason>\"",
+                    file=sys.stderr)
+                return 1
             item["status"] = status
             if owner is not None:
                 item["owner"] = owner
@@ -279,7 +310,8 @@ def cmd_set(root: Path, feedback_id: str, item_id: str, status: str,
 
     print(f"Updated {feedback_id}/{item_id}: status={status}" +
           (f" owner={owner}" if owner else "") +
-          (f" issue=#{issue}" if issue else ""))
+          (f" issue=#{issue}" if issue else "") +
+          (" waiver=recorded" if waiver else ""))
     return 0
 
 
@@ -336,6 +368,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--set", nargs=3, metavar=("FEEDBACK_ID", "ITEM_ID", "STATUS"),
                         help="Write status back to review file")
     parser.add_argument("--owner", default=None, help="Owner to assign with --set")
+    parser.add_argument("--waiver", default=None,
+                        help="Record why this item can carry no mechanical verify: "
+                             "predicate. Satisfies the accept-gate; an unmeasurable "
+                             "waiver is indistinguishable from having forgotten (#165).")
     parser.add_argument("--issue", type=int, default=None,
                         help="GH issue number to bind to the item with --set (Step 4). "
                              "Binding the item to its issue is what stops a defect that "
@@ -373,7 +409,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.set:
             feedback_id, item_id, status = args.set
             set_rc = cmd_set(root, feedback_id, item_id, status, args.owner, triage_marker,
-                             issue=args.issue)
+                             issue=args.issue, waiver=args.waiver)
             if set_rc == 0:
                 # Reconcile the cache with the review we just wrote. The rebuild above runs
                 # BEFORE the write, so without this the index lags the source of truth by

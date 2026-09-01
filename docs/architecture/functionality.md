@@ -265,8 +265,9 @@ task is to **feed** it (author predicates, wire `hit_count`), not to build it.
 > predicates are reported `broken` instead of silently read as "not done yet", and the loop
 > has closed items on their own predicates for the first time (MTTR 52d and 42d). What is
 > still missing is only the first item — **authored predicates**: 2 of 171 accepted items
-> carry one. The sweep now prints that ratio beside its yield, and `/conclave:triage` Step 3.6
-> is the step that writes them.
+> carry one. The sweep now prints that ratio beside its yield, `/conclave:triage` Step 2.5 is
+> the step that writes them, and `--set ... accepted` refuses an item that carries neither a
+> predicate nor a recorded `verify_waiver:` — so the starvation cannot silently resume.
 **Conclave role:** Component-zero — smallest shippable slice proving the self-improvement thesis
 
 **Two outputs from one verification pass:**

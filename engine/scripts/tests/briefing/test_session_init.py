@@ -63,14 +63,15 @@ class TestRepoRoot:
 class TestResumeScan:
     def test_empty_dirs(self, tmp_path):
         root = _make_root(tmp_path)
-        items = session_init._step1b_resume_scan("kai-cto", root)
+        items, stale = session_init._step1b_resume_scan("kai-cto", root)
         assert items == []
+        assert stale == []
 
     def test_finds_spec_resume(self, tmp_path):
         root = _make_root(tmp_path)
         prompt = root / "ops" / "specs" / "085-test" / "resume-prompt.md"
         _write(prompt, "# resume\n")
-        items = session_init._step1b_resume_scan("kai-cto", root)
+        items, _ = session_init._step1b_resume_scan("kai-cto", root)
         assert any("spec-resume" in i and "085-test" in i for i in items)
 
     def test_finds_handoff_for_advisor(self, tmp_path):
@@ -78,7 +79,7 @@ class TestResumeScan:
         handoffs = root / "ops" / "handoffs"
         handoffs.mkdir(parents=True, exist_ok=True)
         _write(handoffs / "2026-05-22-kai-cto-session.md", "# handoff\n")
-        items = session_init._step1b_resume_scan("kai-cto", root)
+        items, _ = session_init._step1b_resume_scan("kai-cto", root)
         assert any("handoff" in i and "kai-cto" in i for i in items)
 
     def test_skips_other_advisor_handoff(self, tmp_path):
@@ -86,8 +87,8 @@ class TestResumeScan:
         handoffs = root / "ops" / "handoffs"
         handoffs.mkdir(parents=True, exist_ok=True)
         _write(handoffs / "2026-05-22-nexus-ceo-session.md", "# handoff\n")
-        items = session_init._step1b_resume_scan("kai-cto", root)
-        assert not any("nexus-ceo" in i for i in items)
+        items, stale = session_init._step1b_resume_scan("kai-cto", root)
+        assert not any("nexus-ceo" in i for i in items + stale)
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +243,7 @@ class TestMainArgValidation:
         monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root))
         # stub heavy post-validation steps — we only assert validation accepts the advisor
         monkeypatch.setattr(session_init, "_step1_load_briefing", lambda a, r: (0, []))
-        monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: [])
+        monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: ([], []))
         monkeypatch.setattr(session_init, "_step1c_reflexion", lambda a, r: [])
         monkeypatch.setattr(session_init, "_scan_overlays", lambda a, r: [])
         monkeypatch.setattr(session_init, "_step_cadence_guard", lambda: [])
@@ -262,7 +263,7 @@ class TestMainArgValidation:
         monkeypatch.setenv("CONCLAVE_AI_ROOT", str(root))
         monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root))
         monkeypatch.setattr(session_init, "_step1_load_briefing", lambda a, r: (0, []))
-        monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: [])
+        monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: ([], []))
         monkeypatch.setattr(session_init, "_step1c_reflexion", lambda a, r: [])
         monkeypatch.setattr(session_init, "_scan_overlays", lambda a, r: [])
         monkeypatch.setattr(session_init, "_step_cadence_guard", lambda: [])
@@ -292,7 +293,7 @@ class TestMainArgValidation:
         monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root))
         monkeypatch.setenv("LOCK_DIR", str(root / "locks"))
         monkeypatch.setattr(session_init, "_step1_load_briefing", lambda a, r: (0, []))
-        monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: [])
+        monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: ([], []))
         monkeypatch.setattr(session_init, "_step1c_reflexion", lambda a, r: [])
         monkeypatch.setattr(session_init, "_scan_overlays", lambda a, r: [])
         monkeypatch.setattr(session_init, "_step_cadence_guard", lambda: [])
@@ -747,7 +748,7 @@ class TestRenderDashboard:
         root = _make_root(tmp_path)
         _write(root / ".claude" / "agents" / "privacy-trust.md", "# advisor\n")
         monkeypatch.setattr(session_init, "_step1_load_briefing", lambda a, r: (0, []))
-        monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: [])
+        monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: ([], []))
         monkeypatch.setattr(session_init, "_step1c_reflexion", lambda a, r: [])
         monkeypatch.setattr(session_init, "_scan_overlays", lambda a, r: [])
         monkeypatch.setattr(session_init, "_step_cadence_guard", lambda: [])
@@ -759,7 +760,7 @@ class TestRenderDashboard:
         root = _make_root(tmp_path)
         _write(root / ".claude" / "agents" / "privacy-trust.md", "# advisor\n")
         monkeypatch.setattr(session_init, "_step1_load_briefing", lambda a, r: (0, []))
-        monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: [])
+        monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: ([], []))
         monkeypatch.setattr(session_init, "_step1c_reflexion", lambda a, r: [])
         monkeypatch.setattr(session_init, "_scan_overlays", lambda a, r: [])
         monkeypatch.setattr(session_init, "_step_cadence_guard", lambda: [])
