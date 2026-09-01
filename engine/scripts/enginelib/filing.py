@@ -175,6 +175,22 @@ class HandoffOpts:
     body_file: str
     policy: str = ""
     gh_issue: str = ""
+    no_issue: str = ""
+
+
+# A handoff's reference has to be something a later reader can RESOLVE, because that is the
+# only way a handoff ever learns that its work shipped. Handoffs have no terminal state
+# (#55): resume-scan ranks by mtime, so an exhausted one resurfaces as "interrupted work"
+# forever — two were surfacing at 1374h and 1226h, both tracking PRs that merged in July.
+# Free text ("see the PR", "spec 093") is not resolvable and was the actual failure mode:
+# a bare number was read as a spec id while it named an unrelated merged PR.
+_GH_REF = re.compile(
+    r"^(?:"
+    r"(?:[A-Za-z][\w.-]*)?#\d+"                        # #12, AI#12, conclave#12
+    r"|[\w.-]+/[\w.-]+#\d+"                            # owner/repo#12
+    r"|https://github\.com/[\w.-]+/[\w.-]+/(?:issues|pull)/\d+"
+    r")$"
+)
 
 
 def file_handoff(opts: HandoffOpts) -> str:
@@ -209,9 +225,26 @@ def file_handoff(opts: HandoffOpts) -> str:
                 f"Known advisors: {known}"
             )
 
+    # 2b. Every handoff carries a resolvable reference, or a recorded reason it cannot.
+    if opts.gh_issue and opts.no_issue:
+        raise ValueError("pass either --gh-issue or --no-issue, not both")
+    if not opts.gh_issue and not opts.no_issue:
+        raise ValueError(
+            "a handoff needs a reference the next session can resolve.\n"
+            "  --gh-issue #12 | AI#12 | owner/repo#12 | https://github.com/o/r/issues/12\n"
+            "  --no-issue \"<why this work has no issue>\"  (exploratory work, a spike)"
+        )
+    if opts.gh_issue and not _GH_REF.match(opts.gh_issue):
+        raise ValueError(
+            f"--gh-issue {opts.gh_issue!r} is not resolvable. Give a reference a reader can "
+            f"follow: #12, AI#12, owner/repo#12, or a github.com issue/pull URL. "
+            f"A bare number or free text names nothing."
+        )
+
     # 3. Conditional meta lines
     policy_line = f"> **Policy**: `{opts.policy}`" if opts.policy else ""
-    gh_issue_line = f"> **GH Issue**: {opts.gh_issue}" if opts.gh_issue else ""
+    gh_issue_line = (f"> **GH Issue**: {opts.gh_issue}" if opts.gh_issue
+                     else f"> **GH Issue**: none — {opts.no_issue}")
 
     # 4. Resolve output path (dedupe a stuttering advisor-prefixed slug — #52)
     opts.slug = _dedupe_slug(opts.frm, opts.slug)
@@ -257,6 +290,8 @@ class CloseSessionOpts:
     issues_csv: str = ""
     mentions_csv: str = ""
     handoff_file: str = ""
+    handoff_issue: str = ""
+    handoff_no_issue: str = ""
     handoff_to: str = ""
     handoff_priority: str = ""
     handoff_title: str = ""
@@ -313,7 +348,7 @@ def close_session(opts: CloseSessionOpts) -> str:
     if opts.followups_file and not Path(opts.followups_file).is_file():
         raise ValueError(f"--followups-file not found: {opts.followups_file}")
 
-    # 6. Validate handoff_file and its 4 companions if set
+    # 6. Validate handoff_file and its companions if set
     if opts.handoff_file:
         if not Path(opts.handoff_file).is_file():
             raise ValueError(f"--handoff-file not found: {opts.handoff_file}")
@@ -330,6 +365,16 @@ def close_session(opts: CloseSessionOpts) -> str:
         if handoff_missing:
             raise ValueError(
                 f"handoff required argument(s) missing: {' '.join(handoff_missing)}"
+            )
+        # Checked HERE and not at step 16, where the handoff is actually filed: by then the
+        # session document is written and the mentions resolved, so a raise would leave a
+        # closed session with no handoff and no way to tell that from a session that never
+        # needed one.
+        if bool(opts.handoff_issue) == bool(opts.handoff_no_issue):
+            raise ValueError(
+                "a handoff needs exactly one of --handoff-issue (a resolvable reference: "
+                "#12, AI#12, owner/repo#12, or a github.com URL) or --handoff-no-issue "
+                "\"<why this work has no issue>\" (#55)"
             )
 
     # 7. Pre-validate decision slugs: {date}-{advisor}-{slug}.md must exist
@@ -433,6 +478,8 @@ def close_session(opts: CloseSessionOpts) -> str:
             title=opts.handoff_title,
             slug=opts.handoff_slug,
             body_file=opts.handoff_file,
+            gh_issue=opts.handoff_issue,
+            no_issue=opts.handoff_no_issue,
         ))
 
     # 17. Briefing regen (best-effort, stdout-suppressed at fd level)

@@ -33,6 +33,8 @@ def _close(args) -> int:
         handoff_priority=args.handoff_priority or "",
         handoff_title=args.handoff_title or "",
         handoff_slug=args.handoff_slug or "",
+        handoff_issue=args.handoff_issue or "",
+        handoff_no_issue=args.handoff_no_issue or "",
         duration_estimate=args.duration_estimate or "",
         reflexion=args.reflexion or "",
     )
@@ -93,6 +95,11 @@ def register(sub) -> None:
     c.add_argument("--handoff-priority", dest="handoff_priority", default=None)
     c.add_argument("--handoff-title", dest="handoff_title", default=None)
     c.add_argument("--handoff-slug", dest="handoff_slug", default=None)
+    c.add_argument("--handoff-issue", dest="handoff_issue", default=None,
+                   help="Resolvable reference for the handoff: #12, AI#12, owner/repo#12, "
+                        "or a github.com issue/pull URL (#55).")
+    c.add_argument("--handoff-no-issue", dest="handoff_no_issue", default=None,
+                   help="Why the handoff has no issue to resolve against.")
     c.add_argument("--duration-estimate", dest="duration_estimate", default=None)
     c.add_argument("--reflexion", default=None)
     c.set_defaults(func=_close)

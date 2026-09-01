@@ -48,6 +48,7 @@ def _handoff(args) -> int:
         body_file=args.body_file or "",
         policy=args.policy,
         gh_issue=args.gh_issue,
+        no_issue=args.no_issue,
     )
     try:
         file_handoff(opts)
@@ -84,5 +85,10 @@ def register(sub) -> None:
     hp.add_argument("--slug")
     hp.add_argument("--body-file", dest="body_file")
     hp.add_argument("--policy", default="")
-    hp.add_argument("--gh-issue", dest="gh_issue", default="")
+    hp.add_argument("--gh-issue", dest="gh_issue", default="",
+                    help="Resolvable reference: #12, AI#12, owner/repo#12, or a github.com "
+                         "issue/pull URL. Required unless --no-issue is given (#55).")
+    hp.add_argument("--no-issue", dest="no_issue", default="",
+                    help="Why this handoff has no issue to resolve against. Recorded in the "
+                         "document, so the gap is a decision rather than an omission.")
     hp.set_defaults(func=_handoff)

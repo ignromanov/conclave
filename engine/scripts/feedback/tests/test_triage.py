@@ -183,7 +183,7 @@ def test_set_without_owner(tmp_path):
     _write_review(tmp_path, "2026-05-22", "atlas-noown.md",
                   _valid_review_meta(feedback_id="fb-666-ffffff"))
 
-    result = run_triage(tmp_path, ["--set", "fb-666-ffffff", "it-1", "accepted"])
+    result = run_triage(tmp_path, ["--set", "fb-666-ffffff", "it-1", "accepted", "--waiver", "not mechanically checkable"])
     assert result.returncode == 0, result.stderr
 
     meta_after, _ = fm_read(
@@ -229,7 +229,7 @@ def test_set_accepted_stamps_accepted_at(tmp_path):
     _write_review(tmp_path, "2026-05-22", "atlas-acc.md",
                   _valid_review_meta(feedback_id="fb-acc-777777"))
 
-    result = run_triage(tmp_path, ["--set", "fb-acc-777777", "it-1", "accepted"])
+    result = run_triage(tmp_path, ["--set", "fb-acc-777777", "it-1", "accepted", "--waiver", "not mechanically checkable"])
     assert result.returncode == 0, result.stderr
 
     meta_after, _ = fm_read(
@@ -267,8 +267,8 @@ def test_rebinding_an_accepted_item_keeps_its_original_accepted_at(tmp_path):
     """
     _write_review(tmp_path, "2026-05-22", "atlas-bind.md",
                   _valid_review_meta(feedback_id="fb-bind-111111"))
-    assert run_triage(tmp_path, ["--set", "fb-bind-111111", "it-1",
-                                 "accepted"]).returncode == 0
+    assert run_triage(tmp_path, ["--set", "fb-bind-111111", "it-1", "accepted",
+                                 "--waiver", "not mechanically checkable"]).returncode == 0
     path = tmp_path / "ops" / "feedback" / "2026-05-22" / "atlas-bind.md"
     original = fm_read(path)[0]["items"][0]["accepted_at"]
 
@@ -310,6 +310,86 @@ def test_accepted_at_backfills_when_the_item_carries_none(tmp_path):
 
     after = fm_read(tmp_path / "ops" / "feedback" / "2026-05-22" / "atlas-backfill.md")
     assert after[0]["items"][0].get("accepted_at") is not None
+
+
+# --- 093/#165: the accept gate ---
+
+def test_accepting_without_a_predicate_or_waiver_is_refused(tmp_path):
+    """The loop can only close what carries a closing condition.
+
+    2 of 171 accepted items had a predicate when this gate was written; the sweep had
+    closed nothing in seven weeks. Accepting is the moment the condition is cheapest to
+    state, so it is the moment the protocol asks for it.
+    """
+    _write_review(tmp_path, "2026-05-22", "atlas-gate.md",
+                  _valid_review_meta(feedback_id="fb-gate-111111"))
+
+    result = run_triage(tmp_path, ["--set", "fb-gate-111111", "it-1", "accepted"])
+    assert result.returncode == 1
+    assert "verify_waiver" in result.stderr
+
+    # Refusal must be total: a partial write would leave the item accepted anyway.
+    item = fm_read(tmp_path / "ops" / "feedback" / "2026-05-22" / "atlas-gate.md")[0]["items"][0]
+    assert item.get("status", "open") == "open"
+    assert item.get("accepted_at") is None
+
+
+def test_a_waiver_satisfies_the_gate_and_is_recorded(tmp_path):
+    """A waiver is a real field, not a convention: an unmeasurable waiver cannot be told
+    apart from having forgotten, and predicate_coverage counts the two differently."""
+    _write_review(tmp_path, "2026-05-22", "atlas-waive.md",
+                  _valid_review_meta(feedback_id="fb-waive-222222"))
+
+    result = run_triage(tmp_path, ["--set", "fb-waive-222222", "it-1", "accepted",
+                                   "--waiver", "judgement call, no file marker"])
+    assert result.returncode == 0, result.stderr
+
+    item = fm_read(tmp_path / "ops" / "feedback" / "2026-05-22" / "atlas-waive.md")[0]["items"][0]
+    assert item["status"] == "accepted"
+    assert item["verify_waiver"] == "judgement call, no file marker"
+
+
+def test_an_existing_predicate_satisfies_the_gate(tmp_path):
+    """The gate asks for a closing condition, and a predicate IS one — an item fed by
+    --set-verify while still open must accept with no waiver."""
+    item = _valid_item("it-1")
+    item["verify"] = {"kind": "grep-absent", "file": "a.sh", "pattern": "exit 1"}
+    _write_review(tmp_path, "2026-05-22", "atlas-pred.md",
+                  _valid_review_meta(feedback_id="fb-pred-333333", items=[item]))
+
+    result = run_triage(tmp_path, ["--set", "fb-pred-333333", "it-1", "accepted"])
+    assert result.returncode == 0, result.stderr
+
+
+def test_the_gate_never_fires_on_a_re_set_of_an_already_accepted_item(tmp_path):
+    """The reason the gate refuses only on a GENUINE transition.
+
+    171 accepted items predate the rule, and triage.md Step 4 binds an issue by
+    re-passing the item's own current status. Enforcing on every write would make the
+    documented binding step impossible on all of them, pushing operators into
+    hand-editing finalized frontmatter — a second writer, worse than the gap.
+    """
+    item = _valid_item("it-1")
+    item["status"] = "accepted"
+    _write_review(tmp_path, "2026-05-22", "atlas-legacy.md",
+                  _valid_review_meta(feedback_id="fb-legacy-444444", items=[item]))
+
+    result = run_triage(tmp_path, ["--set", "fb-legacy-444444", "it-1", "accepted",
+                                   "--owner", "forge-chro", "--issue", "165"])
+    assert result.returncode == 0, result.stderr
+    after = fm_read(tmp_path / "ops" / "feedback" / "2026-05-22" / "atlas-legacy.md")
+    assert after[0]["items"][0]["issue"] == 165
+
+
+def test_the_gate_does_not_block_any_other_status(tmp_path):
+    """Only acceptance promises a fix. Rejecting, deferring or resolving an item makes no
+    such promise, so none of them owes a predicate."""
+    for i, status in enumerate(("rejected", "deferred", "resolved")):
+        fid = f"fb-other{i}-55555{i}"
+        _write_review(tmp_path, "2026-05-22", f"atlas-other{i}.md",
+                      _valid_review_meta(feedback_id=fid))
+        r = run_triage(tmp_path, ["--set", fid, "it-1", status])
+        assert r.returncode == 0, f"{status}: {r.stderr}"
 
 
 def test_triage_aborts_when_draft_false_invalid(tmp_path):
@@ -380,7 +460,7 @@ def test_set_refuses_when_datateam_lock_held(tmp_path):
     (tmp_path / _LOCK_DIRNAME).mkdir()  # simulate another session holding the lock
 
     result = run_triage(
-        tmp_path, ["--set", "fb-lock-111111", "it-1", "accepted"],
+        tmp_path, ["--set", "fb-lock-111111", "it-1", "accepted", "--waiver", "not mechanically checkable"],
         env_extra={"CONCLAVE_TRIAGE_LOCK_TIMEOUT": "0"},
     )
     assert result.returncode != 0
@@ -400,7 +480,7 @@ def test_set_releases_lock_on_item_not_found(tmp_path):
     assert not (tmp_path / _LOCK_DIRNAME).exists(), "lock leaked on not-found path"
 
     # Lock was released → a valid set now succeeds.
-    r2 = run_triage(tmp_path, ["--set", "fb-nf-222222", "it-1", "accepted"])
+    r2 = run_triage(tmp_path, ["--set", "fb-nf-222222", "it-1", "accepted", "--waiver", "not mechanically checkable"])
     assert r2.returncode == 0, r2.stderr
 
 
@@ -473,7 +553,7 @@ def test_concurrent_set_no_lost_update(tmp_path):
     def _spawn(item_id: str) -> subprocess.Popen:
         return subprocess.Popen(
             [sys.executable, str(FEEDBACK_PKG / "feedback_triage.py"),
-             "--set", "fb-conc-333333", item_id, "accepted"],
+             "--set", "fb-conc-333333", item_id, "accepted", "--waiver", "not mechanically checkable"],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             env=_triage_env(tmp_path),
         )
@@ -501,7 +581,8 @@ def test_set_reconciles_the_index_with_the_review_it_just_wrote(tmp_path):
     )
 
     res = run_triage(tmp_path, ["--set", "fb-777-aaaaaa", "it-1", "accepted",
-                                "--owner", "sage-cto", "--issue", "424"])
+                                "--owner", "sage-cto", "--issue", "424",
+                                "--waiver", "not mechanically checkable"])
     assert res.returncode == 0, res.stderr
 
     # Read the index directly — no rebuild, no second command.

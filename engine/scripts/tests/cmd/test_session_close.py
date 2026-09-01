@@ -144,6 +144,7 @@ def test_handoff_file_creates_handoff(seed_advisors, tmp_path):
         handoff_title="Pick up next week",
         handoff_slug="pick-up-next-week",
         handoff_priority="p2",
+        handoff_issue="AI#12",
     )
     assert r.returncode == 0, r.stderr
     # STALE-BATS TRAP #2: correct filename includes from-token
@@ -236,3 +237,26 @@ def test_emission_gate_passes_when_emission_present(tmp_path):
     }
     r = run_engine("session", "emission-gate", env=env)
     assert r.returncode == 0, r.stderr
+
+
+# 12. #55 — closing a session with a handoff that references nothing must fail BEFORE the
+#     session document is written, or the tree keeps a closed session whose handoff never
+#     landed, indistinguishable from a session that needed none.
+def test_close_refuses_a_handoff_with_no_reference(seed_advisors, tmp_path):
+    seed_advisors(_ADVISOR, "spark-cmo")
+    hb = tmp_path / "handoff-body.md"
+    hb.write_text("Handoff body text.\n")
+    body = _write_body(tmp_path)
+    r = _run_close(
+        body,
+        handoff_file=str(hb),
+        handoff_to="spark-cmo",
+        handoff_title="Pick up next week",
+        handoff_slug="no-reference",
+        handoff_priority="p2",
+    )
+    assert r.returncode != 0
+    assert "--handoff-issue" in r.stderr
+    assert not (handoffs_dir() / f"{_DATE}-{_ADVISOR}-no-reference.md").exists()
+    assert not (sessions_dir() / f"{_DATE}-{_ADVISOR}-vid-review.md").exists(), \
+        "session document written despite the handoff being refused"

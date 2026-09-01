@@ -89,6 +89,66 @@ For each cluster in the digest, choose one of:
 | `workflow` | quorum |
 | *(any, `category: idea`)* | both forge + quorum |
 
+### Step 2.5 — Attach the closing condition BEFORE you accept (#165)
+
+The Step 3.5 sweep can only drain items that carry a predicate. Nothing in this protocol
+ever wrote one, which is why coverage sat at 2 of 171 accepted items on 2026-08-31 and the
+sweep closed nothing for seven weeks. **This step is what feeds the loop; the sweep only
+reads what it left.**
+
+It comes before Step 3 because Step 3 now refuses it otherwise: `--set <fid> <iid> accepted`
+exits 1 on an item carrying neither `verify:` nor `verify_waiver:`. Attach the predicate
+while the item is still `open`, then accept it.
+
+For each item you are about to accept, attach the predicate that will become true when the
+fix lands — or record why none can exist:
+
+```bash
+PYTHONPATH=engine/scripts \
+  uv run --project engine/scripts/feedback \
+  python engine/scripts/feedback/feedback_verify.py \
+  --set-verify <feedback_id> <item_id> <kind> --file <path> --pattern <regex>
+```
+
+Three kinds, all file-reading and exec-free:
+
+| kind | resolved when | use for |
+|------|---------------|---------|
+| `grep-absent` | `--file` exists and `--pattern` is **gone** | the offending line is deleted or rewritten |
+| `file-contains` | `--file` exists and `--pattern` is **present** | the fix leaves a marker: a new function, flag, test name |
+| `file-absent` | `--path` no longer exists | the whole file is the defect |
+
+**Write the predicate against the fix, not against the symptom.** `grep-absent` on a line
+that any refactor would move closes the item when nobody fixed anything; `file-contains` on
+the name of the regression test that will prove the fix is the strongest shape available.
+
+`--set-verify` evaluates the predicate before attaching it and refuses two verdicts:
+
+- **already passes** — the next sweep would close the item with nothing fixed. Either the
+  predicate is wrong, or the item is genuinely resolved: resolve it explicitly with
+  `--set ... resolved`, or pass `--force` to let the sweep close it on the record.
+- **cannot be evaluated** — the target is unreadable or escapes the checkout root. The item
+  would report `BROKEN` on every sweep and never close.
+
+Predicate paths are **checkout-relative** (siblings of `.conclave/`, e.g.
+`engine/scripts/...`), not DATA-root-relative.
+
+**When no mechanical predicate is possible** — the item is a judgement call, a naming
+decision, a "be more careful" — record *why* rather than leaving the field empty, so the gap
+is a decision on the record instead of an omission. Pass it on the accepting `--set` itself;
+never hand-edit finalized frontmatter, which is a second writer:
+
+```bash
+uv run --project engine/scripts/feedback \
+  python engine/scripts/feedback/feedback_triage.py \
+  --set <feedback_id> <item_id> accepted \
+  --waiver "no file-readable oracle: the fix is a judgement about tone, not a diff"
+```
+
+The two are counted apart. `feedback_verify.py` prints
+`predicate-coverage: <covered>/<accepted> (<pct>%) waived=<w> uncovered=<u>` on every sweep;
+an unmeasurable waiver would be indistinguishable from having forgotten.
+
 ### Step 3 — Write status + owner back to review files
 
 For each classified item:
@@ -100,7 +160,12 @@ uv run --project engine/scripts/feedback \
   [--owner <forge|quorum|advisor-slug>]
 ```
 
-`--set` writes `status` and `owner` back into the review markdown file
+**Acceptance is gated (#165).** `--set ... accepted` refuses an item that carries neither
+a `verify:` predicate nor a `verify_waiver:` — see Step 2.5 for both ways to satisfy it. The
+refusal fires only on a genuine transition *into* `accepted`, so re-passing an already-accepted
+item's own status (which is exactly how Step 4 binds an issue) is never blocked.
+
+`--set` writes `status`, `owner`, `issue` and `verify_waiver` back into the review markdown file
 (comment-preserving via `frontmatter_io.read_commented` + `write`), bumps `updated_at`,
 and touches `_index/last-triage` to reset the cadence clock. The command takes exactly
 one `(feedback_id, item_id, status)` triple — run it once per item.
@@ -112,6 +177,8 @@ non-reserved loop variable and quote every expansion:
 
 ```bash
 # one row per item: "<feedback_id> <item_id> <accepted|rejected|deferred>"
+# Every `accepted` row here must already carry a predicate from Step 2.5, or the --set
+# will refuse it. For the judgement-call items, run those with --waiver separately.
 while read -r fb item state; do
   [ -z "$fb" ] && continue
   uv run --project engine/scripts/feedback \
@@ -154,56 +221,6 @@ PYTHONPATH=engine/scripts \
   uv run --project engine/scripts/feedback \
   python engine/scripts/feedback/feedback_verify.py --apply
 ```
-
-### Step 3.6 — Attach a `verify:` predicate to each item just accepted (#165)
-
-Step 3.5 can only drain items that carry a predicate. Nothing before this step ever wrote
-one, which is why coverage sat at 2 of 171 accepted items on 2026-08-31 and the sweep closed
-nothing for seven weeks. **This step is what feeds the loop; the sweep only reads what it left.**
-
-For each item moved to `accepted`, attach the predicate that will become true when the fix
-lands — or record why none can exist:
-
-```bash
-PYTHONPATH=engine/scripts \
-  uv run --project engine/scripts/feedback \
-  python engine/scripts/feedback/feedback_verify.py \
-  --set-verify <feedback_id> <item_id> <kind> --file <path> --pattern <regex>
-```
-
-Three kinds, all file-reading and exec-free:
-
-| kind | resolved when | use for |
-|------|---------------|---------|
-| `grep-absent` | `--file` exists and `--pattern` is **gone** | the offending line is deleted or rewritten |
-| `file-contains` | `--file` exists and `--pattern` is **present** | the fix leaves a marker: a new function, flag, test name |
-| `file-absent` | `--path` no longer exists | the whole file is the defect |
-
-**Write the predicate against the fix, not against the symptom.** `grep-absent` on a line
-that any refactor would move closes the item when nobody fixed anything; `file-contains` on
-the name of the regression test that will prove the fix is the strongest shape available.
-
-`--set-verify` evaluates the predicate before attaching it and refuses two verdicts:
-
-- **already passes** — the next sweep would close the item with nothing fixed. Either the
-  predicate is wrong, or the item is genuinely resolved: resolve it explicitly with
-  `--set ... resolved`, or pass `--force` to let the sweep close it on the record.
-- **cannot be evaluated** — the target is unreadable or escapes the checkout root. The item
-  would report `BROKEN` on every sweep and never close.
-
-Predicate paths are **checkout-relative** (siblings of `.conclave/`, e.g.
-`engine/scripts/...`), not DATA-root-relative.
-
-**When no mechanical predicate is possible** — the item is a judgement call, a naming
-decision, a "be more careful" — say so in the item rather than leaving the field empty, so
-the gap is a recorded decision instead of an omission:
-
-```yaml
-  verify_waiver: "no file-readable oracle: the fix is a judgement about tone, not a diff"
-```
-
-An accepted item with neither `verify:` nor `verify_waiver:` is the loop's starvation, one
-item at a time.
 
 ### Step 4 — Open GH Issues for accepted items
 

@@ -257,9 +257,28 @@ def _step1_load_briefing(advisor: str, root: Path) -> tuple[int, list[str]]:
 # Step 1b — resume-scan
 # ---------------------------------------------------------------------------
 
-def _step1b_resume_scan(advisor: str, root: Path) -> list[str]:
-    """Return lines describing interrupted work, empty if none found."""
+# A handoff whose whole purpose is "pick this up next session" and that nothing has
+# touched in two weeks is not interrupted work — it is residue. Handoffs have no terminal
+# state (#55): the scan ranks by mtime and never learns that the work shipped, so an
+# exhausted one resurfaces forever. Two observed at 1374h and 1226h; both tracked PRs that
+# merged in July. Age is a proxy for the consumed-state the format still lacks, so this
+# demotes rather than hides: the lines are still printed, under a heading that says what
+# they are. Raise the bar for a genuinely long-running thread via the env var.
+_HANDOFF_STALE_HOURS = 336
+
+
+def _handoff_stale_hours() -> int:
+    raw = os.environ.get("CONCLAVE_HANDOFF_STALE_HOURS", "")
+    try:
+        return int(raw) if raw else _HANDOFF_STALE_HOURS
+    except ValueError:
+        return _HANDOFF_STALE_HOURS
+
+
+def _step1b_resume_scan(advisor: str, root: Path) -> tuple[list[str], list[str]]:
+    """Return (live, stale) lines describing interrupted work; both empty if none found."""
     found: list[str] = []
+    stale: list[str] = []
 
     # ops/specs/*/resume-prompt.md
     specs_dir = root / "ops" / "specs"
@@ -281,9 +300,13 @@ def _step1b_resume_scan(advisor: str, root: Path) -> list[str]:
                 age_h = (int(time.time()) - int(handoff.stat().st_mtime)) // 3600
             except OSError:
                 age_h = -1
-            found.append(f"  handoff: {handoff.name} age={age_h}h")
+            line = f"  handoff: {handoff.name} age={age_h}h"
+            if 0 <= age_h < _handoff_stale_hours():
+                found.append(line)
+            else:
+                stale.append(line)
 
-    return found
+    return found, stale
 
 
 # ---------------------------------------------------------------------------
@@ -474,12 +497,19 @@ def _advisor_summary(advisor: str, root: Path) -> tuple[int, list[str]]:
     lines.extend(step1_lines)
 
     # Step 1b
-    resume_items = _step1b_resume_scan(advisor, root)
+    resume_items, stale_handoffs = _step1b_resume_scan(advisor, root)
     if resume_items:
         lines.append("  resume: interrupted work found:")
         lines.extend(resume_items)
     else:
         lines.append("  resume: none")
+    if stale_handoffs:
+        # Demoted, not hidden: the operator is the only one who can tell an abandoned
+        # handoff from a slow one, and retiring it is a decision, not a side effect of
+        # reading the board.
+        lines.append(f"  stale handoffs (untouched >{_handoff_stale_hours()}h — "
+                     f"archive to ops/handoffs/archive/ or delete):")
+        lines.extend(stale_handoffs)
 
     # Step 1c
     reflexions = _step1c_reflexion(advisor, root)
