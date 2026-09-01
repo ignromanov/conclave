@@ -246,6 +246,76 @@ def test_machine_local_settings_are_gitignored():
 
 
 # ---------------------------------------------------------------------------
+# 1c-handles (#194) — the public tree names no private repo and no stable API handle.
+# ---------------------------------------------------------------------------
+# The three gates above each miss this class, and each misses it somewhere different:
+# grep-gate's pattern matches the private slug but is anchored at <engine_root> and skips
+# /tests/; the publication gate reaches docs/architecture and engine/ but looks only for
+# `/Users/<x>/` paths; the fixtures gate reads tests/fixtures/ and nothing else. So all three
+# stayed green over `docs/architecture/lifecycle.md` and
+# `engine/scripts/tests/enginelib/test_gh.py`, which between them shipped a private repo's slug
+# and a GitHub project board node id into a public repository.
+#
+# The defect was the *perimeter*, so this gate has none: it asks git for the tracked set, which
+# is exactly "what is published". Curated directory lists are what let the other three drift
+# apart, and each drifted in a direction nobody chose.
+#
+# Both detectors are keyed on what is sensitive, not on branding. Instance branding is
+# legitimate public prose — the dogfooding origin is named as such in README — and is #71's
+# problem, not this gate's. What is not legitimate is a *slug*: `<owner>/<repo>` asserts that a
+# repository exists under a known owner, and for a private one that is a disclosure however
+# public the two halves are separately.
+#
+# Neither pattern matches its own source text — after the owner's `/` and after `PVT_kw` the
+# next character here is `(` and `[`, and neither is in the class that follows. That is why this
+# gate needs no self-allowlist, and a self-allowlisting gate is one that cannot see its own file.
+_PUBLIC_REPOS = frozenset({"conclave", "llm-obsidian-wiki"})
+_OWNER_SLUG_RE = re.compile(r"ignromanov/([A-Za-z0-9._-]+)")
+_PROJECT_NODE_ID_RE = re.compile(r"PVT_kw[A-Za-z0-9_-]{8,}")
+
+
+def _tracked_text_files():
+    """Every file git tracks — which is the definition of what this repo publishes."""
+    r = _git("ls-files", "-z")
+    if r.returncode != 0:
+        pytest.skip("not a git work tree — the tracked set is undefined")
+    for rel in r.stdout.split("\0"):
+        if not rel:
+            continue
+        path = REPO_ROOT / rel
+        if not path.is_file():
+            continue  # tracked, but deleted in the working tree
+        yield rel, path
+
+
+def _private_handle_hits() -> tuple[list[str], int]:
+    hits = []
+    scanned = 0
+    for rel, path in _tracked_text_files():
+        scanned += 1
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            for m in _OWNER_SLUG_RE.finditer(line):
+                if m.group(1) not in _PUBLIC_REPOS:
+                    hits.append(f"{rel}:{lineno}: repo slug `{m.group(0)}` is not a public repo")
+            for m in _PROJECT_NODE_ID_RE.finditer(line):
+                hits.append(f"{rel}:{lineno}: project board node id `{m.group(0)}`")
+    return hits, scanned
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not on PATH")
+def test_public_tree_carries_no_private_handles():
+    hits, scanned = _private_handle_hits()
+    assert scanned > 0, "handles gate scanned 0 files — is this a git checkout?"
+    assert not hits, (
+        "handles gate FAIL — the public tree discloses private handles:\n  "
+        + "\n  ".join(hits)
+        + "\nUse a placeholder resolved from roster.yaml. A genuinely public repo belongs in"
+        + " _PUBLIC_REPOS; nothing else should be suppressed."
+    )
+
+
+# ---------------------------------------------------------------------------
 # 1d. Instance-data gate (spec 103 §4) — DATA must never be tracked in CODE.
 # ---------------------------------------------------------------------------
 # Hired advisors, proof-instances and the instance's own identity doc are DATA per the
