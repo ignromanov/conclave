@@ -124,12 +124,46 @@ def _repo_root() -> Path:
 def _engine_root() -> Path:
     """engine/ CODE root — forge scripts/contracts are CODE, in the FLAT layout
     (engine/scripts, engine/contracts), never under a DATA-root `.claude/`.
-    Derived from this file (engine/scripts/lifecycle/session_init.py -> engine/);
-    CONCLAVE_ENGINE_ROOT overrides (mirrors lib/paths.sh)."""
-    env = os.environ.get("CONCLAVE_ENGINE_ROOT")
-    if env:
-        return Path(env).resolve()
+    Derived from this file and from nothing else
+    (engine/scripts/lifecycle/session_init.py -> engine/).
+
+    CONCLAVE_ENGINE_ROOT is deliberately NOT honoured here (GH#187). What this function
+    answers is where to find the SIBLING HELPERS this script dispatches — it is the `cwd`
+    of every `python -m engine ...` child below and the path of feedback_triage.py — so the
+    only correct answer is the tree the running file lives in. The variable is baked into
+    `.claude/settings.json` by the initialiser and inherited by every process on the
+    machine, which made it win over `__file__` in exactly the case the fallback existed
+    for: a worktree's session_init.py ran the main checkout's engine, measured. That is the
+    mechanism behind #171 — a stale copy answered a real triage with older semantics and
+    left a diverged index. A copy that errors costs a turn; one that silently answers costs
+    a wrong conclusion.
+
+    A deliberate override still has its seam: point it at a tree and run THAT tree's script.
+    """
     return Path(__file__).resolve().parents[2]
+
+
+def _pin_engine_root_to_own_copy() -> list[str]:
+    """Make the inherited CONCLAVE_ENGINE_ROOT agree with the copy that is executing.
+
+    Returns the warning lines to print when it had to be corrected, empty otherwise.
+
+    `_engine_root()` above fixes where THIS process looks for helpers, but the children it
+    spawns re-read the variable for their own path resolution — so without this the fix
+    would only half-land: code from the copy that is running, contracts and skills from
+    whichever copy the environment names. That split is worse than either tree alone.
+
+    Silent when the two agree, which is the healthy case the initialiser produces.
+    """
+    own = _engine_root()
+    inherited = os.environ.get("CONCLAVE_ENGINE_ROOT")
+    os.environ["CONCLAVE_ENGINE_ROOT"] = str(own)
+    if inherited and Path(inherited).resolve() != own:
+        return [
+            f"  WARNING: CONCLAVE_ENGINE_ROOT points at {inherited}",
+            f"  but this script lives in {own} — using its own copy (GH#187).",
+        ]
+    return []
 
 
 def _scripts_dir() -> Path:
@@ -589,6 +623,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--advisor", required=True, help="Canonical advisor slug (e.g. kai-cto)")
     args = parser.parse_args(argv)
+
+    # Before anything dispatches a child: this script runs its own copy's helpers (GH#187).
+    for warning in _pin_engine_root_to_own_copy():
+        print(warning, file=sys.stderr)
 
     advisor = args.advisor
     try:

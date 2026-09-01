@@ -69,6 +69,9 @@ session start.
    reflexion extract (last-3 sessions), overlay scan, and feedback cadence check.
    If a line starting with `  feedback:` appears in the output, triage is due — include it in
    the session-start summary and suggest running `/conclave:triage` this session.
+   A `WARNING: CONCLAVE_ENGINE_ROOT points at …` line on stderr means the environment named a
+   different checkout than the one the script lives in; it runs its own copy's helpers and
+   tells you so (GH#187). Treat it as a signal that the hook and the tree have drifted apart.
 3. Read `.conclave/agent-memory/advisors/briefings/<advisor>.md` into context.
 4. Load `hot.md` **once** separately (AC8 — no longer embedded in briefings):
    ```bash

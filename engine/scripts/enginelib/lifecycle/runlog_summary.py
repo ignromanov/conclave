@@ -55,4 +55,17 @@ def run(advisor: str, date_str: str) -> str:
     else:
         sev = "🟢"
 
-    return f"{sev} {count} scripts · {total_ms}ms · {errors} errors"
+    line = f"{sev} {count} scripts · {total_ms}ms · {errors} errors"
+
+    # Name the first failure (GH#186). Severity alone told the operator that something in
+    # the session failed and nothing about what, and the adapter exits 0 by design — it
+    # succeeded at reporting — so no exit code carries the detail either. `mine` is in
+    # file order, so "first" is the earliest failure logged; the later ones are usually its
+    # consequences. Rows with exit 2 are refreshes, not failures (ADR-0003), and naming one
+    # would send the operator after a healthy script.
+    first_failure = next((r for r in mine if r.get("exit_code") not in (0, 2)), None)
+    if first_failure is not None:
+        script = str(first_failure.get("script") or "?")
+        line += f" · {script} exit={first_failure.get('exit_code')}"
+
+    return line
