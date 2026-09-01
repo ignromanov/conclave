@@ -504,9 +504,9 @@ def _advisor_summary(advisor: str, root: Path) -> tuple[int, list[str]]:
     else:
         lines.append("  resume: none")
     if stale_handoffs:
-        # Printed, never silently dropped (never-silent-delete): the operator is the only
-        # one who can tell an abandoned handoff from a slow one, and archiving it is a
-        # decision, not a side effect of reading the board.
+        # Demoted, not hidden: the operator is the only one who can tell an abandoned
+        # handoff from a slow one, and retiring it is a decision, not a side effect of
+        # reading the board.
         lines.append(f"  stale handoffs (untouched >{_handoff_stale_hours()}h — "
                      f"archive to ops/handoffs/archive/ or delete):")
         lines.extend(stale_handoffs)
