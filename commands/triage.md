@@ -21,10 +21,15 @@ description: >-
 now − last_triage > 7 days   OR   new reviews since last triage ≥ 15
 ```
 
-The `_index/last-triage` marker file's **mtime** is the cadence signal. It is touched
-by `feedback_triage.py --set` after each triage session completes.
+The `_index/last-triage` marker file carries the **timestamp the last triage session
+completed**, written by `feedback_triage.py --complete-triage` in Step 6. Its mtime is
+not the signal and never was usable as one: `--set` and `--set-verify` write per item
+("run it once per item", Step 3), so an mtime clock is reset by every classified item
+and by every predicate attached — it measures the last edit to one item, not the last
+triage. An **existing but empty** marker therefore means *no triage has ever completed*,
+not *one completed when the file was touched*.
 
-## Five-step triage pipeline
+## Six-step triage pipeline
 
 ### Step 0 — Validation gate (automatic)
 
@@ -178,9 +183,9 @@ refusal fires only on a genuine transition *into* `accepted`, so re-passing an a
 item's own status (which is exactly how Step 4 binds an issue) is never blocked.
 
 `--set` writes `status`, `owner`, `issue` and `verify_waiver` back into the review markdown file
-(comment-preserving via `frontmatter_io.read_commented` + `write`), bumps `updated_at`,
-and touches `_index/last-triage` to reset the cadence clock. The command takes exactly
-one `(feedback_id, item_id, status)` triple — run it once per item.
+(comment-preserving via `frontmatter_io.read_commented` + `write`) and bumps `updated_at`.
+It does **not** move the cadence clock — that is Step 6's single call. The command takes
+exactly one `(feedback_id, item_id, status)` triple — run it once per item.
 
 **zsh-safe batching** (GH#13): the default shell is zsh, where `status` is a reserved
 **read-only** variable and unquoted expansions do **not** word-split. A loop using
@@ -352,6 +357,19 @@ An item's lifecycle state is always readable from the live review file
 (`ops/feedback/<date>/<agent>-<session>.md`) until archival. The archive is the
 closed-item ledger; the review file is the single source of truth while open.
 
+### Step 6 — Record that the triage completed
+
+Last, once per session — never per item:
+
+```bash
+uv run --project engine/scripts/feedback \
+  python engine/scripts/feedback/feedback_triage.py --complete-triage
+```
+
+This writes the completion timestamp into `_index/last-triage` and is the **only** write
+that resets the cadence clock. Skip it and the notice stays due, which is the safe
+direction: the cadence then over-reports rather than going quiet.
+
 ## Monthly: zombie pass
 
 Once a month, Forge runs:
@@ -375,7 +393,12 @@ uv run --project engine/scripts/feedback \
   --check
 ```
 
-Prints `triage_due=<true|false>` and `open_items=<N>` without mutating anything.
+Prints `triage_due=<true|false>`, `open_items=<N>`, `new_reviews=<N>` and
+`days_since=<N|never>` without mutating anything. The verdict is the documented
+cadence — `days_since > 7` **or** `new_reviews >= 15` — and the two quantities it
+was computed from are printed beside it, so a due notice says *why* it is due (#89).
+`open_items` is reported but is no longer a trigger: when it was, finishing a triage
+re-armed the notice demanding one, and the banner carried no information.
 Used by `/conclave:start` cadence guard.
 
 ## Summary format

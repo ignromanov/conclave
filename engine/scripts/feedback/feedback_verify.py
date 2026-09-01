@@ -311,7 +311,7 @@ def main(argv=None) -> int:
     import enginelib.snapshot as snapshot
     from briefing.paths import repo_root
     from enginelib.paths import engine_root, project_root
-    from feedback.paths import index_path, last_triage_marker
+    from feedback.paths import index_path
 
     parser = argparse.ArgumentParser(description="093 self-healing verify/close sweep")
     parser.add_argument("--apply", action="store_true",
@@ -370,7 +370,7 @@ def main(argv=None) -> int:
             print("ERROR: could not acquire triage lock (concurrent session?)", file=sys.stderr)
             return 1
         try:
-            return cmd_set_verify(root, fid, iid, pred, last_triage_marker())
+            return cmd_set_verify(root, fid, iid, pred)
         finally:
             snapshot.release_lock(lock_dir)
 
@@ -449,13 +449,12 @@ def main(argv=None) -> int:
             print(f"  BROKEN {fid}/{iid}: predicate target unreadable/escaping -> {rel} "
                   f"(operator: fix the path or re-author)", file=sys.stderr)
         if args.apply:
-            marker = last_triage_marker()
             # cmd_set can refuse a write (#163: the owner field holding an item's only
             # issue link). Its own stderr names the item; what the loop owes is not to
             # let `auto-close=N` stand as a count of closes that happened.
             refused = 0
             for fid, iid in closable:
-                if cmd_set(root, fid, iid, "resolved", "verify:auto", marker) != 0:
+                if cmd_set(root, fid, iid, "resolved", "verify:auto") != 0:
                     refused += 1
             if refused:
                 print(f"  {refused} of {len(closable)} closes were REFUSED by the write "

@@ -22,7 +22,12 @@ def index_path() -> Path:
 
 
 def last_triage_marker() -> Path:
-    """Empty file whose mtime is the cadence signal (resolves spec N2)."""
+    """Records when the last triage session completed — the cadence signal.
+
+    The timestamp is the file's CONTENT, written by `feedback_triage.py
+    --complete-triage`. Its mtime is not usable for this: every per-item `--set`
+    writes the file too, so an mtime clock measures the last item edited. An
+    existing-but-empty marker therefore means *never triaged* (spec N2)."""
     return feedback_root() / "_index" / "last-triage"
 
 
