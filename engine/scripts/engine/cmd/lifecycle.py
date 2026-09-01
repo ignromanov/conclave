@@ -218,6 +218,13 @@ def _runlog_summary(args) -> int:
     date_str = args.date or datetime.now(UTC).strftime("%Y-%m-%d")
     args._runlog_args = f"advisor={args.advisor},date={date_str}"
     print(runlog_summary.run(args.advisor, date_str))
+    # 0 even for 🔴, deliberately (GH#186). This verb reports on failures, it does not have
+    # them: it succeeded whenever it produced the row. Exiting non-zero on a red session
+    # would (a) log THIS command as one more failed script into the very run-log it just
+    # summarised, so re-running it inflates the count it reports, and (b) trip the
+    # done-checklist's "non-zero lifecycle exit is P0" rule on the reporter rather than on
+    # the script that actually broke. The failure is surfaced in the row's text instead —
+    # which is why that text must name the script and its exit code.
     return 0
 
 

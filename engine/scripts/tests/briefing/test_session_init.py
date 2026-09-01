@@ -605,6 +605,19 @@ class TestStep1LoadBriefing:
 class TestCadenceGuard:
     """Tests for _step_cadence_guard — prints feedback: line when triage is due."""
 
+    @staticmethod
+    def _pin_engine_root(monkeypatch, root: Path) -> None:
+        """Point the guard at the scaffolded feedback_triage.py under `root`.
+
+        CONCLAVE_ENGINE_ROOT used to be this seam, and is not one any more (GH#187): a
+        lifecycle script now dispatches its sibling helpers from its own copy and nothing
+        else, because that variable is inherited by every process on the machine and so
+        beat `__file__` in exactly the case the fallback existed for. Patching the resolver
+        states what these tests actually need — a different helper location — instead of
+        borrowing a production override that no longer exists.
+        """
+        monkeypatch.setattr(session_init, "_engine_root", lambda: root / "engine")
+
     def _make_triage_marker(self, root: Path, age_days: float) -> Path:
         """Create last-triage marker with given age in days."""
         import os
@@ -638,7 +651,7 @@ class TestCadenceGuard:
     def test_cadence_due_when_marker_stale(self, tmp_path, monkeypatch):
         """mtime > 7 days → feedback: line printed."""
         root = _make_root(tmp_path)
-        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        self._pin_engine_root(monkeypatch, root)
         self._make_triage_marker(root, age_days=8)
         self._make_feedback_script(root, triage_due=True, open_items=3)
         lines = session_init._step_cadence_guard()
@@ -648,7 +661,7 @@ class TestCadenceGuard:
     def test_cadence_due_when_15_or_more_reviews(self, tmp_path, monkeypatch):
         """≥15 new reviews → feedback: line printed."""
         root = _make_root(tmp_path)
-        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        self._pin_engine_root(monkeypatch, root)
         self._make_triage_marker(root, age_days=1)  # fresh marker, not stale by time
         self._make_feedback_script(root, triage_due=True, open_items=15)
         lines = session_init._step_cadence_guard()
@@ -657,7 +670,7 @@ class TestCadenceGuard:
     def test_no_cadence_line_when_not_due(self, tmp_path, monkeypatch):
         """Fresh marker + few reviews → no feedback: line."""
         root = _make_root(tmp_path)
-        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        self._pin_engine_root(monkeypatch, root)
         self._make_triage_marker(root, age_days=1)
         self._make_feedback_script(root, triage_due=False, open_items=2)
         lines = session_init._step_cadence_guard()
@@ -666,7 +679,7 @@ class TestCadenceGuard:
     def test_no_marker_means_due(self, tmp_path, monkeypatch):
         """No last-triage marker → triage due."""
         root = _make_root(tmp_path)
-        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        self._pin_engine_root(monkeypatch, root)
         self._make_feedback_script(root, triage_due=True, open_items=0)
         lines = session_init._step_cadence_guard()
         assert any("feedback:" in ln for ln in lines)
@@ -674,7 +687,7 @@ class TestCadenceGuard:
     def test_missing_triage_script_returns_warning(self, tmp_path, monkeypatch):
         """If feedback_triage.py doesn't exist → returns a warning line, does not crash."""
         root = _make_root(tmp_path)
-        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        self._pin_engine_root(monkeypatch, root)
         lines = session_init._step_cadence_guard()
         # Either no feedback: line (silently skipped) OR a warning — must not raise
         assert isinstance(lines, list)
@@ -688,7 +701,7 @@ class TestCadenceGuard:
         indistinguishable from "checked, nothing due".
         """
         root = _make_root(tmp_path)
-        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        self._pin_engine_root(monkeypatch, root)
         scripts = root / "engine" / "scripts"
         feedback_dir = scripts / "feedback"
         feedback_dir.mkdir(parents=True, exist_ok=True)
@@ -706,7 +719,7 @@ class TestCadenceGuard:
         as a real answer. The guard must warn rather than report "triage due" or "not due".
         """
         root = _make_root(tmp_path)
-        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        self._pin_engine_root(monkeypatch, root)
         self._make_feedback_script(root, triage_due=True, open_items=7, exit_code=1)
         lines = session_init._step_cadence_guard()
         assert any("warning" in ln.lower() for ln in lines)
@@ -717,7 +730,7 @@ class TestCadenceGuard:
         calls in this file — not a bare 'python3' that may resolve to a pre-floor interpreter
         off PATH."""
         root = _make_root(tmp_path)
-        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        self._pin_engine_root(monkeypatch, root)
         self._make_feedback_script(root, triage_due=False, open_items=0)
         captured = {}
         real_run = subprocess.run

@@ -71,12 +71,35 @@ def _data_root() -> Path:
 
 def _engine_root() -> Path:
     """engine/ CODE root — wiki scripts are CODE, in the FLAT layout (engine/scripts),
-    never under a DATA-root `.claude/`. Derived from this file
-    (engine/scripts/lifecycle/study_phase.py -> engine/); CONCLAVE_ENGINE_ROOT overrides."""
-    env = os.environ.get("CONCLAVE_ENGINE_ROOT")
-    if env:
-        return Path(env).resolve()
+    never under a DATA-root `.claude/`. Derived from this file and from nothing else
+    (engine/scripts/lifecycle/study_phase.py -> engine/).
+
+    CONCLAVE_ENGINE_ROOT is deliberately NOT honoured here (GH#187) — same reasoning as
+    session_init._engine_root(): this answer is where the wiki helper scripts this file
+    shells out to are found, so it must be the tree the running file lives in. The variable
+    is inherited by every process on the machine, so it beat `__file__` precisely when the
+    two disagreed, which is the only case the fallback existed for.
+    """
     return Path(__file__).resolve().parents[2]
+
+
+def _pin_engine_root_to_own_copy() -> list[str]:
+    """Make the inherited CONCLAVE_ENGINE_ROOT agree with the copy that is executing.
+
+    Returns the warning lines to print when it had to be corrected, empty otherwise.
+    The wiki helpers are spawned as children and re-read the variable for their own path
+    resolution, so leaving it would land the fix only halfway: helper scripts from the copy
+    that is running, the data they resolve from whichever copy the environment names.
+    """
+    own = _engine_root()
+    inherited = os.environ.get("CONCLAVE_ENGINE_ROOT")
+    os.environ["CONCLAVE_ENGINE_ROOT"] = str(own)
+    if inherited and Path(inherited).resolve() != own:
+        return [
+            f"  WARNING: CONCLAVE_ENGINE_ROOT points at {inherited}",
+            f"  but this script lives in {own} — using its own copy (GH#187).",
+        ]
+    return []
 
 
 def _wiki_scripts_dir() -> Path:
@@ -274,6 +297,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Git ref for wiki-capture-suggest --since (default: HEAD~5)",
     )
     args = parser.parse_args(argv)
+
+    # Before anything dispatches a child: this script runs its own copy's helpers (GH#187).
+    for warning in _pin_engine_root_to_own_copy():
+        print(warning, file=sys.stderr)
 
     if args.advisor:
         roster = lifecycle_advisors(_data_root())
