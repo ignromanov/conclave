@@ -179,6 +179,9 @@ def sweep(rows: list[dict], root: Path, limit: int = 40) -> SweepResult:
                 "item_id": row.get("item_id"),
                 "observation": row.get("observation", ""),
                 "category": row.get("category", ""),
+                # Carried so write_nominations can discriminate filenames: the slug is the
+                # observation truncated to 48 chars, which two distinct findings can share.
+                "fingerprint": fp,
             })
         if row.get("status") != "accepted":
             continue
@@ -221,17 +224,34 @@ def write_candidates_digest(keys, observations, out_dir: Path, date: str) -> Pat
 
 
 def write_nominations(noms, out_dir: Path) -> list[Path]:
+    """Write one nomination file per cluster, collide-safely (093 §D, G-7).
+
+    Two guarantees the spec claims and the first implementation did not keep:
+
+    - **Discriminated filename.** `_slug` truncates the observation to 48 characters, so two
+      unrelated findings that open with the same words land on one filename. The fingerprint
+      suffix separates them; it is already the identity the sweep dedups nominations on.
+    - **No silent overwrite.** The whole point of the file is the `target:` line an operator
+      fills in. Rewriting it on the next sweep would destroy that work with no trace, which
+      never-silent-delete forbids. An existing nomination is left exactly as it is.
+
+    Returns only the paths actually written, so the caller never reports a preserved file as
+    newly nominated.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     paths = []
     for n in noms:
         slug = _slug(n["observation"])
-        p = out_dir / f"{slug}.md"
+        fp = n.get("fingerprint")
+        p = out_dir / (f"{slug}-{fp[:8]}.md" if fp else f"{slug}.md")
+        if p.exists():
+            continue
         p.write_text(
             f"# Nomination: {n['observation'][:72]}\n\n"
             f"- source: `{n['feedback_id']}` :: `{n['item_id']}`\n"
             f"- category: {n['category']}\n"
             f"- target: TBD (skill | contract | briefing) — forge to assign\n"
-            f"- consumed-by: spec 090 L2/L3 (oracle-falsified)\n"
+            f"- consumed-by: spec 091 L1 (human-gated Forge-evolve)\n"
         )
         paths.append(p)
     return paths

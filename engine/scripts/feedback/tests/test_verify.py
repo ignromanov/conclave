@@ -128,6 +128,48 @@ def test_write_nominations_one_file_per_cluster(tmp_path):
     assert "path resolution fails" in paths[0].read_text()
 
 
+def test_nomination_names_the_consumer_that_can_act(tmp_path):
+    """The routing line must name 091 L1, the only consumer that exists.
+
+    It shipped naming `spec 090 L2/L3`, which is a design-locked stub blocked on the 089
+    oracle — every nomination flowed into a dead end while spec 093's own frontmatter and
+    docs/architecture/engine-modules.md both named 091. The old test asserted the file count
+    and echoed the observation, so it was true either way and never saw this.
+    """
+    noms = [{"feedback_id": "fb-1", "item_id": "it-1", "fingerprint": "abcdef1234",
+             "observation": "path resolution fails", "category": "script-defect"}]
+    text = write_nominations(noms, out_dir=tmp_path)[0].read_text()
+    assert "091" in text
+    assert "090" not in text
+
+
+def test_colliding_slugs_get_distinct_files(tmp_path):
+    """Two findings sharing the first 48 slug characters must not share a filename."""
+    common = "the briefing builder resolves the wrong root when invoked from "
+    noms = [
+        {"feedback_id": "fb-1", "item_id": "it-1", "fingerprint": "aaaaaaaa11",
+         "observation": common + "DATA", "category": "script-defect"},
+        {"feedback_id": "fb-2", "item_id": "it-2", "fingerprint": "bbbbbbbb22",
+         "observation": common + "CODE", "category": "script-defect"},
+    ]
+    paths = write_nominations(noms, out_dir=tmp_path)
+    assert len({p.name for p in paths}) == 2
+    assert len(list(tmp_path.glob("*.md"))) == 2
+
+
+def test_existing_nomination_is_never_overwritten(tmp_path):
+    """The `target:` line is operator work; a re-sweep must not erase it (G-7)."""
+    nom = {"feedback_id": "fb-1", "item_id": "it-1", "fingerprint": "abcdef1234",
+           "observation": "path resolution fails", "category": "script-defect"}
+    written = write_nominations([nom], out_dir=tmp_path)[0]
+    written.write_text(written.read_text().replace("TBD (skill | contract | briefing)", "skill"))
+
+    again = write_nominations([nom], out_dir=tmp_path)
+
+    assert again == [], "a preserved nomination must not be reported as newly written"
+    assert "- target: skill" in written.read_text()
+
+
 # --- 093 P1 T2: archive-aware hit_count + fingerprint-deduped nominations ---
 
 from feedback_verify import _derive_hit_counts
