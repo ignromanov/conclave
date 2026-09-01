@@ -275,7 +275,7 @@ All scripts that assume `VOIDPAY_AI_ROOT` or an absolute path to `.ai/` must be 
 | `team.done/SKILL.md:109` | absolute path `~/code/voidpay/.ai` | `${CONCLAVE_ROOT}` |
 | `create-advisor.sh:7` + `register-advisor.sh:7` | `PROJECT_ROOT=~/code/voidpay` | `${CONCLAVE_ROOT:-...}` |
 | `session_init.py` | `briefing-build.sh` path | relative from `ENGINE_ROOT` |
-| `github-issues-protocol.md` | `ignromanov/voidpay*` owner/repo, project board `PVT_kwHOADCDMs4BSDpY` | `${GH_OWNER}/${GH_REPO}`, `${GH_PROJECT_ID}` from `roster.yaml` |
+| `github-issues-protocol.md` | the origin instance's owner/repo slugs and its project board node id, inline | `${GH_OWNER}/${GH_REPO}`, `${GH_PROJECT_ID}` from `roster.yaml` |
 
 ### 085 lifecycle simplification (folds into C-004)
 

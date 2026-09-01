@@ -3,7 +3,10 @@ import pathlib
 from enginelib import gh
 
 FIXTURES = pathlib.Path(__file__).parent.parent / "fixtures"
-REPO = "ignromanov/voidpay-ai"
+# Inert: every test below monkeypatches `gh._run_gh`, so this slug is never resolved against
+# GitHub — it only has to be shaped like one. A real slug here published the origin instance's
+# private repo into a public tree for no test benefit at all (#194).
+REPO = "example-owner/example-ai"
 
 
 def _fixture_json() -> str:
