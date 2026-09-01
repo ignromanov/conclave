@@ -114,7 +114,7 @@ def _gh_fetch(args) -> int:
         return 1
     if status == "gh-error":
         print(
-            f"gh-fetch: gh search failed for advisor:{args.advisor.split('-')[0]}"
+            f"gh-fetch: gh search failed for advisor:{args.advisor}"
             " — cache left stale",
             file=sys.stderr,
         )

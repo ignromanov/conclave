@@ -817,20 +817,27 @@ class TestForgeMetaAdvisor:
         assert rc == 0
         assert "advisor=forge-chro" in capsys.readouterr().out
 
-    def test_gh_fetch_skipped_for_meta(self, monkeypatch, tmp_path):
-        """AC9: gh-fetch is skipped for meta-advisors (forge has no domain GH board)."""
-        called = {"gh": False}
+    def test_gh_fetch_runs_for_meta_advisors(self, monkeypatch, tmp_path):
+        """A meta-advisor has no domain *board*; it can still have an issue queue.
 
-        def _fake_run(cmd, *a, **k):
-            if "gh-fetch.sh" in " ".join(str(c) for c in cmd):
-                called["gh"] = True
-            return subprocess.CompletedProcess(cmd, 0, "", "")
+        Replaces test_gh_fetch_skipped_for_meta, which asserted the defect (#204): the
+        skip left the gh-cache with no refresh path at all, so it could only get older —
+        23 days at the time of filing, rendering 5 closed issues as open work and hiding
+        45 live ones. That test also could not have caught its own subject: it looked for
+        "gh-fetch.sh" in the command line, and gh-fetch had been ported to
+        `python -m engine lifecycle gh-fetch`, so its `called["gh"]` was False either way.
+        """
+        root = _make_root(tmp_path)
+        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root / "engine"))
+        calls: dict = {}
+        _patch_engine_run(monkeypatch, gh_code=2, calls=calls)
 
-        monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
-        monkeypatch.setattr(session_init.subprocess, "run", _fake_run)
-        code, lines = session_init._step1_load_briefing("forge-chro", tmp_path)
-        assert called["gh"] is False
-        assert any("gh-fetch: skipped (meta-advisor)" in ln for ln in lines)
+        _, lines = session_init._step1_load_briefing("forge-chro", root)
+
+        assert "gh-fetch" in calls, (
+            f"gh-fetch was not invoked for a meta-advisor — the cache cannot refresh: {lines}"
+        )
+        assert not any("skipped (meta-advisor)" in ln for ln in lines), lines
 
 
 class TestGhFetchFailureIsNonFatal:

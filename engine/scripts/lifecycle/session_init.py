@@ -216,42 +216,52 @@ def _step1_load_briefing(advisor: str, root: Path) -> tuple[int, list[str]]:
         if git_result.stderr.strip():
             lines.append(f"    stderr: {git_result.stderr.strip()[:120]}")
 
-    # gh-fetch — domain GitHub board; meta-advisors (forge) have none, so skip.
-    if advisor in META_ADVISORS:
-        lines.append("  gh-fetch: skipped (meta-advisor)")
-    else:
-        # Same pin as git-fetch above (see the note there): resolve_repos() layers
-        # roster → local git remote → refuse, and the middle layer must read the CONSUMER's
-        # origin or a null-roster instance pulls a stranger's issue board into the briefing.
-        t0 = time.monotonic()
-        result = subprocess.run(
-            [sys.executable, "-m", "engine", "lifecycle", "gh-fetch", "--advisor", advisor],
-            capture_output=True,
-            text=True,
-            cwd=str(scripts),
-            env=git_env,
-        )
-        gh_ms = int((time.monotonic() - t0) * 1000)
-        gh_code = result.returncode
+    # gh-fetch — the advisor's own issue queue, for every advisor.
+    #
+    # This used to skip META_ADVISORS on the premise that "meta-advisors have no domain
+    # board". Having no *board* is not having no *queue*: issues carrying `advisor:<id>`
+    # accumulate for a meta-advisor exactly as for anyone else — 74 of them on the
+    # authoring instance — and gh-fetch queries that label, not a project board. Worse,
+    # nothing else in the lifecycle calls gh-fetch, so the skip left the cache with no
+    # refresh path at all: it could only get older. Measured at filing time, 23 days old,
+    # rendering 5 closed issues as open work and hiding 45 live ones, while the staleness
+    # INFO printed the correct remedy on the line above and this branch declined it (#204).
+    #
+    # An advisor with no matching issues gets an empty snapshot, which is the right
+    # answer and costs one query. The board/tier machinery stays carved out — that is
+    # `/conclave:start` §2, and it is a different question.
+    # Same pin as git-fetch above (see the note there): resolve_repos() layers
+    # roster → local git remote → refuse, and the middle layer must read the CONSUMER's
+    # origin or a null-roster instance pulls a stranger's issue board into the briefing.
+    t0 = time.monotonic()
+    result = subprocess.run(
+        [sys.executable, "-m", "engine", "lifecycle", "gh-fetch", "--advisor", advisor],
+        capture_output=True,
+        text=True,
+        cwd=str(scripts),
+        env=git_env,
+    )
+    gh_ms = int((time.monotonic() - t0) * 1000)
+    gh_code = result.returncode
 
-        if gh_code == 0:
-            lines.append(f"  gh-fetch: cache-hit ({gh_ms}ms)")
-        elif gh_code == 2:
-            lines.append(f"  gh-fetch: refreshed ({gh_ms}ms)")
-        else:
-            # #76: non-fatal, mirroring git-fetch above. Returning here short-circuited
-            # the mtime-guard and briefing build, so an instance whose roster declares no
-            # repos — where gh-fetch fails on EVERY run — never got a briefing at all for
-            # any advisor not carved out as a meta-advisor. The GH board is one section of
-            # the briefing; losing it must not cost the whole briefing.
-            #
-            # This is loop-discipline policy (a) — use stale data with a warning. Non-fatal
-            # must not mean silent, so the failure carries an explicit degraded marker
-            # rather than being inferable only from the absence of a line.
-            lines.append(f"  gh-fetch: FAILED exit={gh_code} ({gh_ms}ms) — continuing")
-            if result.stderr.strip():
-                lines.append(f"    stderr: {result.stderr.strip()[:120]}")
-            lines.append("  degraded: gh-data-unavailable (board sections built from stale cache)")
+    if gh_code == 0:
+        lines.append(f"  gh-fetch: cache-hit ({gh_ms}ms)")
+    elif gh_code == 2:
+        lines.append(f"  gh-fetch: refreshed ({gh_ms}ms)")
+    else:
+        # #76: non-fatal, mirroring git-fetch above. Returning here short-circuited
+        # the mtime-guard and briefing build, so an instance whose roster declares no
+        # repos — where gh-fetch fails on EVERY run — never got a briefing at all for
+        # any advisor not carved out as a meta-advisor. The GH board is one section of
+        # the briefing; losing it must not cost the whole briefing.
+        #
+        # This is loop-discipline policy (a) — use stale data with a warning. Non-fatal
+        # must not mean silent, so the failure carries an explicit degraded marker
+        # rather than being inferable only from the absence of a line.
+        lines.append(f"  gh-fetch: FAILED exit={gh_code} ({gh_ms}ms) — continuing")
+        if result.stderr.strip():
+            lines.append(f"    stderr: {result.stderr.strip()[:120]}")
+        lines.append("  degraded: gh-data-unavailable (board sections built from stale cache)")
 
     # Build-and-compare (#14): mtime cannot tell freshness — the build's 18 scans
     # read git state and the specs tree, which can move without touching the

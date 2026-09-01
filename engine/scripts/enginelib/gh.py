@@ -67,6 +67,14 @@ def gh_advisor_issues(advisor: str, repo: str) -> list[str]:
     return _parse_rows(_run_gh(args))
 
 
+# #204 — the snapshot cap. Was 50, which is below a real advisor queue: the authoring
+# instance measured 74 open issues for one advisor against a snapshot of exactly 50, and
+# nothing anywhere said 24 were missing. The number is still finite, so gh_fetch records
+# whether it was reached and queue.py discloses it — a cap you can see is a cap; a cap you
+# cannot see is a wrong answer.
+SEARCH_LIMIT = 200
+
+
 def search_issues(advisor: str, repos: list[str]) -> str:
     # TRIPWIRE — sole `gh search issues` call site (lifecycle gh snapshot).
     # Fail-closed on privacy: scope by explicit --repo slugs, NEVER account-wide
@@ -80,8 +88,11 @@ def search_issues(advisor: str, repos: list[str]) -> str:
         *repo_args,
         "--label", advisor_label(advisor),
         "--state", "open",
-        "--json", "number,title,labels,state,repository",
-        "--limit", "50",
+        # updatedAt is gh's own field name and the one queue.py's issue-age enrichment
+        # (spec 084 #8) renders from. It was never requested, so the suffix has never
+        # appeared in a real briefing (#204).
+        "--json", "number,title,labels,state,repository,updatedAt",
+        "--limit", str(SEARCH_LIMIT),
     ])
 
 
@@ -105,8 +116,8 @@ def search_closed_by_labels(advisor: str, repos: list[str], sticky_labels: list[
             "--label", advisor_label(advisor),
             "--label", sticky,
             "--state", "closed",
-            "--json", "number,title,labels,state,repository",
-            "--limit", "50",
+            "--json", "number,title,labels,state,repository,updatedAt",
+            "--limit", str(SEARCH_LIMIT),
         ])
         for issue in json.loads(raw):
             seen[issue["number"]] = issue

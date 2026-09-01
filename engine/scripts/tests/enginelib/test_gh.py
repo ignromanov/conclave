@@ -70,6 +70,29 @@ def test_search_issues_scopes_by_repo_not_owner(monkeypatch):
     assert "advisor:kai" in args
 
 
+# #204: the snapshot must carry the field its consumer renders. queue.py has formatted an
+# "updated <N>d ago" suffix since spec 084, and search_issues has never requested the field
+# it reads — 0 of 50 items in the live cache carry it, so the enrichment has never rendered.
+def test_search_issues_requests_the_field_the_queue_renders(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(gh, "_run_gh", lambda args: captured.setdefault("args", args) or "[]")
+    gh.search_issues("kai", ["acme/conclave"])
+    json_fields = captured["args"][captured["args"].index("--json") + 1].split(",")
+    assert "updatedAt" in json_fields, (
+        f"queue.py renders issue age from this field; the producer never asks for it: {json_fields}"
+    )
+
+
+# #204: a cap that is never disclosed is indistinguishable from a complete list. The live
+# instance had 74 open issues for one advisor and a snapshot of exactly 50.
+def test_search_issues_limit_is_above_the_measured_queue(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(gh, "_run_gh", lambda args: captured.setdefault("args", args) or "[]")
+    gh.search_issues("kai", ["acme/conclave"])
+    limit = int(captured["args"][captured["args"].index("--limit") + 1])
+    assert limit >= 200, f"--limit {limit} silently truncates a real advisor queue"
+
+
 # #50 privacy: empty repo list is fail-closed — refuse rather than search account-wide.
 def test_search_issues_refuses_empty_repos(monkeypatch):
     called = []

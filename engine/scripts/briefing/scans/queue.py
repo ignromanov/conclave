@@ -64,6 +64,14 @@ def _read_raw_items(cache_path: Path, advisor: str) -> list[dict]:
         return []
 
 
+def _snapshot_truncated(cache_path: Path) -> bool:
+    """Whether gh-fetch reported hitting its result cap for this snapshot (#204)."""
+    if not cache_path.is_file():
+        return False
+    header = cache_path.read_text(encoding="utf-8").split("---", 2)
+    return len(header) > 1 and "truncated: true" in header[1]
+
+
 def _format_row(item: dict) -> str | None:
     """Format a single gh-cache item as an enriched queue line.
 
@@ -86,8 +94,10 @@ def _format_row(item: dict) -> str | None:
     else:
         issue_ref = f"#{num}"
 
-    # #8 issue age
-    updated_at = item.get("updated_at", "")
+    # #8 issue age. `updatedAt` is gh's own field name — the producer's. The consumer
+    # read `updated_at` and the producer requested neither, so this suffix had never
+    # rendered in a real briefing (#204); the test that covered it hand-built the field.
+    updated_at = item.get("updatedAt", "")
     age = _age_label(updated_at) if updated_at else ""
     age_part = f" | updated {age}" if age else ""
 
@@ -111,4 +121,9 @@ def build(ctx: ScanCtx) -> str:
 
     if not lines:
         return f"_(no open issues for {advisor_label(ctx.advisor)})_"
+    if _snapshot_truncated(cache_path):
+        lines.append(
+            f"- _(snapshot truncated at {len(lines)} — more open issues exist; "
+            f"the count above is a floor, not the queue)_"
+        )
     return "\n".join(lines)

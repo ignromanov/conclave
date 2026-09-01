@@ -111,11 +111,17 @@ If any reflexions were surfaced, apply them as priors for this session:
 
 ### 2. Tier Detection
 
-> **Forge (meta-advisor) carve-out:** if the advisor is `forge`, skip domain
-> tier-detection and the GitHub issue-board step — forge has no domain board and
-> follows the `forge-operations` flow, not domain tiers. Run only the lifecycle
-> steps session-init performs for meta-advisors (briefing / resume / reflexion /
-> overlays); see the spec §3.3 step matrix.
+> **Meta-advisor carve-out:** for an advisor in `META_ADVISORS` (`forge-chro` in the
+> shipped engine — check the set, never a literal: this line said `forge` for the 26 days
+> after spec 106 renamed the advisor, and matched nothing), skip domain tier-detection and
+> the **project-board** step: a meta-advisor follows the `forge-operations` flow, not
+> domain tiers. See the spec §3.3 step matrix.
+>
+> **It does not skip the issue queue.** Having no board is not having no queue — issues
+> carrying `advisor:<id>` accumulate for a meta-advisor like anyone else, and Step 3's
+> label queries and Step 3c's briefing↔GH reconciliation apply unchanged. Carving those
+> out was #204: it removed the drift detector from the one advisor whose cache had no
+> refresh path, so a 23-day-old queue rendered as current and nothing could say otherwise.
 
 Classify user request by scale:
 
