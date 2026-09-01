@@ -232,8 +232,8 @@ def write_nominations(noms, out_dir: Path) -> list[Path]:
       unrelated findings that open with the same words land on one filename. The fingerprint
       suffix separates them; it is already the identity the sweep dedups nominations on.
     - **No silent overwrite.** The whole point of the file is the `target:` line an operator
-      fills in. Rewriting it on the next sweep would destroy that work with no trace, which
-      never-silent-delete forbids. An existing nomination is left exactly as it is.
+      fills in. Rewriting it on the next sweep destroyed that work leaving no trace of what
+      was lost, which the charter forbids. An existing nomination is left exactly as it is.
 
     Returns only the paths actually written, so the caller never reports a preserved file as
     newly nominated.
@@ -251,7 +251,7 @@ def write_nominations(noms, out_dir: Path) -> list[Path]:
             f"- source: `{n['feedback_id']}` :: `{n['item_id']}`\n"
             f"- category: {n['category']}\n"
             f"- target: TBD (skill | contract | briefing) — forge to assign\n"
-            f"- consumed-by: spec 091 L1 (human-gated Forge-evolve)\n"
+            f"- consumed-by: spec 091 L1 (Forge-evolve, operator approves each)\n"
         )
         paths.append(p)
     return paths
