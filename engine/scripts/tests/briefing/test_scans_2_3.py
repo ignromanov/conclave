@@ -37,10 +37,12 @@ def _write(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _make_gh_cache(cache_dir: Path, advisor: str, items: list[dict]) -> None:
+def _make_gh_cache(cache_dir: Path, advisor: str, items: list[dict],
+                   truncated: bool = False) -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
     json_str = json.dumps(items)
-    content = f"---\ntype: gh-snapshot\n---\n\n```json\n{json_str}\n```\n"
+    trunc = "truncated: true\n" if truncated else ""
+    content = f"---\ntype: gh-snapshot\n{trunc}---\n\n```json\n{json_str}\n```\n"
     (cache_dir / f"{advisor}.md").write_text(content, encoding="utf-8")
 
 
@@ -123,6 +125,35 @@ class TestQueueRepoPrefix:
 
 
 # ---------------------------------------------------------------------------
+# queue.py — #204 truncation disclosure
+# ---------------------------------------------------------------------------
+
+
+class TestQueueTruncationDisclosure:
+    """A capped list that does not say it is capped reads as a complete one.
+
+    Measured on the authoring instance: 74 open issues for one advisor, a snapshot of
+    exactly 50, and a briefing section titled "My open queue" rendering all 50 with
+    nothing to indicate the other 24 existed."""
+
+    def test_notice_when_snapshot_is_truncated(self, tmp_path):
+        ctx = make_ctx(tmp_path)
+        items = [{"number": n, "title": f"issue {n}", "labels": [],
+                  "repository": {"name": "conclave"}} for n in range(3)]
+        _make_gh_cache(ctx.gh_cache_dir, ctx.advisor, items, truncated=True)
+        result = queue.build(ctx)
+        assert "truncated" in result.lower(), result
+
+    def test_no_notice_when_complete(self, tmp_path):
+        ctx = make_ctx(tmp_path)
+        items = [{"number": 1, "title": "only one", "labels": [],
+                  "repository": {"name": "conclave"}}]
+        _make_gh_cache(ctx.gh_cache_dir, ctx.advisor, items)
+        result = queue.build(ctx)
+        assert "truncated" not in result.lower(), result
+
+
+# ---------------------------------------------------------------------------
 # queue.py — #8 issue age
 # ---------------------------------------------------------------------------
 
@@ -136,7 +167,7 @@ class TestQueueIssueAge:
                 "title": "Aged issue",
                 "labels": [],
                 "repository": {"name": "voidpay-ai"},
-                "updated_at": "2020-01-01T00:00:00Z",  # very old
+                "updatedAt": "2020-01-01T00:00:00Z",  # very old — gh's own field name
             }
         ]
         _make_gh_cache(ctx.gh_cache_dir, ctx.advisor, items)
@@ -169,7 +200,7 @@ class TestQueueIssueAge:
                 "title": "Fresh issue",
                 "labels": [],
                 "repository": {"name": "voidpay-ai"},
-                "updated_at": now_iso,
+                "updatedAt": now_iso,
             }
         ]
         _make_gh_cache(ctx.gh_cache_dir, ctx.advisor, items)

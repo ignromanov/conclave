@@ -210,7 +210,7 @@ def kai_cto_tmp_root(tmp_path: Path) -> Path:
             "title": "Spec 084 — briefing modernization",
             "labels": [{"name": "agent-infra"}, {"name": "p1"}, {"name": "advisor:kai"}],
             "repository": {"name": "voidpay-ai"},
-            "updated_at": "2026-05-20T10:00:00Z",
+            "updatedAt": "2026-05-20T10:00:00Z",
         }
     ]
     gc_content = f"---\ntype: gh-snapshot\n---\n\n```json\n{json.dumps(items, indent=2)}\n```\n"

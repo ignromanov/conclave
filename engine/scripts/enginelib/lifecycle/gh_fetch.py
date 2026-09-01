@@ -159,6 +159,18 @@ def _merge_issue_json(open_json: str, closed_json: str) -> str:
     return json.dumps(list(seen.values()))
 
 
+def _hit_the_cap(issues_json: str) -> bool:
+    """True when the open-issue search returned exactly as many rows as it asked for.
+
+    That is the only signal available that more exist: `gh search` reports no total. The
+    answer can be a false positive on a queue of exactly SEARCH_LIMIT, which is the safe
+    direction — over-disclosing a cap costs one line, under-disclosing it hides work."""
+    try:
+        return len(json.loads(issues_json)) >= gh.SEARCH_LIMIT
+    except (json.JSONDecodeError, TypeError):
+        return False
+
+
 def run(advisor: str, no_cache: bool = False) -> str:
     """Snapshot GH issues for an advisor to a TTL-cached .md file.
 
@@ -195,6 +207,7 @@ def run(advisor: str, no_cache: bool = False) -> str:
             issues_json = gh.search_issues(label_id, repos)
         except RuntimeError:
             return "gh-error"
+        open_json = issues_json
 
         # Distinguish a gh failure from a genuine empty result: a failed call yields
         # an empty string; a successful empty query yields the literal "[]". On failure,
@@ -217,6 +230,11 @@ def run(advisor: str, no_cache: bool = False) -> str:
         now_iso = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         issues_json = issues_json.rstrip("\n")
 
+        # #204 — a cap that is never disclosed is indistinguishable from a complete list.
+        # Computed on the OPEN search alone, before any sticky-closed merge, because that
+        # is the query the limit applies to.
+        body_extra = "truncated: true\n" if _hit_the_cap(open_json) else ""
+
         body = (
             f"---\n"
             f"type: gh-snapshot\n"
@@ -226,6 +244,7 @@ def run(advisor: str, no_cache: bool = False) -> str:
             f'captured_at: "{now_iso}"\n'
             f"ttl_seconds: {ttl}\n"
             f"source: gh search issues\n"
+            f"{body_extra}"
             f"---\n"
             f"\n"
             f"# GH Snapshot — {advisor}\n"
