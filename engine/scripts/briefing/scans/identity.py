@@ -1,8 +1,14 @@
 """scans/identity.py — section 1: Who I am (personality.md body).
 
 Port of briefing-build.sh lines 165-186.
-Reads personality-eager.md (preferred) or falls back to personality.md.
-Strips YAML frontmatter, trims leading blank lines.
+Reads personality.md, strips YAML frontmatter, trims leading blank lines.
+
+084 specified a `personality-eager.md` (the <=500-word briefing-optimised half) and
+this scan preferred it, but nothing in the engine ever wrote one and no such file
+exists in any instance -- so the preferred branch never resolved and every briefing
+has carried the full persona. The dead preference is removed here rather than left
+claiming a file that does not exist; the eager/archival split itself is a live design
+question tracked separately (spec 116 SS2.6 F3).
 """
 from __future__ import annotations
 
@@ -17,14 +23,11 @@ _PLACEHOLDER = "_(personality.md not yet written — run /conclave:forge to seed
 def build(ctx: ScanCtx) -> str:
     """Return the body of the personality file with frontmatter stripped.
 
-    Prefers personality-eager.md (≤500 words, briefing-optimised half);
-    falls back to personality.md if eager variant is absent.
-    Falls back to the placeholder string if neither file exists.
+    Falls back to the placeholder string if the file does not exist.
     Matches bash awk logic: strip opening/closing --- block, then trim
     leading blank lines.
     """
-    eager_path = ctx.personality_path.parent / "personality-eager.md"
-    path = eager_path if eager_path.is_file() else ctx.personality_path
+    path = ctx.personality_path
     if not path.is_file():
         return _PLACEHOLDER
 

@@ -136,12 +136,16 @@ def _parse_checkboxes(plan_path: Path) -> tuple[int, int, str]:
 def _render_commits(repo_root: Path) -> str:
     """Return last N git commits as a markdown list with parsed task-IDs.
 
-    Tries git-cache first (agent-memory/git-cache/log.md), falls back to a
-    live ``git log`` call (read-only, safe).
+    Reads a live ``git log`` (read-only, safe).
+
+    This used to try ``agent-memory/git-cache/log.md`` first. Nothing ever wrote
+    that name: the producer (lifecycle/git_fetch.py) writes ``state.md``, and that
+    file is a branch/worktree snapshot carrying no commit log at all, so it is not
+    the same artefact under another name. The cache branch was dead from the first
+    commit and the fallback below has rendered this section for its whole life
+    (spec 116 SS2.6 F1).
     """
-    log_lines = _read_git_cache(repo_root)
-    if not log_lines:
-        log_lines = _run_git_log(repo_root)
+    log_lines = _run_git_log(repo_root)
 
     if not log_lines:
         return ""
@@ -158,20 +162,6 @@ def _render_commits(repo_root: Path) -> str:
     if not items:
         return ""
     return "**Recent commits:**\n" + "\n".join(items)
-
-
-def _read_git_cache(repo_root: Path) -> list[str]:
-    """Read pre-fetched git log lines from agent-memory/git-cache/log.md."""
-    cache = repo_root / "agent-memory" / "git-cache" / "log.md"
-    if not cache.is_file():
-        return []
-    text = cache.read_text(encoding="utf-8")
-    # Strip frontmatter if present.
-    if text.startswith("---"):
-        parts = text.split("---", 2)
-        text = parts[2] if len(parts) >= 3 else text
-    lines = [ln for ln in text.splitlines() if ln.strip() and not ln.startswith("#")]
-    return lines
 
 
 def _run_git_log(repo_root: Path) -> list[str]:

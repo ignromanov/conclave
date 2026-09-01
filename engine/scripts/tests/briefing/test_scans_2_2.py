@@ -1,4 +1,4 @@
-"""Tests for briefing.scans 2.2 — spec_progress, roadmap, drift, project_digest.
+"""Tests for briefing.scans 2.2 — spec_progress, roadmap, drift.
 
 All tests are hermetic: no live agent-memory/ tree is read or written.
 tmp_path fixtures + CONCLAVE_AI_ROOT env override are used throughout.
@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from briefing.scans import ScanCtx, drift, project_digest, roadmap, spec_progress
+from briefing.scans import ScanCtx, drift, roadmap, spec_progress
 
 # Live-instance tests: gated by the `live_instance` marker, whose conftest fixture points
 # CONCLAVE_AI_ROOT at CONCLAVE_LIVE_INSTANCE_ROOT for marked tests only. The old form gated
@@ -33,7 +33,8 @@ def make_ctx(tmp_path: Path, advisor: str = "kai-cto") -> ScanCtx:
         mentions_dir=tmp_path / "agent-memory" / "advisors" / "mentions",
         gh_cache_dir=tmp_path / "agent-memory" / "gh-cache",
         personality_path=tmp_path / ".claude" / "skills" / f"team.{advisor}" / "memory" / "personality.md",
-        progress_path=tmp_path / "progress-summary.md",
+        project_root=tmp_path,
+        plans_dir=tmp_path / ".claude" / "plans",
     )
 
 
@@ -251,77 +252,3 @@ class TestDrift:
         assert len(result) > 0
 
 
-# ---------------------------------------------------------------------------
-# project_digest
-# ---------------------------------------------------------------------------
-
-_SAMPLE_PROGRESS = """\
-# Progress Summary
-
-> Compact version for CLAUDE.md @import.
-
-**Phase**: P1 (Post-Launch) | **v1.0 DEPLOYED** Mar 28
-
-**Recent**: 056-void-layer-codec Phase 1 DONE (May 19, 9 commits — repo init + skeleton), \
-073-unified-in-app-browser-gate DONE (May 15, PR #236 squashed), \
-074-agent-system-arch DONE (May 16, 11 commits — foundations migration)
-
-**In Progress**: 039-onboarding-kit (growth), 040-competitor-comparison (growth)
-
-**Next**: 056 Phase 2 — Rust impl (encode/decode + LEB128 varint)
-
-**Tests**: 2,806 passing | 81%+ coverage
-"""
-
-
-class TestProjectDigest:
-    def test_missing_file_returns_placeholder(self, tmp_path: Path) -> None:
-        ctx = make_ctx(tmp_path)
-        result = project_digest.build(ctx)
-        assert result == "_(progress-summary.md missing)_"
-
-    def test_returns_bullet_list(self, tmp_path: Path) -> None:
-        ctx = make_ctx(tmp_path)
-        _write(ctx.progress_path, _SAMPLE_PROGRESS)
-        result = project_digest.build(ctx)
-        lines = result.splitlines()
-        assert all(line.startswith("- ") for line in lines if line)
-
-    def test_at_most_5_bullets(self, tmp_path: Path) -> None:
-        ctx = make_ctx(tmp_path)
-        _write(ctx.progress_path, _SAMPLE_PROGRESS)
-        result = project_digest.build(ctx)
-        assert len(result.splitlines()) <= 5
-
-    def test_digest_shorter_than_source(self, tmp_path: Path) -> None:
-        """Core AC: digest must be measurably smaller than the verbatim source."""
-        ctx = make_ctx(tmp_path)
-        _write(ctx.progress_path, _SAMPLE_PROGRESS)
-        result = project_digest.build(ctx)
-        assert len(result) < len(_SAMPLE_PROGRESS), (
-            f"Digest ({len(result)} chars) not shorter than source ({len(_SAMPLE_PROGRESS)} chars)"
-        )
-
-    def test_contains_recent_spec_ids(self, tmp_path: Path) -> None:
-        ctx = make_ctx(tmp_path)
-        _write(ctx.progress_path, _SAMPLE_PROGRESS)
-        result = project_digest.build(ctx)
-        # At least one spec id from **Recent** should appear.
-        assert any(sid in result for sid in ("056", "073", "074"))
-
-    @_NEEDS_INSTANCE
-    def test_real_progress_summary_is_smaller(self, live_ctx) -> None:
-        """Integration: the digest of a real progress-summary.md is shorter than its source.
-
-        Optional DATA, so the absent branch asserts the documented placeholder instead of
-        skipping — no instance in this project has ever had the file, which is exactly how
-        this test spent a month reporting nothing."""
-        result = project_digest.build(live_ctx)
-        if not live_ctx.progress_path.is_file():
-            assert result == "_(progress-summary.md missing)_"
-            return
-        source_len = len(live_ctx.progress_path.read_text(encoding="utf-8"))
-        assert result != "_(progress-summary.md missing)_"
-        assert len(result) < source_len, (
-            f"Digest ({len(result)}) not shorter than source ({source_len})"
-        )

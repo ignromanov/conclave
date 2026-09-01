@@ -34,7 +34,8 @@ def make_ctx(tmp_path: Path, advisor: str = "kai-cto") -> ScanCtx:
         mentions_dir=tmp_path / "agent-memory" / "advisors" / "mentions",
         gh_cache_dir=tmp_path / "agent-memory" / "gh-cache",
         personality_path=tmp_path / ".claude" / "skills" / f"team.{advisor}" / "memory" / "personality.md",
-        progress_path=tmp_path / "progress-summary.md",
+        project_root=tmp_path,
+        plans_dir=tmp_path / ".claude" / "plans",
     )
 
 
@@ -49,7 +50,6 @@ class TestCheckTokenCap:
             "advisor": "kai-cto",
             "generated_at": "2026-05-21T00:00:00+0000",
             "who_i_am": "Short identity text.",
-            "project_state": "Phase P1.",
         }
         check_token_cap(values)
         captured = capsys.readouterr()
@@ -101,20 +101,17 @@ class TestCheckTokenCap:
 # identity.build — eager file preference
 # ---------------------------------------------------------------------------
 
-class TestIdentityEagerPreference:
-    def test_prefers_eager_over_full(self, tmp_path):
-        """When both personality-eager.md and personality.md exist, eager wins."""
-        ctx = make_ctx(tmp_path)
-        _write(ctx.personality_path, "Full personality text.\n")
-        eager_path = ctx.personality_path.parent / "personality-eager.md"
-        _write(eager_path, "Eager personality text.\n")
+class TestIdentitySource:
+    """Was TestIdentityEagerPreference. Two of its cases asserted that
+    `personality-eager.md` wins over `personality.md` — and passed, while nothing in
+    the engine has ever written a `personality-eager.md` and no such file exists in any
+    instance. The preferred branch was therefore dead in production and green in the
+    suite: a test true regardless of whether the feature was reachable. The dead
+    preference is removed (spec 116 F1/F3); whether 084's eager/archival split should be
+    built for real is a live question filed separately."""
 
-        result = identity.build(ctx)
-        assert "Eager personality text." in result
-        assert "Full personality text." not in result
-
-    def test_falls_back_to_full_when_eager_absent(self, tmp_path):
-        """When only personality.md exists, it is used."""
+    def test_reads_personality_md(self, tmp_path):
+        """personality.md is the source."""
         ctx = make_ctx(tmp_path)
         _write(ctx.personality_path, "Full personality text.\n")
 
@@ -127,16 +124,15 @@ class TestIdentityEagerPreference:
         result = identity.build(ctx)
         assert "_(personality.md not yet written" in result
 
-    def test_eager_strips_frontmatter(self, tmp_path):
-        """Frontmatter is stripped from personality-eager.md."""
+    def test_strips_frontmatter(self, tmp_path):
+        """Frontmatter is stripped from personality.md."""
         ctx = make_ctx(tmp_path)
-        eager_path = ctx.personality_path.parent / "personality-eager.md"
         _write(
-            eager_path,
-            "---\nname: Kai\ntype: identity\n---\n\nEager body content.\n",
+            ctx.personality_path,
+            "---\nname: Kai\ntype: identity\n---\n\nPersona body content.\n",
         )
         result = identity.build(ctx)
-        assert "Eager body content." in result
+        assert "Persona body content." in result
         assert "type: identity" not in result
 
     @_NEEDS_INSTANCE
