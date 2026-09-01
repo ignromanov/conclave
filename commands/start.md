@@ -256,16 +256,18 @@ Read the columns **together** — each signal is wrong on its own, in a differen
 
 | `unshipped` (`git cherry`) | PR state | Verdict |
 |---|---|---|
-| `0` | merged | **Fully shipped.** Every patch is upstream by patch-id and the PR landed. `git worktree remove` (if any) + `git branch -d`. |
+| `0` | merged | **Fully shipped.** Every patch is upstream by patch-id and the PR landed. `git worktree remove` (if any), then `git branch -D` — `-d` **refuses** on a squash-merged branch however conclusive the evidence, so the capital `-D` is not recklessness here, it is the join above being what makes it safe. |
 | `>0` | merged | **Look before removing.** Either commits landed *after* the merge (real work — keep), or `git cherry` cannot see the squash: its patch-id matches none of the branch's own commits when the PR squashed more than one, and it can miss even a single-commit squash once the base has moved under it. Read the log; do not guess. |
 | `>0` | open | Live work in flight. Leave it. |
 | `0` | none | The branch holds no patch of its own. Use the age column: minutes old = a worktree just created and not yet written in (**keep**); days old = work that landed by some other route (**stale**). |
 | `>0` | none | Unshipped and unproposed — the branch nobody is waiting on. Flag it with its age. |
 
 The `worktree` / `bare` column is the second join, and it is the one that answers *how* to clean up:
-a `bare` row needs only `git branch -d`, a `worktree` row needs `git worktree remove` first or the
-branch delete refuses. A `bare` row whose PR merged weeks ago is the ordinary residue of squash-merge
-— `git branch -d` refuses on it (see the row above), so it accumulates silently and forever.
+a `bare` row needs only the branch delete, a `worktree` row needs `git worktree remove` first or the
+delete refuses for a second, unrelated reason. A `bare` row whose PR merged weeks ago is the ordinary
+residue of squash-merge, and `git branch -d` refuses on it forever — which is why such rows
+accumulate silently and why this table exists to license the `-D`. (`git branch -d --dry-run` is not
+an option that exists; the refusal itself is the only preview.)
 
 Why three signals and not the obvious one: `git log $BASE..$BRANCH` counts commits, and for
 a squash-merged branch it counts commits that are already upstream — which is why `git branch -d`
