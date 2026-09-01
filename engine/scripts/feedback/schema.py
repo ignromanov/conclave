@@ -38,6 +38,14 @@ class Location(BaseModel):
 
 
 PredicateKind = Literal["grep-absent", "file-contains", "file-absent"]
+# #170 — which tree a predicate's relative path is resolved against.
+#   project: the instance's project root (holds .claude/ and the .conclave DATA root).
+#   code:    the engine distribution root — the dir holding engine/, skills/, agents/,
+#            commands/, docs/. On the dogfooding instance the two name the same
+#            directory, which is why one root looked sufficient; in plugin mode, the
+#            supported distribution shape, the engine is a separate checkout and every
+#            engine-layer predicate resolved against the project escapes containment.
+PredicateRoot = Literal["project", "code"]
 
 
 class Predicate(BaseModel):
@@ -48,6 +56,7 @@ class Predicate(BaseModel):
     - file-absent:  path no longer exists                      -> resolved
     """
     kind: PredicateKind
+    root: PredicateRoot = "project"   # #170 — which tree `file`/`path` is relative to
     file: str | None = None
     path: str | None = None
     pattern: str | None = None

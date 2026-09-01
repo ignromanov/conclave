@@ -107,7 +107,8 @@ fix lands — or record why none can exist:
 PYTHONPATH=engine/scripts \
   uv run --project engine/scripts/feedback \
   python engine/scripts/feedback/feedback_verify.py \
-  --set-verify <feedback_id> <item_id> <kind> --file <path> --pattern <regex>
+  --set-verify <feedback_id> <item_id> <kind> --file <path> --pattern <regex> \
+  [--root project|code]
 ```
 
 Three kinds, all file-reading and exec-free:
@@ -127,11 +128,22 @@ the name of the regression test that will prove the fix is the strongest shape a
 - **already passes** — the next sweep would close the item with nothing fixed. Either the
   predicate is wrong, or the item is genuinely resolved: resolve it explicitly with
   `--set ... resolved`, or pass `--force` to let the sweep close it on the record.
-- **cannot be evaluated** — the target is unreadable or escapes the checkout root. The item
-  would report `BROKEN` on every sweep and never close.
+- **cannot be evaluated** — the target is unreadable or escapes the root the predicate
+  declares. The item would report `BROKEN` on every sweep and never close.
 
-Predicate paths are **checkout-relative** (siblings of `.conclave/`, e.g.
-`engine/scripts/...`), not DATA-root-relative.
+**Say which tree the path is relative to (#170).** There are two, and the default is the
+wrong one for anything in the engine:
+
+| `--root` | resolves against | use for |
+|---|---|---|
+| `project` *(default)* | the project root — holds `.claude/` and the `.conclave/` DATA root | DATA paths (`.conclave/ops/...`) and the instance's own source |
+| `code` | the engine distribution root — holds `engine/`, `skills/`, `agents/`, `commands/`, `docs/` | **every engine-layer target**: `engine/scripts/...`, `commands/triage.md`, `skills/...` |
+
+On a dogfooding instance both name the same directory and the flag looks decorative. On a
+plugin-mode instance — the supported distribution shape — the engine is a separate checkout,
+so an engine path under the default root escapes containment and is refused as
+`cannot be evaluated`. That refusal is silent about its cause, and the way out of it is a
+waiver, which is how a whole layer of a backlog becomes structurally unverifiable.
 
 **When no mechanical predicate is possible** — the item is a judgement call, a naming
 decision, a "be more careful" — record *why* rather than leaving the field empty, so the gap
