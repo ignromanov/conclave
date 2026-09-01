@@ -180,6 +180,30 @@ def _migrate_add_type(args) -> int:
     return 0
 
 
+def _migrate_router_bootstrap(args) -> int:
+    from enginelib.lifecycle import migrate_router_bootstrap
+    from enginelib.paths import project_skills_dir
+
+    args._runlog_verb = "migrate-router-bootstrap"
+    root = Path(args.root) if args.root else project_skills_dir()
+    if not root.is_dir():
+        print(f"migrate-router-bootstrap: skills dir not found: {root}", file=sys.stderr)
+        args._runlog_args = f"root={root},updated=0,skipped=0"
+        return 1
+    try:
+        res = migrate_router_bootstrap.run(root, args.dry_run)
+    except RuntimeError as exc:
+        print(f"migrate-router-bootstrap: {exc}", file=sys.stderr)
+        args._runlog_args = f"root={root},updated=0,skipped=0"
+        return 1
+    if args.dry_run:
+        for path in res.would_update:
+            print(f"WOULD REFRESH {path}")
+    print(f"migrate-router-bootstrap: updated={res.updated} skipped={res.skipped} under {root}")
+    args._runlog_args = f"root={root},updated={res.updated},skipped={res.skipped}"
+    return 0
+
+
 def _runlog_summary(args) -> int:
     import sys
     from datetime import datetime
@@ -289,6 +313,14 @@ def register(sub) -> None:
     mg.add_argument("--root", default=None, help="Root dir (default: agent-memory).")
     mg.add_argument("--dry-run", action="store_true", help="Report WOULD INJECT without mutating.")
     mg.set_defaults(func=_migrate_add_tags)
+
+    mr = vsub.add_parser(
+        "migrate-router-bootstrap",
+        help="Refresh the session-init bash fence in minted routers from the template.",
+    )
+    mr.add_argument("--root", default=None, help="Skills dir (default: .claude/skills).")
+    mr.add_argument("--dry-run", action="store_true", help="Report WOULD REFRESH without mutating.")
+    mr.set_defaults(func=_migrate_router_bootstrap)
 
     rs = vsub.add_parser("runlog-summary", help="Emit the Infra sidecar one-line run-log summary.")
     rs.add_argument("--advisor", default=None, help="Advisor slug to filter rows by.")

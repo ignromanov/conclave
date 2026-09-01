@@ -134,9 +134,10 @@ Classify user request by scale:
 # has ai_repo null, and `-R "$OWNER/$(roster.py github.ai_repo)"` builds the malformed slug
 # `owner/`. `gh-repos` applies the same roster → git-remote → refuse layering gh-fetch uses, and
 # exits 1 rather than printing an empty list.
-ROOT="${CLAUDE_PLUGIN_ROOT:-.}"
-ADVISOR=<advisor>   # the slug this session is bound to
-for REPO in $(PYTHONPATH="$ROOT/engine/scripts" python3 -m engine lifecycle gh-repos); do
+ROOT="${CONCLAVE_ENGINE_ROOT:-${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/engine}}"
+: "${ROOT:?no engine root — export CONCLAVE_ENGINE_ROOT (the engine/ dir) or CLAUDE_PLUGIN_ROOT}"
+ADVISOR="<advisor>"   # the slug this session is bound to
+for REPO in $(PYTHONPATH="$ROOT/scripts" python3 -m engine lifecycle gh-repos); do
   gh issue list -R "$REPO" --label "advisor:$ADVISOR" --state open \
     --json number,title --jq 'length' &
 done
@@ -151,9 +152,10 @@ If user's question relates to an open issue — mention it. Then answer directly
 ```bash
 # Same resolver as 3a — one repo or two, the loop adapts; an unscoped instance exits 1 here
 # instead of silently iterating nothing.
-ROOT="${CLAUDE_PLUGIN_ROOT:-.}"
-ADVISOR=<advisor>
-for REPO in $(PYTHONPATH="$ROOT/engine/scripts" python3 -m engine lifecycle gh-repos); do
+ROOT="${CONCLAVE_ENGINE_ROOT:-${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/engine}}"
+: "${ROOT:?no engine root — export CONCLAVE_ENGINE_ROOT (the engine/ dir) or CLAUDE_PLUGIN_ROOT}"
+ADVISOR="<advisor>"
+for REPO in $(PYTHONPATH="$ROOT/scripts" python3 -m engine lifecycle gh-repos); do
   gh issue list -R "$REPO" --label "advisor:$ADVISOR" --state open &
   # P0 blockers, including ones assigned to other advisors
   gh issue list -R "$REPO" --label p0 --state open &
