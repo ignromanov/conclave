@@ -65,7 +65,7 @@ session start.
    continues and prints a `degraded: gh-data-unavailable` line — board-derived
    sections come from the stale cache, the rest of the briefing is current.
    The script handles: gh-fetch (TTL=900s), briefing build-and-compare (always rebuilds; writes
-   only if content differs), resume-scan (ops/specs/*/resume-prompt.md + ops/handoffs/*-<advisor>-*.md),
+   only if content differs), resume-scan (ops/specs/*/resume-prompt.md + handoffs addressed to the advisor),
    reflexion extract (last-3 sessions), overlay scan, and feedback cadence check.
    If a line starting with `  feedback:` appears in the output, triage is due — include it in
    the session-start summary and suggest running `/conclave:triage` this session.

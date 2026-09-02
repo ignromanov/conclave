@@ -188,9 +188,11 @@ Complete `/conclave:feedback` before continuing. The gate is the
    - Gate: **Notify** — recommend invoking `writing-skills`
 
 9. ☐ **IF this session resumed a handoff** → archive it
-   - A handoff is a resume-prompt. `/conclave:start` surfaces every one matching
-     `ops/handoffs/*-<advisor>-*.md`, so one that is never retired resurfaces at every
-     session forever — the counterpart to item 7, which only ever *creates* them.
+   - A handoff is a resume-prompt. `/conclave:start` surfaces every one addressed to the
+     advisor, so one that is never retired resurfaces at every session forever — the
+     counterpart to item 7, which only ever *creates* them. Archive it in the session that
+     exhausted it, not the session that wrote it: after #202 the scan delivers to the
+     RECIPIENT, so an unarchived handoff nags whoever it was sent to, not its author.
    ```bash
    python -m engine lifecycle archive-handoff <filename>.md --dry-run   # confirm first
    python -m engine lifecycle archive-handoff <filename>.md

@@ -2,7 +2,7 @@
 
 Absorbs team.start Steps 1/1b/1c + Overlay loading:
   Step 1:   gh-fetch + briefing build-and-compare (#14)
-  Step 1b:  resume-scan (ops/specs/*/resume-prompt.md + ops/handoffs/*-<advisor>-*.md)
+  Step 1b:  resume-scan (ops/specs/*/resume-prompt.md + handoffs addressed to <advisor>)
   Step 1c:  reflexion extract — last-3 sessions' `reflexion:` frontmatter
   Overlays: scan agent-memory/advisors/<advisor>/contracts/*.md
 
@@ -56,6 +56,7 @@ if _SCRIPTS_DIR not in sys.path:
 # too (doctor.py, briefing/__main__.py) — rather than redeclared here.
 from enginelib.advisors import (  # noqa: E402 (follows the sys.path bootstrap above)
     META_ADVISORS,
+    handoffs_for_advisor,
     with_meta,
 )
 from enginelib.paths import (  # noqa: E402
@@ -336,10 +337,14 @@ def _step1b_resume_scan(advisor: str, root: Path) -> tuple[list[str], list[str]]
                 age_h = -1
             found.append(f"  spec-resume: {spec_name} ({prompt}) age={age_h}h")
 
-    # ops/handoffs/*-<advisor>-*.md
+    # Handoffs addressed to this advisor. The recipient is read from the document's own
+    # `**To**:` header, not from the filename — the filename carries the AUTHOR, so a
+    # name-keyed scan delivered every cross-advisor handoff back to whoever wrote it
+    # (#202). A handoff whose header names nobody hired keeps the old filename match.
     handoffs_dir = root / "ops" / "handoffs"
     if handoffs_dir.is_dir():
-        for handoff in sorted(handoffs_dir.glob(f"*-{advisor}-*.md")):
+        roster = with_meta(_known_advisors(root))
+        for handoff in handoffs_for_advisor(handoffs_dir, advisor, roster):
             try:
                 age_h = (int(time.time()) - int(handoff.stat().st_mtime)) // 3600
             except OSError:

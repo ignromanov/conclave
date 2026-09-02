@@ -2,10 +2,10 @@
 
 Contract: no stdout, no argparse, no sys.exit. File moves are allowed.
 
-A handoff is a resume-prompt: session_init's resume-scan globs
-`ops/handoffs/*-<advisor>-*.md` and surfaces every match at session start. That glob is
-non-recursive, so `ops/handoffs/archive/` is already invisible to it — the carrier for a
-terminal state existed, but nothing ever moved a consumed handoff into it. Handoffs for
+A handoff is a resume-prompt: session_init's resume-scan surfaces every handoff in
+`ops/handoffs/` addressed to the advisor starting the session. That scan is non-recursive,
+so `ops/handoffs/archive/` is already invisible to it — the carrier for a terminal state
+existed, but nothing ever moved a consumed handoff into it. Handoffs for
 long-shipped work therefore resurfaced at every session forever (#55).
 
 Terminal state is the file's LOCATION, and the transition is a move. Never a delete, and

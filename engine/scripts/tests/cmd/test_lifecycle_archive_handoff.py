@@ -46,7 +46,7 @@ def test_archives_named_handoff(tmp_path):
 # 2. The point of the whole exercise: resume-scan stops surfacing it
 # ---------------------------------------------------------------------------
 def test_archived_handoff_leaves_resume_scan(tmp_path):
-    """session_init's resume-scan globs ops/handoffs/*-<advisor>-*.md non-recursively."""
+    """session_init's resume-scan reads ops/handoffs/ non-recursively."""
     import sys
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lifecycle"))
