@@ -46,13 +46,20 @@ Compose body into `/tmp/handoff-<slug>.md`, then:
 
 ```bash
 python -m engine file handoff \
-  --from <advisor> --to <recipient(s)> \
+  --from <advisor> --to <recipient> \
   --date <ISO-date> --priority <p0|p1|p2> \
   --title "<title>" --slug <slug> \
   --body-file /tmp/handoff-<slug>.md \
   --gh-issue <#N | AI#N | owner/repo#N | https://github.com/o/r/issues/N> \
   [--policy <ref>]
 ```
+
+**`--to` decides who receives it (#202).** The filename is keyed to the *author*
+(`{date}-{from}-{slug}.md`); delivery is keyed to `--to`, which `session_init`'s resume-scan
+reads back out of the document's `> **From**: … | **To**: …` header. Name a hired advisor —
+`filing.py` refuses anything else — and the handoff appears at *their* next session start and
+not at yours. Prose (`next session`, `operator`) is what six pre-validation files carry; those
+fall back to the author-keyed filename, which is why a retired id like `forge` addresses nobody.
 
 **The reference is required (#55).** A handoff has no terminal state: the resume-scan ranks
 by mtime and never learns that the work shipped, so an exhausted handoff resurfaces as

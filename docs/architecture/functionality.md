@@ -27,7 +27,8 @@ sentences feed the next session as priors.
 1. Runs `lifecycle/session_init.py --advisor <advisor>` in a single call. Orchestrates: GH
    snapshot (TTL=900s from `gh-cache/`; no live calls from briefing), briefing build-and-compare
    (always rebuilds; writes only when the rendered content actually differs from what's on
-   disk), resume scan (`ops/handoffs/*-<advisor>-*.md`),
+   disk), resume scan (handoffs whose `**To**:` header addresses the advisor; the filename is
+   the fallback when it addresses nobody hired),
    reflexion extract (last 3 session frontmatter `reflexion:` fields injected as priors),
    overlay scan, feedback cadence check.
 2. Reads `agent-memory/advisors/briefings/<advisor>.md` + `agent-memory/hot.md` into context.

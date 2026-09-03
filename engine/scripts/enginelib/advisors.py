@@ -6,6 +6,7 @@ Lifecycle skills are infrastructure, not advisors, and are excluded.
 """
 import os
 import re
+from collections.abc import Collection
 from pathlib import Path
 
 from enginelib.paths import (
@@ -169,6 +170,70 @@ def files_for_advisor(directory: Path, advisor: str, *, field: str) -> list[Path
             if f"-{advisor}-" in f.name:
                 out.append(f)
         elif owner == advisor:
+            out.append(f)
+    return out
+
+
+_HANDOFF_TO = re.compile(r"\*\*To\*\*:\s*([^|\n]*)")
+
+# The header a handoff's recipient is declared in is line 3 of the template. A handoff's
+# BODY may legitimately contain the string `**To**:` while quoting another document, so
+# only the head of the file is a candidate.
+_HANDOFF_HEAD_LINES = 10
+
+
+def handoff_recipient(path: Path, roster: Collection[str]) -> str | None:
+    """The advisor a handoff is addressed to, or None when it names nobody in *roster*.
+
+    A handoff declares its recipient as header prose — `> **From**: a | **To**: b | ...`
+    — because `filing.py` validates `--to` as a canonical advisor and then renders it
+    there and nowhere machine-readable. The FILENAME, meanwhile, carries the AUTHOR. So
+    the two ends of the channel were keyed differently and every cross-advisor handoff
+    was delivered back to its own author instead of to its recipient (#202).
+
+    Only the first whitespace-token of the field is a candidate: written headers carry an
+    emoji and a parenthetical after the id (`**To**: sage-cto 🦉 (forge co-owns #52)`).
+    Anything not in *roster* — `next session`, `operator (decision) → forge (execution)`,
+    the pre-106 alias `forge`, or no header line at all — returns None, which is the
+    caller's signal to keep the author-keyed filename behaviour those records were
+    written under. Six of the fifteen handoffs ever written resolve to None.
+    """
+    try:
+        with path.open(encoding="utf-8") as fh:
+            head = "".join(next(fh, "") for _ in range(_HANDOFF_HEAD_LINES))
+    except (OSError, UnicodeDecodeError):
+        return None
+    m = _HANDOFF_TO.search(head)
+    if not m:
+        return None
+    token = m.group(1).split()
+    if not token:
+        return None
+    return token[0] if token[0] in roster else None
+
+
+def handoffs_for_advisor(
+    directory: Path, advisor: str, roster: Collection[str]
+) -> list[Path]:
+    """Live handoffs addressed to *advisor*, sorted by path.
+
+    Same contract as files_for_advisor: the declared recipient wins when it resolves,
+    the filename is the fallback when it does not — so legacy records behave exactly as
+    they did, and an unresolvable roster degrades the whole scan to its old behaviour
+    rather than delivering nothing.
+
+    Non-recursive on purpose. A handoff's terminal state is its LOCATION (#55), so
+    `ops/handoffs/archive/` must stay invisible to the scan that surfaces live work.
+    """
+    if not directory.is_dir():
+        return []
+    out: list[Path] = []
+    for f in sorted(directory.glob("*.md")):
+        recipient = handoff_recipient(f, roster)
+        if recipient is None:
+            if f"-{advisor}-" in f.name:
+                out.append(f)
+        elif recipient == advisor:
             out.append(f)
     return out
 

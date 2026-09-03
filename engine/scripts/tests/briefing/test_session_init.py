@@ -889,3 +889,119 @@ class TestGhFetchFailureIsNonFatal:
         code, _ = session_init._step1_load_briefing("kai-cto", root)
 
         assert code == 1
+
+
+# ---------------------------------------------------------------------------
+# Step 1b — handoff delivery (#202)
+# ---------------------------------------------------------------------------
+
+def _hire(root: Path, *slugs: str) -> None:
+    """Seed the agent registry the resume-scan resolves a declared recipient against."""
+    for slug in slugs:
+        _write(root / ".claude" / "agents" / f"{slug}.md", f"# {slug}\n")
+
+
+def _handoff(root: Path, name: str, to: str | None) -> Path:
+    """Write a handoff carrying the template's own header line, or none at all."""
+    header = f"> **From**: forge-chro | **To**: {to} | **Date**: 2026-09-01\n" if to else ""
+    path = root / "ops" / "handoffs" / name
+    _write(path, f"# Handoff: {name}\n\n{header}\n---\n\nbody\n")
+    return path
+
+
+class TestHandoffDelivery:
+    """#202 — a handoff's filename is keyed to its author, the scan to its recipient.
+
+    The two never met: `{date}-{from}-{slug}.md` matched `*-{recipient}-*.md` only when
+    the recipient happened to appear inside the slug. Invisible because 14 of the 15
+    handoffs ever written were self-addressed, where both keys are the same string.
+    """
+
+    def test_reaches_the_declared_recipient(self, tmp_path):
+        root = _make_root(tmp_path)
+        _hire(root, "kosmos-cxo", "sage-cto")
+        h = _handoff(root, "2026-09-01-forge-chro-display-contract.md", "kosmos-cxo")
+
+        live, stale = session_init._step1b_resume_scan("kosmos-cxo", root)
+
+        assert any(h.name in ln for ln in live + stale), "recipient never saw the handoff"
+
+    def test_does_not_stay_with_the_author(self, tmp_path):
+        root = _make_root(tmp_path)
+        _hire(root, "kosmos-cxo", "sage-cto")
+        h = _handoff(root, "2026-09-01-forge-chro-display-contract.md", "kosmos-cxo")
+
+        live, stale = session_init._step1b_resume_scan("forge-chro", root)
+
+        assert not any(h.name in ln for ln in live + stale), (
+            "the author is still shown work they addressed to someone else"
+        )
+
+    def test_recipient_survives_an_emoji_and_a_parenthetical(self, tmp_path):
+        """Real header: `**To**: sage-cto 🦉 (forge co-owns #52 + #49-contract)`."""
+        root = _make_root(tmp_path)
+        _hire(root, "sage-cto")
+        h = _handoff(
+            root,
+            "2026-07-05-forge-chro-fix-triage-epics.md",
+            "sage-cto 🦉 (forge co-owns #52 + #49-contract)",
+        )
+
+        live, stale = session_init._step1b_resume_scan("sage-cto", root)
+
+        assert any(h.name in ln for ln in live + stale)
+
+    def test_prose_recipient_keeps_the_author_keyed_fallback(self, tmp_path):
+        """`**To**: next session` names nobody. Six legacy files read like this; they
+        must keep author-scan behaviour rather than vanish from every list."""
+        root = _make_root(tmp_path)
+        _hire(root, "sage-cto", "kosmos-cxo")
+        h = _handoff(root, "2026-07-09-sage-cto-charter-shipped.md", "next session")
+
+        live, stale = session_init._step1b_resume_scan("sage-cto", root)
+        other_live, other_stale = session_init._step1b_resume_scan("kosmos-cxo", root)
+
+        assert any(h.name in ln for ln in live + stale), "legacy handoff lost its author"
+        assert not any(h.name in ln for ln in other_live + other_stale)
+
+    def test_absent_to_line_keeps_the_author_keyed_fallback(self, tmp_path):
+        root = _make_root(tmp_path)
+        _hire(root, "sage-cto")
+        h = _handoff(root, "2026-07-27-sage-cto-publication-blockers.md", None)
+
+        live, stale = session_init._step1b_resume_scan("sage-cto", root)
+
+        assert any(h.name in ln for ln in live + stale)
+
+    def test_a_retired_alias_is_not_a_recipient(self, tmp_path):
+        """`**To**: forge` predates the 106 rename and resolves to no hired advisor.
+        It must degrade to the author-keyed name, not address nobody at all."""
+        root = _make_root(tmp_path)
+        _hire(root, "keel-coo")
+        h = _handoff(root, "2026-07-03-keel-coo-post-start-dogfood.md", "forge")
+
+        live, stale = session_init._step1b_resume_scan("keel-coo", root)
+
+        assert any(h.name in ln for ln in live + stale)
+
+    def test_an_empty_roster_falls_back_wholesale(self, tmp_path):
+        """A fresh instance has hired nobody: every recipient is unresolvable, and the
+        scan must behave exactly as it did before rather than deliver nothing."""
+        root = _make_root(tmp_path)
+        h = _handoff(root, "2026-09-01-forge-chro-bootstrap.md", "kosmos-cxo")
+
+        live, stale = session_init._step1b_resume_scan("forge-chro", root)
+
+        assert any(h.name in ln for ln in live + stale)
+
+    def test_the_archive_stays_invisible(self, tmp_path):
+        """Terminal state is the file's location (#55). Reading recipients must not
+        turn the non-recursive glob into a recursive walk."""
+        root = _make_root(tmp_path)
+        _hire(root, "kosmos-cxo")
+        archived = root / "ops" / "handoffs" / "archive" / "2026-07-01-x-done.md"
+        _write(archived, "> **From**: forge-chro | **To**: kosmos-cxo\n")
+
+        live, stale = session_init._step1b_resume_scan("kosmos-cxo", root)
+
+        assert not any(archived.name in ln for ln in live + stale)
