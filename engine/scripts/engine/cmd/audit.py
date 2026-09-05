@@ -77,6 +77,16 @@ def _advisor_naming(args: argparse.Namespace) -> int:
     return _emit(advisor_naming.run(project_agents_dir()))
 
 
+def _feedback_owners(args: argparse.Namespace) -> int:
+    from enginelib.advisors import canonical_advisors
+    from enginelib.audit import feedback_owners
+    from feedback.paths import index_path
+
+    # canonical_advisors(), not known_advisors(): Forge is defined under skills/ rather
+    # than agents/, so the latter omits the owner of a fifth of the notebook.
+    return _emit(feedback_owners.run(index_path(), canonical_advisors()))
+
+
 def _registry_consistency(args: argparse.Namespace) -> int:
     from enginelib.audit import registry_consistency
     from enginelib.paths import project_claude_dir
@@ -257,6 +267,7 @@ _AUDITS: dict[str, Callable[[argparse.Namespace], int]] = {
     "phantom-skills": _phantom_skills,
     "registry-consistency": _registry_consistency,
     "advisor-naming": _advisor_naming,
+    "feedback-owners": _feedback_owners,
     "overlays": _overlays,
     "agent-configs": _agent_configs,
     "skills": _skills,

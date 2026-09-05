@@ -805,3 +805,78 @@ def test_complete_triage_records_the_timestamp_and_resets_the_clock(tmp_path):
     assert result.returncode == 0, result.stderr
     assert "triage_due=false" in result.stdout, result.stdout
     assert "days_since=never" not in result.stdout
+
+
+# --- the owner field resolves to a live advisor, or the write is refused ---
+
+def _roster(root: Path, *advisor_ids: str) -> None:
+    """Populate the project agent-defs CONCLAVE_AI_ROOT anchors the roster to."""
+    agents = root / ".claude" / "agents"
+    agents.mkdir(parents=True, exist_ok=True)
+    for aid in advisor_ids:
+        (agents / f"{aid}.md").write_text(f"---\nname: {aid}\n---\n", encoding="utf-8")
+
+
+def test_set_refuses_an_owner_that_is_not_on_the_roster(tmp_path):
+    """`sage` is not an advisor id — it never was, and nothing ever said so.
+
+    The status field is validated against a closed vocabulary; owner was written
+    through unchecked, so a hand-typed short name at triage became 23 live items
+    owned by nobody. Every owner-scoped query then silently misses them.
+    """
+    _roster(tmp_path, "sage-cto")
+    review_path = _write_review(tmp_path, "2026-05-22", "atlas-badowner.md",
+                                _valid_review_meta(feedback_id="fb-777-aaaaaa"))
+
+    result = run_triage(tmp_path, [
+        "--set", "fb-777-aaaaaa", "it-1", "accepted",
+        "--owner", "sage", "--waiver", "test",
+    ])
+
+    assert result.returncode != 0, f"expected refusal, got rc=0\n{result.stdout}"
+    assert "sage" in result.stderr, result.stderr
+    meta_after, _ = fm_read(review_path)
+    item = meta_after["items"][0]
+    assert item.get("owner") != "sage", "refused write must not land"
+    assert item.get("status") != "accepted", "refused write must not change status either"
+
+
+def test_set_accepts_the_meta_advisor_as_owner(tmp_path):
+    """forge-chro owns 35 live items and is absent from known_advisors().
+
+    Forge's definition lives under skills/, not agents/, so the resolver most
+    callers reach for does not list it. A guard built on that resolver would
+    reject the owner of a fifth of the notebook.
+    """
+    _roster(tmp_path, "sage-cto")
+    review_path = _write_review(tmp_path, "2026-05-22", "atlas-meta.md",
+                                _valid_review_meta(feedback_id="fb-888-bbbbbb"))
+
+    result = run_triage(tmp_path, [
+        "--set", "fb-888-bbbbbb", "it-1", "accepted",
+        "--owner", "forge-chro", "--waiver", "test",
+    ])
+
+    assert result.returncode == 0, result.stderr
+    meta_after, _ = fm_read(review_path)
+    assert meta_after["items"][0]["owner"] == "forge-chro"
+
+
+def test_set_does_not_accuse_when_the_roster_cannot_be_read(tmp_path):
+    """An unresolvable roster degrades to the old behaviour, never to an accusation.
+
+    canonical_advisors() returns only the shipped meta-advisor when the project
+    anchor points somewhere without agent-defs. Judging membership against that
+    would report every real advisor as unknown — the false-accusation shape of #170.
+    """
+    review_path = _write_review(tmp_path, "2026-05-22", "atlas-noroster.md",
+                                _valid_review_meta(feedback_id="fb-999-cccccc"))
+
+    result = run_triage(tmp_path, [
+        "--set", "fb-999-cccccc", "it-1", "accepted",
+        "--owner", "kai", "--waiver", "test",
+    ])
+
+    assert result.returncode == 0, result.stderr
+    meta_after, _ = fm_read(review_path)
+    assert meta_after["items"][0]["owner"] == "kai"

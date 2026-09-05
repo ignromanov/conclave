@@ -51,6 +51,7 @@ from briefing.frontmatter_io import read as fm_read  # noqa: E402
 from briefing.frontmatter_io import read_commented  # noqa: E402
 from briefing.paths import repo_root  # noqa: E402
 from enginelib import snapshot  # noqa: E402
+from enginelib.advisors import META_ADVISORS, canonical_advisors  # noqa: E402
 from feedback.feedback_emit import write_preserving_header  # noqa: E402
 from feedback.paths import index_path, last_triage_marker  # noqa: E402
 
@@ -69,6 +70,36 @@ _SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 # on fingerprint and knows nothing about GitHub — so 53 lost bindings would have
 # manufactured 53 future duplicates. Matches forge:#102, forge:102 and forge:AI#12.
 LEGACY_OWNER_ISSUE_RE = re.compile(r"^[^:]+:(AI)?#?\d+$")
+
+# The status field has been validated against a closed vocabulary since it existed;
+# `owner` was written through unchecked. Two different mistakes persisted for the same
+# reason: `sage` was a short name hand-typed at triage that never was an advisor id, and
+# `forge` was a real id until the 106 rename created `forge-chro` beside it. 71 live items
+# name an owner that resolves to nobody, and every owner-scoped query -- the briefing's
+# `owed` scan, triage routing -- silently omits them. Absence is the failure mode with no
+# error message.
+_RESERVED_OWNERS = frozenset({"verify:auto"})
+
+
+def _unknown_owner(owner: str) -> bool:
+    """True when *owner* names an advisor this instance's roster does not hold.
+
+    The roster comes from `canonical_advisors()`, not `known_advisors()`: Forge's
+    definition lives under skills/ rather than agents/, so the latter omits it, and
+    forge-chro owns 35 live items. A guard on the wrong resolver would reject a fifth
+    of the notebook.
+
+    When the roster resolves to nothing beyond the shipped meta-advisor, the project
+    anchor did not point at a real instance and membership is unjudgeable. The write
+    then passes: an unreadable roster must degrade to the previous behaviour, never to
+    an accusation that every real advisor does not exist (the shape of #170).
+    """
+    if owner in _RESERVED_OWNERS:
+        return False
+    roster = set(canonical_advisors())
+    if not roster - set(META_ADVISORS):
+        return False
+    return owner not in roster
 
 import typing as _typing  # noqa: E402
 
@@ -322,6 +353,18 @@ def cmd_set(root: Path, feedback_id: str, item_id: str, status: str,
     if status not in _VALID_STATUSES:
         print(f"ERROR: invalid status={status!r} (allowed: {sorted(_VALID_STATUSES)})",
               file=sys.stderr)
+        return 1
+    if owner is not None and _unknown_owner(owner):
+        print(
+            f"ERROR: refusing to set owner={owner!r} on {feedback_id}/{item_id}: "
+            f"no advisor by that id is on the roster.\n"
+            f"       An owner nothing resolves is not a routing error you can see -- "
+            f"every owner-scoped query simply omits the item.\n"
+            f"       Roster: {', '.join(sorted(canonical_advisors())) or '(empty)'}\n"
+            f"       Use one of those, or hire the advisor first "
+            f"(`engine advisor create`).",
+            file=sys.stderr,
+        )
         return 1
     review_path = _find_review_file(root, feedback_id)
     if review_path is None:
