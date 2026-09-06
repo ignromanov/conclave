@@ -1,4 +1,5 @@
 """Unit tests for the deterministic predicate deriver (spec 105 kill-gate)."""
+import predicate_derive
 from predicate_derive import derive_predicate, evaluate_item, run
 
 
@@ -102,6 +103,26 @@ def test_not_derivable_when_file_missing_from_tree(tmp_path):
                  suggested_fix="remove `${X:-y}`")
     d = evaluate_item(item, tmp_path)
     assert d.bucket == "NOT-DERIVABLE" and "not a file" in d.reason
+
+
+# --- code_root threading (#170's next trap: derive_predicate never emits root: code
+# today, so this path is latent until a rule declares one) ---
+
+def test_evaluate_item_passes_code_root_through(tmp_path, monkeypatch):
+    checkout = tmp_path / "project"
+    checkout.mkdir()
+    code_root = tmp_path / "code"
+    code_root.mkdir()
+    (code_root / "engine.py").write_text("VERSION = 1\n")
+
+    def _fake_derive(item, checkout_arg):
+        return ({"kind": "file-contains", "file": "engine.py",
+                 "pattern": "VERSION", "root": "code"}, "FC", "forced root: code")
+
+    monkeypatch.setattr(predicate_derive, "derive_predicate", _fake_derive)
+    item = _item()
+    d = evaluate_item(item, checkout, code_root=code_root)
+    assert d.verdict == "pass"  # classifies against code_root instead of raising TypeError
 
 
 def test_run_filters_to_accepted(tmp_path):

@@ -105,8 +105,25 @@ It comes before Step 3 because Step 3 now refuses it otherwise: `--set <fid> <ii
 exits 1 on an item carrying neither `verify:` nor `verify_waiver:`. Attach the predicate
 while the item is still `open`, then accept it.
 
-For each item you are about to accept, attach the predicate that will become true when the
-fix lands — or record why none can exist:
+**Try the deriver before writing a predicate by hand.** `predicate_derive.py` (spec 105) reads
+the structured fields of an item — `location.file`, `suggested_fix`, `observation` — and, for a
+narrow set of deterministic shapes, synthesizes the same `verify:` predicate a human would write
+by hand. It is read-only: it prints candidates, it attaches nothing.
+
+```bash
+PYTHONPATH=engine/scripts:engine/scripts/feedback \
+  python3 engine/scripts/feedback/predicate_derive.py
+```
+
+It reports `uncovered=<N> derived-and-red=<M> (<pct>%)` over the accepted-but-uncovered pool,
+then one ready-to-run `--set-verify` invocation per hit. Measured on 2026-09-06: **10 of 78
+uncovered items (12.8%) derive to a red predicate**, all via rule FC (file-contains); the other
+68 came back NOT-DERIVABLE. **This drains the cheapest ~10% of the backlog, not the backlog** —
+the remaining ~90% needs a human reading the item and writing the predicate by hand (below);
+the deriver invents nothing for a fix that is prose rather than a checkable literal or symbol.
+
+For every item — deriver hit or not — attach the predicate that will become true when the
+fix lands, or record why none can exist:
 
 ```bash
 PYTHONPATH=engine/scripts \

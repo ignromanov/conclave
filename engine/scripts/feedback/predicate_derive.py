@@ -145,13 +145,13 @@ def derive_predicate(item: dict, checkout: Path) -> tuple[dict | None, str, str]
     return (None, "", "structured fields do not pin a checkable literal (prose-only fix)")
 
 
-def evaluate_item(item: dict, checkout: Path) -> Derivation:
+def evaluate_item(item: dict, checkout: Path, code_root: Path | None = None) -> Derivation:
     fid = item.get("feedback_id", "")
     iid = item.get("item_id") or item.get("id") or ""
     pred_dict, rule, reason = derive_predicate(item, checkout)
     if pred_dict is None:
         return Derivation(fid, iid, "NOT-DERIVABLE", "", None, None, reason)
-    verdict = classify_predicate(Predicate(**pred_dict), checkout)
+    verdict = classify_predicate(Predicate(**pred_dict), checkout, code_root)
     if verdict == "fail":
         bucket = "DERIVED-AND-RED"      # bug still demonstrable — counts
     elif verdict == "pass":
@@ -161,6 +161,43 @@ def evaluate_item(item: dict, checkout: Path) -> Derivation:
     return Derivation(fid, iid, bucket, rule, pred_dict, verdict, reason)
 
 
-def run(rows: list[dict], checkout: Path) -> list[Derivation]:
+def run(rows: list[dict], checkout: Path, code_root: Path | None = None) -> list[Derivation]:
     """Derive over accepted rows only (the backlog the kill-gate measures)."""
-    return [evaluate_item(r, checkout) for r in rows if r.get("status") == "accepted"]
+    return [evaluate_item(r, checkout, code_root) for r in rows if r.get("status") == "accepted"]
+
+
+def main(argv: list[str] | None = None) -> int:  # noqa: ARG001 — no flags today
+    """Report which UNCOVERED accepted items (no `verify:`, no `verify_waiver:`) a
+    deterministic rule can pin, and print a ready `--set-verify` invocation for each hit.
+
+    Read-only: this only measures and prints. Attaching a predicate is still the operator
+    running `feedback_verify.py --set-verify` themselves (Step 2.5 of triage.md), which
+    re-runs the admission test before writing anything."""
+    from feedback_triage import _load_index
+
+    from enginelib.paths import engine_root, project_root
+    from feedback.paths import index_path
+
+    root = project_root()
+    rows = _load_index(index_path())
+    uncovered = [r for r in rows if r.get("status") == "accepted"
+                 and not r.get("verify") and not r.get("verify_waiver")]
+    derivations = run(uncovered, root, code_root=engine_root().parent)
+    red = [d for d in derivations if d.bucket == "DERIVED-AND-RED"]
+
+    pct = (100.0 * len(red) / len(uncovered)) if uncovered else 0.0
+    print(f"uncovered={len(uncovered)} derived-and-red={len(red)} ({pct:.1f}%)")
+    for d in red:
+        p = d.predicate or {}
+        target = f"--file {p['file']}" if "file" in p else f"--path {p['path']}"
+        pattern = f" --pattern {p['pattern']}" if "pattern" in p else ""
+        root_flag = f" --root {p['root']}" if p.get("root") and p["root"] != "project" else ""
+        print(f"  [{d.rule}] {d.feedback_id} {d.item_id} :: {d.reason}\n"
+              f"    --set-verify {d.feedback_id} {d.item_id} {p.get('kind')} "
+              f"{target}{pattern}{root_flag}")
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())
