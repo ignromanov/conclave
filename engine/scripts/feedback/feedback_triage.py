@@ -494,7 +494,9 @@ def cmd_set_verify(root: Path, feedback_id: str, item_id: str,
     except Exception as exc:  # noqa: BLE001
         print(f"ERROR: invalid predicate: {exc}", file=sys.stderr)
         return 1
-    from feedback_verify import classify_predicate  # noqa: PLC0415 — see docstring; feedback_verify imports cmd_set_verify from here, so this stays lazy to avoid a cycle
+    # feedback_verify imports cmd_set_verify from this module, so this import
+    # stays inside the function to avoid the cycle.
+    from feedback_verify import classify_predicate  # noqa: PLC0415
     verdict = classify_predicate(Predicate(**predicate), project_root_path or project_root(), code_root)
     if verdict != "fail" and not force:
         print(f"ERROR: refusing to attach verify to {feedback_id}/{item_id}: "
