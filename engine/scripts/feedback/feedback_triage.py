@@ -157,6 +157,25 @@ def _find_review_file(root: Path, feedback_id: str) -> Path | None:
     return None
 
 
+def unreachable_accepted(rows: list[dict]) -> list[dict]:
+    """Accepted rows carrying no predicate, no waiver and no issue link.
+
+    Such a row is reachable by no mechanism: `--monthly`'s zombie pass scopes to
+    open/deferred, and closing verification needs one of `verify`, `verify_waiver`
+    or `issue` to fire on. Sorted by `accepted_at` ascending (oldest first); rows
+    with no `accepted_at` sort last, since their age is unknown rather than zero.
+    """
+    found = [
+        row for row in rows
+        if row.get("status") == "accepted"
+        and not row.get("verify")
+        and not row.get("verify_waiver")
+        and not row.get("issue")
+    ]
+    found.sort(key=lambda r: r.get("accepted_at") or "9999-99-99")
+    return found
+
+
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
@@ -315,6 +334,7 @@ def cmd_check(rows: list[dict], triage_marker: Path) -> None:
     print(f"open_items={open_count}")
     print(f"new_reviews={new_reviews}")
     print(f"days_since={days_since_str}")
+    print(f"unreachable_accepted={len(unreachable_accepted(rows))}")
 
 
 def cmd_monthly(rows: list[dict]) -> None:
@@ -337,14 +357,37 @@ def cmd_monthly(rows: list[dict]) -> None:
 
     if not found:
         print("No zombie items found (open/deferred > 90 days).")
-        return
+    else:
+        found.sort(key=lambda x: -x[0])
+        print(f"{'feedback_id':<25} {'item_id':<15} {'age_days':<10} {'status':<12} observation")
+        print("-" * 90)
+        for age, row in found:
+            print(f"{row.get('feedback_id', ''):<25} {row.get('item_id', ''):<15} "
+                  f"{age:<10} {row.get('status', ''):<12} {row.get('observation', '')[:40]}")
 
-    found.sort(key=lambda x: -x[0])
-    print(f"{'feedback_id':<25} {'item_id':<15} {'age_days':<10} {'status':<12} observation")
-    print("-" * 90)
-    for age, row in found:
-        print(f"{row.get('feedback_id', ''):<25} {row.get('item_id', ''):<15} "
-              f"{age:<10} {row.get('status', ''):<12} {row.get('observation', '')[:40]}")
+    # Second, independent section: accepted items reachable by no mechanism (no
+    # predicate, no waiver, no issue link). Printed unconditionally, even when
+    # count is 0 — this is an inventory surface, and a zero is load-bearing
+    # (Global Constraint 3). Keyed on accepted_at (R1), no age cutoff (R2).
+    unreachable = unreachable_accepted(rows)
+    print()
+    print(f"Unreachable accepted items (no predicate, no waiver, no issue link): "
+          f"{len(unreachable)}")
+    if unreachable:
+        print(f"{'feedback_id':<25} {'item_id':<15} {'age_days':<10} {'status':<12} observation")
+        print("-" * 90)
+        for row in unreachable:
+            accepted_at = row.get("accepted_at")
+            if accepted_at:
+                try:
+                    accepted = datetime.fromisoformat(accepted_at.replace("Z", "+00:00"))
+                    age_str = str((now - accepted).days)
+                except (ValueError, AttributeError):
+                    age_str = "—"
+            else:
+                age_str = "—"
+            print(f"{row.get('feedback_id', ''):<25} {row.get('item_id', ''):<15} "
+                  f"{age_str:<10} {row.get('status', ''):<12} {row.get('observation', '')[:40]}")
 
 
 def cmd_set(root: Path, feedback_id: str, item_id: str, status: str,
