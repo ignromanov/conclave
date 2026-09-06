@@ -122,6 +122,18 @@ uncovered items (12.8%) derive to a red predicate**, all via rule FC (file-conta
 the remaining ~90% needs a human reading the item and writing the predicate by hand (below);
 the deriver invents nothing for a fix that is prose rather than a checkable literal or symbol.
 
+**A hit is a candidate, not a verdict — read it before you attach it.** `--set-verify`'s
+admission gate only checks that the predicate is currently `fail`; for rule FC that is true **by
+construction** (it picks a literal that is absent, which is what makes it red), so passing the
+gate proves only "this string is not in this file yet", never "this predicate is what the fix
+will actually leave behind". The one question that discriminates: **does the fix put this exact
+literal into this exact file?** If the fix lands somewhere else — a gate written elsewhere, a
+test, another document — the candidate is wrong and the item needs a hand-written predicate
+instead. In a live sample of the ten 2026-09-06 hits, three were wrong on inspection: one lifted
+a glob (`*.sh`) out of prose describing a gate to be added in a different file; one demanded a
+slash-command string inside a Python source file when the fix is a protocol change; one asked a
+timestamp marker file to contain its own filename.
+
 For every item — deriver hit or not — attach the predicate that will become true when the
 fix lands, or record why none can exist:
 
