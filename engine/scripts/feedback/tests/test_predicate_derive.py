@@ -148,7 +148,7 @@ def test_run_filters_to_accepted(tmp_path):
     assert len(out) == 1 and out[0].item_id == "i1"
 
 
-# --- _cue_near_literal: proximity definition for the "inverted verb" annotation ---
+# --- _cue_near_literal: proximity definition for the removal-cue annotation ---
 # (finding F4 — presentation-only, main() must still change no derivation)
 
 def test_cue_near_literal_true_when_cue_sits_a_few_words_from_the_literal():
@@ -246,7 +246,7 @@ def test_main_flags_an_inverted_verb_literal(tmp_path):
     ))
     result = _run_main(tmp_path)
     assert result.returncode == 0, result.stderr
-    assert "⚠ inverted verb" in result.stdout
+    assert "⚠ removal cue near literal" in result.stdout
 
 
 def test_main_does_not_flag_an_ordinary_literal(tmp_path):

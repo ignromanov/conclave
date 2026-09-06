@@ -68,7 +68,7 @@ _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _BACKTICK_RE = re.compile(r"`([^`]+)`")
 # a path with an extension, e.g. hire.md, regen.py, .ai/foo.sh
 _PATH_RE = re.compile(r"([\w./-]+\.[A-Za-z0-9]+)")
-# proximity window (characters) for the "inverted verb" presentation check below —
+# proximity window (characters) for the removal-cue presentation check below —
 # wide enough to span "remove the old `X` and add" but not the whole suggested_fix
 _CUE_PROXIMITY_CHARS = 40
 
@@ -249,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: ARG001 — no flags tod
             item = items_by_id.get((d.feedback_id, d.item_id))
             fix = (item or {}).get("suggested_fix") or ""
             if _cue_near_literal(fix, literal):
-                markers.append("inverted verb — wants grep-absent")
+                markers.append("removal cue near literal — check which side of it the literal is on")
         warn = "".join(f"  ⚠ {m}" for m in markers)
 
         print(f"  [{d.rule}] {d.feedback_id} {d.item_id} :: {d.reason}{warn}\n"
