@@ -260,13 +260,13 @@ def main(argv: list[str] | None = None) -> int:
                 "body": body,
             }
 
-            # Append to archive JSONL. This happens even if the reconstructability guard
-            # below refuses the unlink: a duplicated archive row is recoverable, a deleted
-            # body is not, and the re-archive guard above reads this file fresh on the next
-            # run, so a retry after the row is fixed upstream still works.
-            with arch_file.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(row) + "\n")
-
+            # Check reconstructability BEFORE writing anything. The row is built from
+            # `meta`, which lives in the markdown file the guard would be refusing to
+            # delete — so checking first loses nothing: a refused review leaves no trace
+            # in the ledger at all, the markdown is untouched, and a retry after the
+            # review itself is repaired goes through the normal path on the next run
+            # (there is no stale ledger row for `_load_archived_ids` to pick up and no
+            # "already archived" refusal to fight through).
             if not _archive_row_is_reconstructable(row):
                 if not row.get("items"):
                     reason = "items is empty"
@@ -279,6 +279,10 @@ def main(argv: list[str] | None = None) -> int:
                 print(msg, file=sys.stderr)
                 errors.append(msg)
                 continue
+
+            # Append to archive JSONL
+            with arch_file.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(row) + "\n")
 
             # Track for idempotency within this run
             archived_ids.add(feedback_id)

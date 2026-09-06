@@ -129,10 +129,18 @@ def test_archives_and_unlinks_a_complete_review(tmp_path):
     assert row["body"] == "Notes prose."
 
 
+def _archive_rows(tmp_path: Path, month: str = "2026-05") -> list[dict]:
+    archive_file = tmp_path / "ops" / "feedback" / "_archive" / f"{month}.jsonl"
+    if not archive_file.exists():
+        return []
+    return [json.loads(ln) for ln in archive_file.read_text().splitlines() if ln.strip()]
+
+
 def test_refuses_to_unlink_when_row_has_no_items(tmp_path, monkeypatch):
     """A review closes with all items resolved, but the row-builder is forced to emit an
     empty `items` list (simulating the exact mutation the acceptance check performs) — the
-    guard must refuse, leaving the markdown in place and reporting a non-zero result.
+    guard must refuse, leaving the markdown in place, reporting a non-zero result, and
+    writing NOTHING to the JSONL (R4: the guard now runs before the append).
     """
     items = [_valid_item("it-1", "resolved", "will not survive")]
     review_path = _write_review(
@@ -155,10 +163,13 @@ def test_refuses_to_unlink_when_row_has_no_items(tmp_path, monkeypatch):
 
     assert review_path.exists(), "markdown must survive when the row cannot reconstruct it"
     assert returncode != 0, "refusal must be reported as a non-zero exit"
+    assert not any(r.get("feedback_id") == "fb-noitems-bbbbbb" for r in _archive_rows(tmp_path)), \
+        "a refused row must never reach the JSONL"
 
 
 def test_refuses_to_unlink_when_an_item_body_is_empty(tmp_path):
-    """One item carries an empty observation; the guard must refuse the unlink."""
+    """One item carries an empty observation; the guard must refuse the unlink and write
+    nothing to the JSONL (R4: checked before the append, not after)."""
     items = [
         _valid_item("it-1", "resolved", "fine"),
         _valid_item("it-2", "resolved", ""),
@@ -174,8 +185,46 @@ def test_refuses_to_unlink_when_an_item_body_is_empty(tmp_path):
     assert review_path.exists(), "markdown must survive when an item body is empty"
     assert result.returncode != 0
     assert "atlas-emptyobs.md" in result.stderr, result.stderr
+    assert not any(r.get("feedback_id") == "fb-emptyobs-cccccc" for r in _archive_rows(tmp_path)), \
+        "a refused row must never reach the JSONL"
 
-    # The JSONL append still happens — a duplicated row is recoverable, a deleted body is not.
-    archive_file = tmp_path / "ops" / "feedback" / "_archive" / "2026-05.jsonl"
-    rows = [json.loads(ln) for ln in archive_file.read_text().splitlines() if ln.strip()]
-    assert any(r.get("feedback_id") == "fb-emptyobs-cccccc" for r in rows)
+
+def test_retry_succeeds_after_the_review_is_repaired(tmp_path):
+    """R4's whole point: a refused review is not permanently stuck.
+
+    Run 1: the review has an item with no observation — refused, no ledger row, markdown
+    survives. The review is then repaired in place (as an operator would, editing the
+    markdown itself — never the ledger, since the guard left no ledger row to edit). Run 2:
+    the SAME feedback_id now archives and unlinks cleanly, because there was never a stale
+    "already archived" row for `_load_archived_ids` to trip over.
+    """
+    items = [
+        _valid_item("it-1", "resolved", "fine"),
+        _valid_item("it-2", "resolved", ""),
+    ]
+    review_path = _write_review(
+        tmp_path, "2026-05-22", "atlas-repair.md",
+        _valid_review_meta("fb-repair-dddddd", items),
+        body="Notes.",
+    )
+
+    result1 = run_archive(tmp_path)
+    assert result1.returncode != 0, "first run must refuse the incomplete review"
+    assert review_path.exists()
+    assert not any(r.get("feedback_id") == "fb-repair-dddddd" for r in _archive_rows(tmp_path))
+
+    # Repair: give the empty item a real observation.
+    repaired_items = [
+        _valid_item("it-1", "resolved", "fine"),
+        _valid_item("it-2", "resolved", "now filled in"),
+    ]
+    write(review_path, _valid_review_meta("fb-repair-dddddd", repaired_items), "Notes.")
+
+    result2 = run_archive(tmp_path)
+    assert result2.returncode == 0, result2.stderr
+    assert not review_path.exists(), "the repaired review must archive and unlink on retry"
+
+    rows = [r for r in _archive_rows(tmp_path) if r.get("feedback_id") == "fb-repair-dddddd"]
+    assert len(rows) == 1
+    observations = [it["observation"] for it in rows[0]["items"]]
+    assert "now filled in" in observations
