@@ -370,7 +370,8 @@ def main(argv=None) -> int:
             print("ERROR: could not acquire triage lock (concurrent session?)", file=sys.stderr)
             return 1
         try:
-            return cmd_set_verify(root, fid, iid, pred)
+            return cmd_set_verify(root, fid, iid, pred, force=args.force,
+                                  project_root_path=project_root(), code_root=code_root)
         finally:
             snapshot.release_lock(lock_dir)
 

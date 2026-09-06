@@ -52,6 +52,7 @@ from briefing.frontmatter_io import read_commented  # noqa: E402
 from briefing.paths import repo_root  # noqa: E402
 from enginelib import snapshot  # noqa: E402
 from enginelib.advisors import META_ADVISORS, canonical_advisors  # noqa: E402
+from enginelib.paths import project_root  # noqa: E402
 from feedback.feedback_emit import write_preserving_header  # noqa: E402
 from feedback.paths import index_path, last_triage_marker  # noqa: E402
 
@@ -472,18 +473,32 @@ def cmd_set(root: Path, feedback_id: str, item_id: str, status: str,
 
 
 def cmd_set_verify(root: Path, feedback_id: str, item_id: str,
-                   predicate: dict) -> int:
+                   predicate: dict, *, force: bool = False,
+                   project_root_path: Path | None = None,
+                   code_root: Path | None = None) -> int:
     """Attach a verify: predicate to an existing item (093 P1 T3).
 
     Sanctioned write path so feeding an accepted backlog never needs hand-editing
     finalized frontmatter. Caller must hold the .triage-lock (the mkdir-poll lock is
     not reentrant, so cmd_set_verify — like cmd_set — never re-acquires it here).
+
+    #161 — the admission test (refuse a predicate that already passes or is broken)
+    lives HERE, not one level up in the CLI. `feedback_verify.py`'s --set-verify
+    branch keeps its own pre-check for the richer human-facing message, but that
+    made the guard a one-caller-deep property rather than an invariant: this is
+    the writer, so this is where every caller is bound by it.
     """
     from feedback.schema import Predicate
     try:
         Predicate(**predicate)  # validate shape before writing
     except Exception as exc:  # noqa: BLE001
         print(f"ERROR: invalid predicate: {exc}", file=sys.stderr)
+        return 1
+    from feedback_verify import classify_predicate  # noqa: PLC0415 — see docstring; feedback_verify imports cmd_set_verify from here, so this stays lazy to avoid a cycle
+    verdict = classify_predicate(Predicate(**predicate), project_root_path or project_root(), code_root)
+    if verdict != "fail" and not force:
+        print(f"ERROR: refusing to attach verify to {feedback_id}/{item_id}: "
+              f"verdict={verdict} (expected 'fail')", file=sys.stderr)
         return 1
     review_path = _find_review_file(root, feedback_id)
     if review_path is None:
