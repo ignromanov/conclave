@@ -134,7 +134,16 @@ def _process_reviews(dirs: list[Path], existing: dict[str, str], check: bool) ->
                     "agent_type": review.agent_type,
                     "session_ref": review.session_ref,
                     "created": str(review.created),
+                    # Review-level "has this file been rewritten since I indexed it" —
+                    # `_process_reviews`'s incremental-skip check above needs exactly this
+                    # field. touched_at below answers a different question ("how long has
+                    # THIS item sat"); one field cannot answer both (#218).
                     "updated_at": str(review.updated_at),
+                    # Item-level, only ever set by a write path that modified THIS item
+                    # (cmd_set, cmd_set_verify). No fallback to review.updated_at here: an
+                    # untouched item's touched_at is unknown, not the review's timestamp —
+                    # consumers do the falling back, visibly (#218).
+                    "touched_at": str(item.touched_at) if item.touched_at else "",
                     "item_id": item.id,
                     "category": item.category,
                     "layer": item.layer,

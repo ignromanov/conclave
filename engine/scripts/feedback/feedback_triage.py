@@ -450,6 +450,10 @@ def cmd_set(root: Path, feedback_id: str, item_id: str, status: str,
             if status == "accepted" and (
                     status != previous or not item.get("accepted_at")):
                 item["accepted_at"] = now_str
+            # #218 — item-level touch, on THIS item only, same timestamp as meta's
+            # updated_at below so the two never disagree by a microsecond. Do not drop
+            # this: it is what stops closing one item from restamping its siblings.
+            item["touched_at"] = now_str
             found = True
             break
 
@@ -486,17 +490,21 @@ def cmd_set_verify(root: Path, feedback_id: str, item_id: str,
         print(f"ERROR: review not found for feedback_id={feedback_id}", file=sys.stderr)
         return 1
     meta, body = read_commented(review_path)
+    now_str = datetime.now(UTC).isoformat()
     found = False
     for item in meta.get("items", []):
         if item.get("id") == item_id:
             item["verify"] = predicate
+            # #218 — item-level touch, on THIS item only; same timestamp as meta's
+            # updated_at below so the two never disagree by a microsecond.
+            item["touched_at"] = now_str
             found = True
             break
     if not found:
         print(f"ERROR: item_id={item_id} not found in feedback_id={feedback_id}",
               file=sys.stderr)
         return 1
-    meta["updated_at"] = datetime.now(UTC).isoformat()
+    meta["updated_at"] = now_str
     write_preserving_header(review_path, meta, body)
     print(f"Attached verify to {feedback_id}/{item_id}: kind={predicate.get('kind')}")
     return 0
