@@ -37,14 +37,28 @@ non-agentic deriver can honestly pin, not to maximize a number.
 """
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
-from pathlib import Path
-from typing import TypeGuard
+import sys
 
-from feedback_verify import _contained, _resolve, classify_predicate
+# Interpreter floor, enforced before the first thing that can fail below it — here,
+# `from typing import TypeGuard` below (TypeGuard was added in 3.10). /conclave:triage Step 2.5
+# launches this file directly, which is what puts it in the enforced entrypoint set.
+# Measured, not declared; see engine/__main__.py for the full note.
+if sys.version_info < (3, 11):  # noqa: UP036 — see engine/__main__.py
+    sys.stderr.write(
+        f"Conclave requires Python 3.11 or newer.\n"
+        f"This is Python {sys.version.split()[0]} at {sys.executable}.\n"
+        f"Install a newer interpreter (e.g. `uv python install 3.13`) and re-run.\n"
+    )
+    sys.exit(1)
 
-from feedback.schema import Predicate
+import re  # noqa: E402 — must follow the floor guard above
+from dataclasses import dataclass  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import TypeGuard  # noqa: E402
+
+from feedback_verify import _contained, _resolve, classify_predicate  # noqa: E402
+
+from feedback.schema import Predicate  # noqa: E402
 
 REMOVE_CUES = ("hardcode", "hardcodes", "hardcoded", "replace", "remove",
                "drop", "demote", "delete", "strip")
@@ -199,5 +213,4 @@ def main(argv: list[str] | None = None) -> int:  # noqa: ARG001 — no flags tod
 
 
 if __name__ == "__main__":
-    import sys
-    sys.exit(main())
+    sys.exit(main())  # `sys` is imported at module level for the floor guard above
