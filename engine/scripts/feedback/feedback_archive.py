@@ -112,6 +112,23 @@ def _all_done(items: list[dict]) -> bool:
     )
 
 
+def _archive_row_is_reconstructable(row: dict) -> bool:
+    """True only when the row carries enough to stand in for the markdown it replaces.
+
+    Both conditions must hold: `items` is a non-empty list and every element carries a
+    non-empty `observation` (the item body the archive exists to preserve), and `body` is
+    present as a key — an empty string is a genuine no-notes review, a missing key is not.
+    """
+    items = row.get("items")
+    if not items or not isinstance(items, list):
+        return False
+    if not all(isinstance(it, dict) and it.get("observation") for it in items):
+        return False
+    if "body" not in row:
+        return False
+    return True
+
+
 def _archive_month(created_str: str) -> str:
     """Return 'YYYY-MM' from a created datetime string."""
     try:
@@ -243,9 +260,25 @@ def main(argv: list[str] | None = None) -> int:
                 "body": body,
             }
 
-            # Append to archive JSONL
+            # Append to archive JSONL. This happens even if the reconstructability guard
+            # below refuses the unlink: a duplicated archive row is recoverable, a deleted
+            # body is not, and the re-archive guard above reads this file fresh on the next
+            # run, so a retry after the row is fixed upstream still works.
             with arch_file.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(row) + "\n")
+
+            if not _archive_row_is_reconstructable(row):
+                if not row.get("items"):
+                    reason = "items is empty"
+                elif "body" not in row:
+                    reason = "body key is missing"
+                else:
+                    reason = "an item has no observation"
+                msg = (f"ERROR: refusing to unlink {md_file.name}: "
+                       f"archive row cannot reconstruct it ({reason})")
+                print(msg, file=sys.stderr)
+                errors.append(msg)
+                continue
 
             # Track for idempotency within this run
             archived_ids.add(feedback_id)
