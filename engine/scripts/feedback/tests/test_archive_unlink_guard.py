@@ -185,6 +185,7 @@ def test_refuses_to_unlink_when_an_item_body_is_empty(tmp_path):
     assert review_path.exists(), "markdown must survive when an item body is empty"
     assert result.returncode != 0
     assert "atlas-emptyobs.md" in result.stderr, result.stderr
+    assert "an item has no observation" in result.stderr, result.stderr
     assert not any(r.get("feedback_id") == "fb-emptyobs-cccccc" for r in _archive_rows(tmp_path)), \
         "a refused row must never reach the JSONL"
 
@@ -192,11 +193,13 @@ def test_refuses_to_unlink_when_an_item_body_is_empty(tmp_path):
 def test_retry_succeeds_after_the_review_is_repaired(tmp_path):
     """R4's whole point: a refused review is not permanently stuck.
 
-    Run 1: the review has an item with no observation — refused, no ledger row, markdown
-    survives. The review is then repaired in place (as an operator would, editing the
-    markdown itself — never the ledger, since the guard left no ledger row to edit). Run 2:
-    the SAME feedback_id now archives and unlinks cleanly, because there was never a stale
-    "already archived" row for `_load_archived_ids` to trip over.
+    Run 1's own refusal (no ledger row, markdown survives) is already covered by
+    test_refuses_to_unlink_when_row_has_no_items and
+    test_refuses_to_unlink_when_an_item_body_is_empty — asserting it again here would let
+    an R4 mutation redden on that duplicate and never reach the property this test exists
+    for. This test checks ONLY the retry: repair the review, run again, and the SAME
+    feedback_id must archive and unlink cleanly — because there is no stale "already
+    archived" row for `_load_archived_ids` to trip over.
     """
     items = [
         _valid_item("it-1", "resolved", "fine"),
@@ -208,10 +211,7 @@ def test_retry_succeeds_after_the_review_is_repaired(tmp_path):
         body="Notes.",
     )
 
-    result1 = run_archive(tmp_path)
-    assert result1.returncode != 0, "first run must refuse the incomplete review"
-    assert review_path.exists()
-    assert not any(r.get("feedback_id") == "fb-repair-dddddd" for r in _archive_rows(tmp_path))
+    run_archive(tmp_path)  # run 1: expected to refuse; covered by other tests above.
 
     # Repair: give the empty item a real observation.
     repaired_items = [
