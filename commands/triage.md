@@ -105,10 +105,12 @@ It comes before Step 3 because Step 3 now refuses it otherwise: `--set <fid> <ii
 exits 1 on an item carrying neither `verify:` nor `verify_waiver:`. Attach the predicate
 while the item is still `open`, then accept it.
 
-**Try the deriver before writing a predicate by hand.** `predicate_derive.py` (spec 105) reads
-the structured fields of an item — `location.file`, `suggested_fix`, `observation` — and, for a
-narrow set of deterministic shapes, synthesizes the same `verify:` predicate a human would write
-by hand. It is read-only: it prints candidates, it attaches nothing.
+**Run the deriver for a shortlist, not for predicates to attach.** `predicate_derive.py`
+(spec 105) reads the structured fields of an item — `location.file`, `suggested_fix`,
+`observation` — and, for a narrow set of deterministic shapes, guesses a `verify:` predicate. It
+is read-only: it prints candidates, it attaches nothing. On the 2026-09-06 sample only 3 of its
+10 hits were usable as written (below) — treat every hit as "cheap enough to be worth reading",
+not as "correct enough to run".
 
 ```bash
 PYTHONPATH=engine/scripts:engine/scripts/feedback \
@@ -122,17 +124,25 @@ uncovered items (12.8%) derive to a red predicate**, all via rule FC (file-conta
 the remaining ~90% needs a human reading the item and writing the predicate by hand (below);
 the deriver invents nothing for a fix that is prose rather than a checkable literal or symbol.
 
-**A hit is a candidate, not a verdict — read it before you attach it.** `--set-verify`'s
+**A hit is a candidate, not a verdict — read every one before you attach it.** `--set-verify`'s
 admission gate only checks that the predicate is currently `fail`; for rule FC that is true **by
 construction** (it picks a literal that is absent, which is what makes it red), so passing the
 gate proves only "this string is not in this file yet", never "this predicate is what the fix
-will actually leave behind". The one question that discriminates: **does the fix put this exact
-literal into this exact file?** If the fix lands somewhere else — a gate written elsewhere, a
-test, another document — the candidate is wrong and the item needs a hand-written predicate
-instead. In a live sample of the ten 2026-09-06 hits, three were wrong on inspection: one lifted
-a glob (`*.sh`) out of prose describing a gate to be added in a different file; one demanded a
-slash-command string inside a Python source file when the fix is a protocol change; one asked a
-timestamp marker file to contain its own filename.
+will actually leave behind". On the 2026-09-06 sample **7 of 10 hits were wrong on inspection,
+only 3 usable** — read each candidate against this checklist:
+
+- **Wrong file.** Does the fix put this exact literal into this exact file, or does the fix
+  land elsewhere (a gate written in another file, a test, a protocol change)? If elsewhere, the
+  candidate is quoting a word out of the fix's prose, not naming what the fix will leave behind.
+- **`<placeholder>`.** A literal with angle brackets (`exec.<name>`, `iris-<role>`,
+  `advisor:<id>`) is a metavariable in prose — real code builds it as an f-string or a filled-in
+  slug, so the literal itself never appears verbatim anywhere. Reject on sight.
+- **Inverted verb.** If the sentence next to the literal is *remove / drop / replace*, FC has
+  the polarity backwards: it demands the literal be **present**, when the fix's whole point is
+  to make it **absent**. That item wants a hand-written `grep-absent` (see rule GA above), never
+  the deriver's `file-contains`.
+
+Any candidate that fails one of these three is wrong; write the predicate by hand instead.
 
 For every item — deriver hit or not — attach the predicate that will become true when the
 fix lands, or record why none can exist:
