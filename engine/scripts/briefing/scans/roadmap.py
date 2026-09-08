@@ -5,7 +5,8 @@ advisor-owned specs and renders a concise roadmap view: which version
 target is next, which specs are in-progress / proposed / done.
 
 Scan logic:
-  1. Walk ops/specs/###-*/spec.md; filter by ctx.advisor.
+  1. Walk ops/specs/###-*/spec.md; keep those whose owner / advisor /
+     owner_suggestion names ctx.advisor.
   2. Group by ``milestone`` (or "untracked"); sort by spec id.
   3. Surface in-progress specs first, then proposed, then done/archived.
 
@@ -13,14 +14,11 @@ Empty-state: _(no roadmap entries for advisor)_
 """
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
-from briefing.scans import ScanCtx
+from briefing.scans import ScanCtx, _specfm
 
 _PLACEHOLDER = "_(no roadmap entries for advisor)_"
-
-_FM_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 # Status ordering: lower = higher priority in display.
 _STATUS_ORDER = {
@@ -55,7 +53,7 @@ def build(ctx: ScanCtx) -> str:
     lines: list[str] = []
     for e in entries:
         milestone = f" · {e['milestone']}" if e["milestone"] else ""
-        lines.append(f"- [{e['status']}] **{e['id']}** {e['title']}{milestone}")
+        lines.append(f"- [{e['status']}] **{e['id']}** {e['title']}{e['provenance']}{milestone}")
 
     return "\n".join(lines)
 
@@ -67,8 +65,8 @@ def _extract_entry(spec_path: Path, advisor: str) -> dict[str, str] | None:
     except OSError:
         return None
 
-    fm = _parse_frontmatter(text)
-    if not (fm.get("advisor") == advisor or fm.get("owner_suggestion") == advisor):
+    fm = _specfm.parse_frontmatter(text)
+    if _specfm.owns(fm, advisor) is None:
         return None
 
     return {
@@ -76,17 +74,5 @@ def _extract_entry(spec_path: Path, advisor: str) -> dict[str, str] | None:
         "title": fm.get("title") or "untitled",
         "status": fm.get("status") or "unknown",
         "milestone": fm.get("milestone") or fm.get("phase") or "",
+        "provenance": _specfm.provenance(fm),
     }
-
-
-def _parse_frontmatter(text: str) -> dict[str, str]:
-    """Return flat dict of frontmatter key→value (best-effort, string only)."""
-    m = _FM_RE.match(text)
-    if not m:
-        return {}
-    out: dict[str, str] = {}
-    for line in m.group(1).splitlines():
-        if ":" in line and not line.startswith(" ") and not line.startswith("-"):
-            key, _, val = line.partition(":")
-            out[key.strip()] = val.strip().strip('"')
-    return out

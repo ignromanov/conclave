@@ -1,7 +1,7 @@
 """scans/current_work.py — section: Current Work (Phase 2, #1).
 
 Surfaces:
-- Active spec/plan from frontmatter ``status: in_progress``
+- Active spec/plan from frontmatter ``status: in-progress``
 - Plan checkbox progress (``- [x]`` / ``- [ ]`` counts)
 - Next unchecked task
 - Last commits with parsed task-IDs (from git-cache or live git log)
@@ -15,6 +15,7 @@ from pathlib import Path
 import frontmatter
 
 from briefing.scans import ScanCtx
+from enginelib.spec import map_status
 
 _PLACEHOLDER = "_(no active work detected)_"
 
@@ -56,7 +57,7 @@ def build(ctx: ScanCtx) -> str:
 def _find_active_specs(
     specs_root: Path, advisor: str
 ) -> list[tuple[Path, Path | None]]:
-    """Return (spec_path, plan_path|None) pairs where spec status==in_progress."""
+    """Return (spec_path, plan_path|None) pairs where spec status==in-progress."""
     if not specs_root.is_dir():
         return []
 
@@ -71,8 +72,10 @@ def _find_active_specs(
             post = frontmatter.load(str(spec_md))
         except Exception:
             continue
-        status = post.metadata.get("status", "")
-        if status != "in_progress":
+        # Never a literal — `enginelib.spec.map_status` owns the spelling. This line
+        # compared against `in_progress`, a token no spec.md carries, so the section
+        # reported "no active work" while five specs were in progress (#228).
+        if map_status(str(post.metadata.get("status", ""))) != "in-progress":
             continue
         # Optionally filter by advisor ownership.
         owner = post.metadata.get("owner", "") or post.metadata.get("advisor", "")

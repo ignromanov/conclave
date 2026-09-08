@@ -20,13 +20,18 @@ def map_status(raw: str) -> str:
     """Map raw status to canonical 7-value enum, 'MISSING', or 'UNKNOWN:<raw>'.
 
     Fast-path: already canonical → return unchanged.
-    Else: lowercase + collapse runs of spaces to single dash, then map.
+    Else: lowercase + collapse runs of spaces or underscores to a single dash, then map.
     UNKNOWN returns the original *raw* string (not the lowercased form).
+
+    Underscore folds like space because both spellings occur in the corpus: five
+    spec.md files write `in-progress` and the briefing's own scans compared against
+    the literal `in_progress`, so their sections excluded every spec, for every
+    advisor, for as long as they had existed (#228).
     """
     if raw in _CANONICAL:
         return raw
-    # tr '[:upper:]' '[:lower:]' | tr -s ' ' '-'
-    lower = re.sub(r" +", "-", raw.lower())
+    # tr '[:upper:]' '[:lower:]' | tr -s ' _' '-'
+    lower = re.sub(r"[ _]+", "-", raw.lower())
     if lower == "proposed":
         return "proposed"
     if lower == "approved" or lower.startswith("design-review"):
