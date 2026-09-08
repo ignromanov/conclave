@@ -241,9 +241,9 @@ def main(argv: list[str] | None = None) -> int:
 
 Fill in `items` in the frontmatter above. Each item needs:
 - id, category, layer, location
-- observation, suggested_fix
+- observation
 - severity, frequency, evidence
-- (optional) interpretation
+- (optional) interpretation, suggested_fix
 
 Field-type rules — a mismatch rejects the WHOLE review at finalize:
 - id: a STRING (quote it: `id: "i1"`), not a bare int — YAML `id: 1` is an int and fails.
@@ -251,7 +251,7 @@ Field-type rules — a mismatch rejects the WHOLE review at finalize:
   (e.g. `team.sage-cto`), NOT a bare agent name like `sage-cto`.
 
 Closed enums — any other value is rejected at finalize:
-- category: script-defect · doc-contradiction · naming-inconsistency · skill-inaccuracy · skill-gap · process-friction · data-access · idea
+- category: script-defect · doc-contradiction · naming-inconsistency · skill-inaccuracy · skill-gap · process-friction · data-access · idea · positive
 - layer: infra · skill · contract · memory · workflow
 - severity: low · medium · high · critical
 - frequency: first-time · occasional · every-dispatch

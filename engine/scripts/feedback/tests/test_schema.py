@@ -23,6 +23,42 @@ def test_closed_enum_category():
     with pytest.raises(ValidationError):
         _item(category="not-a-category")
 
+
+# --- 117 lens rewrite (commissioned by helm-ceo, operator-approved 2026-09-08) -------------
+# Two schema decisions, and the guard that keeps the second from becoming a weakening.
+#
+# Why `positive` exists: the corpus was 244 items with zero positives, and the standing
+# reading blamed the retrospective prompts. It was the enum. There is no positive category,
+# so no prompt wording could ever have produced a positive item — the lens rewrite's central
+# bet ("constrained positives yield ~0") was guaranteed to pass for a reason that has nothing
+# to do with the lens (critic-117 R6, T5). The category makes that bet testable.
+
+
+def test_positive_category_is_admissible():
+    """The only admissible positive form ('artefact X removed step Y') needs somewhere to land."""
+    assert _item(category="positive").category == "positive"
+
+
+def test_suggested_fix_optional_when_evidence_backed():
+    """`suggested_fix` is W3 row 20 ('what should we build next?') — rated CONFABULATED.
+
+    Mandatory, it forced solution-space speculation onto every item in the corpus.
+    Evidence carries the mandate now; a fix is admitted when the agent actually has one.
+    """
+    assert _item(suggested_fix=None).suggested_fix is None
+
+
+def test_evidence_stays_a_hard_reject_when_suggested_fix_is_dropped():
+    """Regression guard, not a new rule.
+
+    The first draft of this change replaced evidence's hard rejection with an
+    admit-with-`hypothesis:`-prefix (critic-117 R6.1) — a weakening inside a change whose
+    stated purpose was raising the bar. Relaxing `suggested_fix` must not relax evidence
+    with it, so the pair is pinned: dropping both is still rejected.
+    """
+    with pytest.raises(ValidationError):
+        _item(evidence=None, suggested_fix=None)
+
 def test_severity_has_critical():
     assert _item(severity="critical").severity == "critical"
 

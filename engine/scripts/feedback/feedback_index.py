@@ -12,7 +12,8 @@ re-read, since it may hide a status change from a batch --set run).
 Validation (per spec):
 - _draft: true reviews → skipped silently
 - items missing evidence (unless migrated: true) → reject + stderr + non-zero exit
-- items missing location / observation / suggested_fix → reject
+- items missing location / observation → reject (suggested_fix became optional 2026-09-08,
+  spec 117: evidence carries the mandate, a fix is recorded only when the agent has one)
 - review with below_threshold_count > 0 and empty items → reject
 """
 from __future__ import annotations

@@ -364,32 +364,53 @@ question owned by kosmos-cxo, not something the summariser should decide by omis
 
 ## Phase: Lifecycle Retrospective
 
-Structured self-review of the **lifecycle infrastructure itself** through the lens of *this* session. Distinct from Reflexion (one-sentence advisor post-mortem about the work) and from the passive feedback rule (report-on-encounter). This phase asks the agent to actively scan five lenses for improvement signals — even when nothing visibly "broke".
+Structured self-review of the **lifecycle infrastructure itself** through this session's episodes. Distinct from Reflexion (one-sentence advisor post-mortem about the work) and from the passive feedback rule (report-on-encounter). Six prompts, answered in order; each answer is an episode or an artefact, and each finding goes to the `/conclave:feedback` channel (spec 086).
 
-Inspired by Toyota's *hansei* (反省): explicit reflection on what could be better, expected even when outcomes were good. Maps each finding to the `/conclave:feedback` channel (spec 086).
+**Answer from the transcript, not from memory of it.** Every prompt below names a thing that exists in this session's record: a spec number, a command, its output, a line in a file, a step you did not have to take. The answer is that thing, quoted. Where the prompt asks for a quote and you have none, the answer is `nothing` — and `nothing` is a complete answer to every prompt here, including all six.
+
+> **Why the prompts have this shape** (spec 117, commissioned by helm-ceo, evidence in
+> `ops/specs/117-session-ledger/research/W3-agent-self-report-literature.md`): an agent's report of
+> *what it did* is recoverable from its context; its report of *why* it did so is not. Reasons,
+> ratings, confidence and counterfactuals come back fluent and uncorrelated with what happened —
+> measured at 1–20 % verbalisation of the cue that actually drove the answer. So the prompts ask for
+> episodes, and the diagnosis is left to the reader of the corpus, which is where it belonged.
 
 ### When
 
 **Execution order**: Study → Infra → **Lifecycle Retrospective** → Reflexion → hot.md → `engine session close`. Runs every session — non-blocking.
 
-Rationale for slot: Infra's exit-codes are needed as inputs to the **broke** lens; Reflexion (the one-sentence post-mortem persisted to session frontmatter) can then quote the highest-leverage Retrospective finding. Documentation order matches execution order — Study → Infra → Lifecycle Retrospective → Reflexion → hot.md.
+Rationale for slot: Infra's exit-codes are the outputs the **stuck** prompt quotes; Reflexion (the one-sentence post-mortem persisted to session frontmatter) can then quote the highest-leverage Retrospective finding. Documentation order matches execution order — Study → Infra → Lifecycle Retrospective → Reflexion → hot.md.
 
-### Five lenses (+ open-ended)
+### The six prompts
 
-For each lens, ask: "Did this session produce a signal here? If yes, what's the smallest concrete improvement?" Empty lenses → skip silently. Don't fabricate findings.
+Answer in order. The middle column states what a complete answer is made of — supply those parts, or answer `nothing`.
 
-| Lens | Prompt | Typical `category` for `/conclave:feedback` |
-|------|--------|----------------------------------------|
-| **broke** | What failed outright? (script exit ≠ 0, missing file, contract violation, wrong output that the agent had to work around) | `script-defect`, severity `high\|medium` |
-| **unexpected** | What returned different from what the SKILL.md / contract / briefing said it would? (output shape drift, naming mismatch, docs out of sync with reality) | `doc-contradiction` or `naming-inconsistency`, severity `medium\|low` |
-| **script-improvement** | Which `team.*` script could be cleaner, faster, or smarter? (manual retry that should auto-retry, brittle parse, missing `--dry-run`, opaque error message) | `skill-gap` or `process-friction`, severity `low` |
-| **automation** | What work did *I* (the LLM) do by hand this session that a script could do deterministically? (file pattern, JSON shape transform, repeated gh query, briefing reconciliation) | `idea`, severity `low` |
-| **context-reduction** | Where did context get wasted? (re-read of a file already loaded, large file pulled for one fact, missing skill that would have shortened the chain, contract @import that wasn't actually needed for this session) | `process-friction` or `skill-gap`, severity `low` |
-| **other** | Anything else the agent found useful — friction, ergonomics, naming, ordering, missing checks. Single line, the agent picks the closest mapping. | agent's call |
+| Prompt | What the answer consists of | Files as |
+|--------|-----------------------------|----------|
+| **job** | The spec or issue this session worked on, by number, each number followed by the gloss it needs to be read without opening it. Opens the phase and files nothing — it fixes which session is being described. | — |
+| **stuck** | One moment: the command you ran, and the output that came back. Both quoted, verbatim, from the transcript. One moment, not a survey of the session. | `script-defect` · `process-friction` · `data-access` |
+| **instead** | The thing you executed next, quoted. If you ran it more than once, the number of times — a workaround executed three times is the automation candidate, and the count is in the transcript. | `process-friction` · `skill-gap` |
+| **acted-on** | A line you acted on, quoted, plus the path of the artefact that carried it. If acting on it produced something other than what the line said, both the line and what came back. | `doc-contradiction` · `naming-inconsistency` · `skill-inaccuracy` |
+| **removed-step** | One artefact, and the step it removed: *"X removed Y"*, where Y is a step you can name and would otherwise have taken. Both halves, or the answer is `nothing`. | `positive` |
+| **unexecuted** | One claim you made this session with no command run behind it, quoted, and the command that would decide it. | `idea` |
+
+`removed-step` is the only prompt that files a positive, and the named-step form is the whole of it: an artefact with no step beside it is not a finding here. Expect `nothing` often — that outcome is a measurement, not a failure of the prompt.
+
+### Admission rules
+
+| Rule | Form |
+|------|------|
+| Evidence | Every item carries `evidence`. Absent ⇒ rejected at ingest, unchanged by this phase. |
+| Hypothesis | Evidence that is a quote or a re-runnable command makes a finding. Evidence that is neither ⇒ `observation` opens with `hypothesis:`, and the item is admitted at that standing. |
+| Harness | An item about the tool layer rather than the engine — the CLI, tool-call behaviour, working-directory persistence between calls — opens `observation` with `harness:`. It is filed under that prefix, not dropped: roughly a third of the corpus is harness friction the engine cannot fix, and routing it keeps the denominator honest while filtering it silently inflates every engine-defect rate. |
+| Fix | `suggested_fix` when you have one from what you executed. It is optional; leave it out rather than compose one. |
+| Contradictions | Differences between this report and the tool log are found by a later pass over both. This phase does not ask for them. |
 
 ### How (per finding)
 
-Collect each finding as a `/conclave:feedback` item in the **Feedback emission** phase (at the start of `/conclave:done`). Use `observation` to record what happened (with lens prefix, e.g. `automation: gh issue list re-run 3× — cache for session duration`), `evidence` to cite the tool-call or file ref, and the lens-to-category mapping above to set `category`. The lens prefix in `observation` makes triage faster than re-deriving intent from free text.
+Collect each finding as a `/conclave:feedback` item in the **Feedback emission** phase (at the start of `/conclave:done`). `observation` opens with the prompt id and then states what happened — `stuck: gh issue list returned 30 rows for an advisor with 75 open` — carrying any `hypothesis:` or `harness:` prefix ahead of it. `evidence` holds the quote, the command, or the tool-call ref. `category` comes from the prompt's row above; where a row names several, the one the finding actually is.
+
+The prompt id in `observation` is what makes a triage cluster readable without re-deriving intent from free text — and it is what lets a later pass count answers per prompt, which is how `removed-step`'s yield gets measured rather than assumed.
 
 Cap: **MAX_RETRO_FINDINGS_PER_SESSION=5**. If the agent has more than 5, pick the highest-leverage 5 and note the count in the reflexion sentence. The retro is signal, not exhaustive coverage.
 
@@ -398,7 +419,7 @@ Cap: **MAX_RETRO_FINDINGS_PER_SESSION=5**. If the agent has more than 5, pick th
 One row inside the ▍-block when ≥ 1 finding was filed:
 
 ```
-▍ ⚠ **retro**    {N} findings — {lens-counts e.g. "broke:1 · automation:2 · context-reduction:1"} · in /conclave:feedback items
+▍ ⚠ **retro**    {N} findings — {prompt-counts e.g. "stuck:1 · instead:2 · removed-step:1"} · in /conclave:feedback items
 ```
 
 If zero findings → omit the row entirely (clean is silent). If any finding has `severity=high|blocker` → use `✗` instead of `⚠`.
@@ -407,9 +428,9 @@ If zero findings → omit the row entirely (clean is silent). If any finding has
 
 | Pattern | Why bad |
 |---------|---------|
-| Fabricating findings to fill all 5 lenses | Filler degrades the journal — same failure mode as filler reflexions |
-| Repeating the same finding 5 times in different lenses | One finding, one entry — pick best lens |
-| Skipping the phase because "session went smoothly" | Hansei: smooth ≠ unimprovable; at least one of the 5 lenses usually has signal |
+| Composing an answer because a prompt is unanswered | `nothing` is the answer when there is no episode. A composed one is indistinguishable from a real one at triage, and it is the failure mode that produced a 244-item corpus nobody could use as research |
+| Answering `stuck` with a survey of the session | One moment, one command, one output. A summary of several has no quote to check it against |
+| Skipping the phase because "session went smoothly" | The prompts do not ask what broke. `job`, `acted-on` and `removed-step` are all answerable in a session where nothing failed |
 | Writing findings as a chat-rant instead of `/conclave:feedback` items | Defeats triage — items must be in `ops/feedback/` for `feedback_index.py` to surface them |
 | Severity inflation (`high` for suggestions) | Reaction policy keys on severity; mis-tagging triggers user surfacing for non-blockers |
 
@@ -435,7 +456,7 @@ Good reflexions are:
 - **Specific** — names a file, function, decision, or pattern (not "the work went well")
 - **Actionable** — implies a behavior change for next session ("add error-channel before next || fallback")
 - **Honest** — failures and false starts welcome; we want signal, not vanity
-- **Retro-aware** — if the Lifecycle Retrospective phase (above) filed any findings, the single highest-leverage one is a strong default candidate for the sentence; quote the lens tag (e.g., `automation: gh issue re-run ×3 — script it`)
+- **Retro-aware** — if the Lifecycle Retrospective phase (above) filed any findings, the single highest-leverage one is a strong default candidate for the sentence; quote the prompt id (e.g., `instead: gh issue re-run ×3`)
 
 If genuinely nothing notable: pass `--reflexion "—"`. Forbidden anti-pattern: filler reflexions
 like *"good session"* — those degrade the buffer faster than blanks.

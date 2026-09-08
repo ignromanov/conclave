@@ -101,11 +101,11 @@ exists to close.
 | Field | Required | Values / rule |
 |-------|----------|---------------|
 | `id` | yes | short slug, e.g. `it-1` |
-| `category` | yes | `script-defect` · `doc-contradiction` · `naming-inconsistency` · `skill-inaccuracy` · `skill-gap` · `process-friction` · `data-access` · `idea` |
+| `category` | yes | `script-defect` · `doc-contradiction` · `naming-inconsistency` · `skill-inaccuracy` · `skill-gap` · `process-friction` · `data-access` · `idea` · `positive` |
 | `layer` | yes | `infra` · `skill` · `contract` · `memory` · `workflow` |
 | `location` | yes | typed object: `{file: "path/to/file.py", line?: N, skill?: "name", section?: "heading"}` — at least one of `file`, `skill`, or `section` must be set |
 | `observation` | yes | What the agent witnessed — a concrete output, error, or missing field. NOT an opinion. |
-| `suggested_fix` | yes | One concrete change, ≤ 2 sentences. |
+| `suggested_fix` | optional | One concrete change, ≤ 2 sentences, when you have one from what you executed. Leave it out rather than compose one. |
 | `severity` | yes | `low` · `medium` · `high` · `critical` |
 | `frequency` | yes | `first-time` · `occasional` · `every-dispatch` |
 | `evidence` | yes | Tool-call id, file excerpt, or test output reference. **Missing ⇒ item rejected at ingest.** |

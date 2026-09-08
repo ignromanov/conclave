@@ -56,13 +56,13 @@ Frontmatter holds structured fields; the body holds optional `notes`.
 | Field | Values / rule |
 |-------|---------------|
 | `id` | **string** (e.g. `"i1"`) — a bare YAML int (`id: 1`) is type-invalid and rejects the whole review at finalize |
-| `category` | `script-defect` · `doc-contradiction` · `naming-inconsistency` · `skill-inaccuracy` · `skill-gap` · `process-friction` · `data-access` · `idea` |
+| `category` | `script-defect` · `doc-contradiction` · `naming-inconsistency` · `skill-inaccuracy` · `skill-gap` · `process-friction` · `data-access` · `idea` · `positive` |
 | `layer` | `infra` · `skill` · `contract` · `memory` · `workflow` |
 | `location` | **mandatory** — typed object: `{ file, line?, skill?, section? }`. `location.skill`, when set, is a skill-path slug matching `team.*` / `exec.*` / `workflow.*` / `util.*` (e.g. `team.sage-cto`), **not** a bare agent name |
 | `fingerprint` | auto — normalized `(location, category)` hash, computed at emission time |
 | `observation` | **mandatory** — what the agent witnessed (output, error, missing field) |
 | `interpretation` | why it caused friction (root cause) |
-| `suggested_fix` | **mandatory** — one concrete change, ≤2 sentences |
+| `suggested_fix` | optional — one concrete change, ≤2 sentences. Record it when you have one; **never invent one to fill the field**. Mandatory until 2026-09-08, when it was demoted: required on every item it forced solution-space speculation, and `evidence` already carries the mandate |
 | `severity` | `low` · `medium` · `high` · `critical` |
 | `frequency` | `first-time` · `occasional` · `every-dispatch` |
 | `occurrence_count` | optional int — raw count when known |

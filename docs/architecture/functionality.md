@@ -54,7 +54,7 @@ Phases in execution order:
 | Feedback emission | `feedback_emit.py` scaffolds review; agent fills `items[]`; `--finalize` validates + flips `_draft: false`; emission gate (`emission-gate.sh`) blocks if missing |
 | Study | `study_phase.py`: 6-step wiki graduation (capture-suggest → promote-decision → bridge-rebuild → audit-stale → hot-sync → link-check); P0 exit blocks `close-session.sh` |
 | Infra | `runlog-summary.sh`: surfaces script exit codes from `run-log/`; row omitted if all clean |
-| Lifecycle Retrospective | 5 lenses (broke / unexpected / script-improvement / automation / context-reduction); findings filed as `/team.feedback` items; cap 5 per session |
+| Lifecycle Retrospective | 6 episodic prompts (job / stuck / instead / acted-on / removed-step / unexecuted), answered from the transcript; `nothing` is a valid answer to each; findings filed as `/team.feedback` items; cap 5 per session |
 | Reflexion | One sentence ≤280 chars; persisted to `session.md` frontmatter; read back for 3 sessions |
 | hot.md reconciliation | Resolve `[!contradiction]` markers (Quorum/Forge only, to avoid race conditions) |
 | `close-session.sh` | Files session record + decisions + mentions + optional handoff; single aggregate commit to `agent-memory/advisors/` + `ops/handoffs/` |
