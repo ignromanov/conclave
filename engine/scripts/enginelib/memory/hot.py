@@ -53,7 +53,8 @@ _RECENT_DECISIONS_CAP = 5
 _ARCHIVE_TEMPLATE = """\
 # Hot archive — lines evicted from hot.md
 
-> Append-only, written by `enginelib.memory.hot` when compaction caps a section.
+> Written by `enginelib.memory.hot` when compaction caps a section; entries are
+> added here and never taken away.
 > hot.md is the live buffer under a word budget; this is its tail. Nothing is
 > ever removed from here — the cap bounds what is *shown*, never what is *kept*.
 """
@@ -303,9 +304,9 @@ def append(section: str, advisor: str, line: str, no_compact: bool = False) -> s
                     # crash window the exact data loss this guards against.
                     archive = paths.hot_archive_path()
                     _archive_evicted(archive, evicted, advisor)
-                    # never-silent-delete has two halves — the data survives AND
-                    # someone is told. An archive nobody is told about is still a
-                    # silent event to the session that caused it, which is how a
+                    # Preserving the line is only half the job: the data survives
+                    # AND someone is told. An archive nobody is told about is still
+                    # a silent event to the session that caused it, which is how a
                     # keel-coo close evicted a sage-cto decision unnoticed (#139).
                     _log.warning(
                         "hot.md compaction evicted %d line(s) → %s: %s",

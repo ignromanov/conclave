@@ -1,8 +1,8 @@
 """tests/enginelib/test_hot_compaction_archive.py — compaction may cap, never discard (#139).
 
 `hot.md` is a live buffer with a word budget, so capping `Recent decisions` is
-correct. Discarding what it caps is not: VISION §6 binds never-silent-delete, and
-the capped list was implemented as plain truncation — `rd[-5:]` with the head
+correct. Discarding what it caps is not — see VISION §6 — and the capped list was
+implemented as plain truncation — `rd[-5:]` with the head
 dropped on the floor and no return channel, so `append()` had nothing to preserve
 and nothing to report.
 
@@ -123,7 +123,7 @@ def test_evicted_decisions_are_archived_before_they_are_dropped(instance):
 
 
 def test_eviction_is_announced_not_silent(instance, caplog):
-    """never-silent-delete has two halves: the data survives *and* someone is told.
+    """The rule has two halves: the data survives *and* someone is told.
 
     An archive nobody is told about is still a silent event to the session that
     caused it — which is exactly how a keel-coo close evicted a sage-cto decision
@@ -149,7 +149,7 @@ def test_no_eviction_writes_no_archive(instance):
 
 
 def test_archive_accumulates_across_compactions(instance):
-    """Append-only: a second eviction must not overwrite the first one's record."""
+    """Additive: a second eviction must not overwrite the first one's record."""
     (instance / "hot.md").write_text(_hot_body(_decisions(8)), encoding="utf-8")
 
     hot.append("recent-decisions", "kai", "decision-9 → decisions/d9.md")
