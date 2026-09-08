@@ -13,9 +13,9 @@ import subprocess
 from pathlib import Path
 
 import frontmatter
-from enginelib.spec import map_status
 
 from briefing.scans import ScanCtx
+from enginelib.spec import map_status
 
 _PLACEHOLDER = "_(no active work detected)_"
 

@@ -53,6 +53,8 @@ def _make_spec(
     ac_block: str = "",
     ac_heading: str = "## Acceptance criteria",
     ac_heading_only: bool = False,
+    owner: str = "",
+    owner_suggestion: str = "",
 ) -> Path:
     """Write a minimal spec.md fixture under specs_root/<spec_id>-slug/spec.md."""
     slug = f"{spec_id}-slug"
@@ -63,8 +65,15 @@ def _make_spec(
         f"id: {spec_id}",
         f"title: \"{title}\"",
         f"status: {status}",
-        f"advisor: {advisor}",
     ]
+    # An empty value omits the line: 23 of 28 real specs carry `owner` and no
+    # `advisor`, a shape no fixture could express while `advisor` was mandatory.
+    if advisor:
+        fm_lines.append(f"advisor: {advisor}")
+    if owner:
+        fm_lines.append(f"owner: {owner}")
+    if owner_suggestion:
+        fm_lines.append(f"owner_suggestion: {owner_suggestion}")
     if milestone:
         fm_lines.append(f"milestone: {milestone}")
     fm_lines.append("---")
@@ -178,6 +187,110 @@ class TestSpecProgress:
         result = spec_progress.build(live_ctx)
         assert isinstance(result, str)
         assert len(result) > 0
+
+
+class TestFrontmatterScalars:
+    def test_double_quoted_title_with_inner_quotes_survives(self, tmp_path: Path) -> None:
+        """`.strip('"')` eats one quote too many and leaves the escape behind (#226).
+
+        Spec 107's title is `"… truth for \\"who is an advisor\\""`. Stripping the
+        quote CHARACTER from both ends removes the closing pair and renders
+        `… truth for \\"who is an advisor\\` — invisible while the section never
+        rendered a row, visible the moment it did.
+        """
+        ctx = make_ctx(tmp_path)
+        specs_root = tmp_path / "ops" / "specs"
+        spec_dir = specs_root / "107-slug"
+        spec_dir.mkdir(parents=True)
+        (spec_dir / "spec.md").write_text(
+            '---\nid: 107\n'
+            'title: "Advisor identity registry — truth for \\"who is an advisor\\""\n'
+            'status: proposed\nowner: kai-cto\n---\n\n# Spec 107\n',
+            encoding="utf-8",
+        )
+        result = roadmap.build(ctx)
+        assert 'truth for "who is an advisor"' in result, result
+        assert "\\" not in result, result
+
+
+class TestOwnershipInclusion:
+    """#226 — a spec is the advisor's when ANY ownership field names them.
+
+    `owner` is the field REGISTRY.md and 23 of 28 specs actually carry; the scans
+    read only `advisor` and `owner_suggestion`, so sage-cto owned 102/107/111/117
+    and every one of these sections rendered its empty placeholder.
+    """
+
+    def test_spec_progress_includes_owner_only_spec(self, tmp_path: Path) -> None:
+        ctx = make_ctx(tmp_path)
+        specs_root = tmp_path / "ops" / "specs"
+        _make_spec(specs_root, "102", "Web dashboard", advisor="",
+                   owner="kai-cto", ac_block="- [x] one\n- [ ] two\n")
+        result = spec_progress.build(ctx)
+        assert "102" in result, result
+        assert "1/2" in result
+
+    def test_roadmap_includes_owner_only_spec(self, tmp_path: Path) -> None:
+        ctx = make_ctx(tmp_path)
+        specs_root = tmp_path / "ops" / "specs"
+        _make_spec(specs_root, "107", "Identity registry", advisor="", owner="kai-cto")
+        result = roadmap.build(ctx)
+        assert "107" in result, result
+
+    def test_drift_includes_owner_only_spec(self, tmp_path: Path) -> None:
+        ctx = make_ctx(tmp_path)
+        specs_root = tmp_path / "ops" / "specs"
+        _make_registry(specs_root, [("111", "Notice channel", "DONE")])
+        _make_spec(specs_root, "111", "Notice channel", advisor="",
+                   owner="kai-cto", status="proposed")
+        result = drift.build(ctx)
+        assert "DRIFT" in result, result
+
+    def test_row_names_the_field_that_matched(self, tmp_path: Path) -> None:
+        """A pointer travels with its referent: which field claimed this spec."""
+        ctx = make_ctx(tmp_path)
+        specs_root = tmp_path / "ops" / "specs"
+        _make_spec(specs_root, "102", "Web dashboard", advisor="",
+                   owner="kai-cto", ac_block="- [x] one\n")
+        result = spec_progress.build(ctx)
+        assert "owner:" in result, result
+
+    def test_retired_engine_id_resolves_and_is_shown_as_inferred(
+        self, tmp_path: Path
+    ) -> None:
+        """`forge` is the engine's own pre-106 id for forge-chro (#226)."""
+        ctx = make_ctx(tmp_path, advisor="forge-chro")
+        specs_root = tmp_path / "ops" / "specs"
+        _make_spec(specs_root, "104", "Constitution", advisor="",
+                   owner="forge", ac_block="- [x] one\n")
+        result = spec_progress.build(ctx)
+        assert "104" in result, result
+        assert "forge→forge-chro" in result
+
+    def test_disagreeing_ownership_fields_are_both_rendered(
+        self, tmp_path: Path
+    ) -> None:
+        """Twelve specs carry both fields and six disagree — collapsing them lies.
+
+        093 is `owner: forge` and `advisor: quorum`. forge-chro must see the row AND
+        see that a second field names someone else, rather than a confident single
+        attribution.
+        """
+        ctx = make_ctx(tmp_path, advisor="forge-chro")
+        specs_root = tmp_path / "ops" / "specs"
+        _make_spec(specs_root, "093", "Self-healing loop", advisor="quorum",
+                   owner="forge", ac_block="- [x] one\n")
+        result = spec_progress.build(ctx)
+        assert "quorum" in result, result
+
+    def test_spec_naming_nobody_relevant_stays_out(self, tmp_path: Path) -> None:
+        """Widening the filter must not turn it into no filter at all."""
+        ctx = make_ctx(tmp_path)
+        specs_root = tmp_path / "ops" / "specs"
+        _make_spec(specs_root, "999", "Someone else", advisor="",
+                   owner="nexus-ceo", ac_block="- [x] one\n")
+        result = spec_progress.build(ctx)
+        assert result == "_(no advisor-owned spec acceptance criteria found)_"
 
 
 # ---------------------------------------------------------------------------

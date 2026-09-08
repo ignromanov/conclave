@@ -6,8 +6,8 @@ boxes are flagged with ★.
 
 Scan logic:
   1. Walk ops/specs/###-*/spec.md.
-  2. For each spec whose frontmatter ``advisor`` or ``owner_suggestion``
-     matches ctx.advisor, collect its acceptance block (any of the headings
+  2. For each spec whose frontmatter ``owner``, ``advisor`` or
+     ``owner_suggestion`` names ctx.advisor, collect its acceptance block (any of the headings
      ``## Acceptance``, ``## N. Acceptance``, ``## Acceptance criteria``, …).
   3. Count ``- [x]`` (done) vs ``- [ ]`` (open) checkboxes.
   4. Emit one line per spec: "### N/M — <id>: <title>" with done-count.
@@ -19,12 +19,10 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from briefing.scans import ScanCtx
+from briefing.scans import ScanCtx, _specfm
 
 _PLACEHOLDER = "_(no advisor-owned spec acceptance criteria found)_"
 
-# Matches YAML frontmatter block at file top.
-_FM_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 # Matches any acceptance-block heading. The corpus writes ten spellings of it —
 # "## Acceptance", "## 4. Acceptance", "## 8. Acceptance criteria",
 # "## Acceptance (draft — refined in plan)", "## 5. Acceptance and kill criteria" —
@@ -63,9 +61,10 @@ def _process_spec(spec_path: Path, advisor: str) -> str | None:
     except OSError:
         return None
 
-    fm = _parse_frontmatter(text)
-    if not _is_advisor_spec(fm, advisor):
+    fm = _specfm.parse_frontmatter(text)
+    if _specfm.owns(fm, advisor) is None:
         return None
+    prov = _specfm.provenance(fm)
 
     spec_id = fm.get("id") or fm.get("spec_id") or spec_path.parent.name
     title = fm.get("title") or str(spec_id)
@@ -78,31 +77,13 @@ def _process_spec(spec_path: Path, advisor: str) -> str | None:
         # Zero and absent are different states. Twelve specs declare acceptance and
         # list no checkbox under it; dropping them renders identically to owning no
         # specs at all, which is the conclusion the advisor then draws (#227).
-        return f"- unverifiable — **{spec_id}**: {title} (acceptance block lists no checkboxes)"
+        return (
+            f"- unverifiable — **{spec_id}**: {title}{prov}"
+            " — acceptance block lists no checkboxes"
+        )
 
     flag = " ★" if advisor_open > 0 else ""
-    return f"- {done}/{total} ✓ — **{spec_id}**: {title}{flag}"
-
-
-def _parse_frontmatter(text: str) -> dict[str, str]:
-    """Return a flat dict of frontmatter key→value (string only, best-effort)."""
-    m = _FM_RE.match(text)
-    if not m:
-        return {}
-    out: dict[str, str] = {}
-    for line in m.group(1).splitlines():
-        if ":" in line and not line.startswith(" ") and not line.startswith("-"):
-            key, _, val = line.partition(":")
-            out[key.strip()] = val.strip().strip('"')
-    return out
-
-
-def _is_advisor_spec(fm: dict[str, str], advisor: str) -> bool:
-    """True if the spec's frontmatter names this advisor."""
-    return (
-        fm.get("advisor") == advisor
-        or fm.get("owner_suggestion") == advisor
-    )
+    return f"- {done}/{total} ✓ — **{spec_id}**: {title}{prov}{flag}"
 
 
 def _count_checkboxes(text: str, advisor: str) -> tuple[int, int, int, bool]:

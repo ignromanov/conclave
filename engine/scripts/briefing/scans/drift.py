@@ -7,7 +7,8 @@ specs where the two disagree.
 Scan logic:
   1. Parse ops/specs/REGISTRY.md — extract (spec_id → registry_status) from
      table rows ("| ### | ... | STATUS | ...").
-  2. Walk ops/specs/###-*/spec.md filtered by ctx.advisor.
+  2. Walk ops/specs/###-*/spec.md, keeping those whose owner / advisor /
+     owner_suggestion names ctx.advisor.
   3. Compare frontmatter ``status`` with REGISTRY.md STATUS cell.
   4. Emit one line per drift found.  If everything agrees → placeholder.
 
@@ -18,11 +19,10 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from briefing.scans import ScanCtx
+from briefing.scans import ScanCtx, _specfm
+from enginelib.spec import map_status
 
 _PLACEHOLDER = "_(no spec/registry drift detected)_"
-
-_FM_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 # Matches table data rows whose first cell is a numeric spec id.
 # Column layout: | # | Feature | Status | Started | Milestone | Spec |
@@ -91,23 +91,25 @@ def _check_drift(
     except OSError:
         return None
 
-    fm = _parse_frontmatter(text)
-    if not (fm.get("advisor") == advisor or fm.get("owner_suggestion") == advisor):
+    fm = _specfm.parse_frontmatter(text)
+    if _specfm.owns(fm, advisor) is None:
         return None
 
     spec_id = str(fm.get("id") or fm.get("spec_id") or "")
     if not spec_id:
         return None
 
-    fm_status = (fm.get("status") or "").lower().replace("_", "-")
+    fm_status = map_status(str(fm.get("status") or ""))
 
-    # Normalize registry status: strip trailing parens/notes, lowercase.
-    reg_raw = registry_statuses.get(spec_id.lstrip("0") or "0", "")
-    reg_status = reg_raw.split("(")[0].strip().lower().replace("_", "-")
-
-    if not reg_status:
-        # Not in registry — that's a different problem, skip silently.
+    # Normalize registry status: strip trailing parens/notes, then canonicalize.
+    reg_raw = registry_statuses.get(spec_id.lstrip("0") or "0", "").split("(")[0].strip()
+    if not reg_raw:
+        # Not in registry — that's a different problem, skip silently. The emptiness
+        # test is on the RAW cell: map_status("") is the token "MISSING", so asking it
+        # after normalisation turns every absent row into a drift against a spec that
+        # simply is not listed.
         return None
+    reg_status = map_status(reg_raw)
 
     if fm_status == reg_status:
         return None
@@ -117,16 +119,3 @@ def _check_drift(
         f"- **DRIFT** spec {spec_id}: frontmatter=`{fm_status}` "
         f"registry=`{reg_status}` — {title}"
     )
-
-
-def _parse_frontmatter(text: str) -> dict[str, str]:
-    """Return flat dict of frontmatter key→value (best-effort, string only)."""
-    m = _FM_RE.match(text)
-    if not m:
-        return {}
-    out: dict[str, str] = {}
-    for line in m.group(1).splitlines():
-        if ":" in line and not line.startswith(" ") and not line.startswith("-"):
-            key, _, val = line.partition(":")
-            out[key.strip()] = val.strip().strip('"')
-    return out

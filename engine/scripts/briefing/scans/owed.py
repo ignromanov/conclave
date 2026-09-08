@@ -15,9 +15,8 @@ from pathlib import Path
 
 import frontmatter
 
-from enginelib.spec import map_status
-
 from briefing.scans import ScanCtx
+from enginelib.spec import map_status
 
 _PLACEHOLDER = "_(no pending actions owed by you found in active specs)_"
 
