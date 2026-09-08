@@ -135,9 +135,14 @@ def create(opts: AdvisorOpts) -> dict:
     # 8.5b. Seed the briefing stub (#75). hire.md's Post-hire step asserts as
     # established fact that "the scaffold left the briefing holding the
     # AWAITING_FIRST_LAUNCH sentinel" — but briefing-awaiting.md existed in the
-    # template set with nothing copying it, so the sentinel was never on disk and
-    # first-launch detection could not fire. ${CLAUDE_PLUGIN_ROOT} stays literal:
-    # it is a path the reader resolves at runtime, not a build-time placeholder.
+    # template set with nothing copying it, so the sentinel was never on disk.
+    #
+    # The stub is a LABEL for a human opening the file, not the first-launch detector:
+    # #169 established that nothing ever read it and that nothing could, since
+    # session_init rebuilds the briefing on every start. Detection lives in
+    # lifecycle/session_init.py::_detect_first_launch and reads the session ledger.
+    # ${CLAUDE_PLUGIN_ROOT} stays literal: it is a path the reader resolves at
+    # runtime, not a build-time placeholder.
     briefing_stub = (
         paths.templates_dir() / "briefing-awaiting.md"
     ).read_text(encoding="utf-8").replace("${ID}", id_)
