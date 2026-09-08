@@ -15,6 +15,8 @@ from pathlib import Path
 
 import frontmatter
 
+from enginelib.spec import map_status
+
 from briefing.scans import ScanCtx
 
 _PLACEHOLDER = "_(no pending actions owed by you found in active specs)_"
@@ -73,7 +75,10 @@ def _scan_active_specs(
         except Exception:
             continue
 
-        if post.metadata.get("status") != "in_progress":
+        # Never a literal: `in-progress` is what every spec.md writes and
+        # `in_progress` is what this line compared against, so the section
+        # excluded every spec for every advisor since it was built (#228).
+        if map_status(str(post.metadata.get("status", ""))) != "in-progress":
             continue
 
         spec_id = post.metadata.get("id", spec_dir.name)

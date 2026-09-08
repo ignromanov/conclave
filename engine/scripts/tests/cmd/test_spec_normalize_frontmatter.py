@@ -57,6 +57,12 @@ def _specs_dir(tmp_path: Path) -> Path:
     ("",            "MISSING"),
     ("weird-value", "UNKNOWN:weird-value"),
     ("Weird Value", "UNKNOWN:Weird Value"),    # UNKNOWN preserves original raw
+    # Underscore is the same separator as space: both spellings occur across the
+    # corpus this engine reads, and a consumer comparing the raw token silently
+    # excluded every spec it was meant to include (#228).
+    ("in_progress", "in-progress"),
+    ("IN_PROGRESS", "in-progress"),
+    ("in_review",   "in-review"),
 ])
 def test_map_status(raw, expected):
     assert map_status(raw) == expected

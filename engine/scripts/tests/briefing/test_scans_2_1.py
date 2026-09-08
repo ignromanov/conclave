@@ -96,6 +96,21 @@ class TestCurrentWork:
         assert "084-test" in result
         assert "My Feature" in result
 
+    def test_hyphenated_in_progress_spec_is_active(self, tmp_path: Path) -> None:
+        """The same literal comparison as owed.py, in a second consumer (#228).
+
+        `_find_active_specs` compared `status != "in_progress"`, and no spec.md on
+        disk has ever carried that token — which is why the section rendered
+        "no active work detected" while five specs were in progress. Every fixture
+        above passes `in_progress`, so the suite agreed with the defect.
+        """
+        ctx = make_ctx(tmp_path)
+        specs_root = tmp_path / "ops" / "specs"
+        _make_spec(specs_root, "084-test", status="in-progress", title="My Feature")
+        result = current_work.build(ctx)
+        assert "084-test" in result
+        assert "My Feature" in result
+
     def test_plan_checkbox_progress(self, tmp_path: Path) -> None:
         ctx = make_ctx(tmp_path)
         specs_root = tmp_path / "ops" / "specs"
@@ -233,6 +248,35 @@ class TestOwed:
         )
         result = owed.build(ctx)
         assert "_(no pending actions owed" in result
+
+    def test_hyphenated_in_progress_spec_is_active(self, tmp_path: Path) -> None:
+        """`in-progress` is the literal every spec.md on disk writes (#228).
+
+        The filter compared against `in_progress`, which no spec has ever carried, so the
+        section excluded every spec unconditionally for every advisor since it was built.
+        The fixtures above all pass `in_progress` and therefore agreed with the defect.
+        """
+        ctx = make_ctx(tmp_path, advisor="kai-cto")
+        specs_root = tmp_path / "ops" / "specs"
+        spec_md = _make_spec(specs_root, "084-test", status="in-progress", advisor="kai-cto")
+        _write(
+            spec_md.parent / "plan.md",
+            "# Plan\n- [ ] kai-cto reviews the design\n",
+        )
+        result = owed.build(ctx)
+        assert "kai-cto reviews the design" in result
+
+    def test_status_matching_ignores_case(self, tmp_path: Path) -> None:
+        """Status is normalised the way drift.py normalises it: case and `_`/`-` folded."""
+        ctx = make_ctx(tmp_path, advisor="kai-cto")
+        specs_root = tmp_path / "ops" / "specs"
+        spec_md = _make_spec(specs_root, "084-test", status="In-Progress", advisor="kai-cto")
+        _write(
+            spec_md.parent / "plan.md",
+            "# Plan\n- [ ] kai-cto reviews the design\n",
+        )
+        result = owed.build(ctx)
+        assert "kai-cto reviews the design" in result
 
     @_NEEDS_INSTANCE
     def test_real_data_produces_string(self, live_ctx) -> None:
