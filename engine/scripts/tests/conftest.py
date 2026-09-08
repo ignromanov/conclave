@@ -25,23 +25,23 @@ _REAL_ENGINE_ROOT = Path(__file__).resolve().parents[2]
 # Canonical advisor names auto-seeded by fixture_setup in fixtures.bash.
 _CANONICAL_ADVISORS = ("dev", "kai-cto", "nexus-ceo", "quorum", "shade-ciso", "spark-cmo")
 
-# Hermeticity is UNCONDITIONAL: clear ambient instance-root env vars at conftest IMPORT
-# (before collection), and again per-test via _hermetic_instance_env below, so no test
-# reads the real .conclave tree the SessionStart hook exports. CONCLAVE_ENGINE_ROOT (the
-# CODE root) is intentionally left set. (feedback f69060/i1, 240857/i2)
+# Hermeticity — the import-time scrub and the per-test `_hermetic_instance_env` fixture —
+# lives in the REPO-ROOT conftest.py, not here (GH#239). It was here, and that made it
+# reachable only by whatever invocation happened to import this file: the sibling testpath
+# `engine/scripts/feedback/tests` has no conftest of its own, so an explicit-path run into
+# it collected neither the pop nor the fixture and read the operator's live DATA root.
 #
-# It used to be conditional on CONCLAVE_TEST_LIVE=1, and that same flag doubled as the
-# "run the live-instance tests" signal — one switch for two orthogonal concerns. Entering
-# the live lane therefore meant disarming hermeticity for the WHOLE suite, which reddens
-# four tests that legitimately expect a clean env (test_backfill_cli, test_paths::
-# test_repo_root_env_override, test_session_init::TestRepoRoot::{test_env_override,
-# test_missing_raises}). That collateral is why the flag was never wired into CI, and why
-# 31 gated tests went a month without executing anywhere (GH#105).
+# `_live_instance_root` below stays here and still depends on that fixture by name; pytest
+# resolves it from the parent conftest. It is the half of GH#105 that is genuinely specific
+# to this directory's markers.
 #
-# The live lane now has its own variable and its own marker — see _live_instance_root.
-_INSTANCE_ROOT_VARS = ("CONCLAVE_AI_ROOT", "VOIDPAY_AI_ROOT", "CLAUDE_PROJECT_DIR")
-for _var in _INSTANCE_ROOT_VARS:
-    os.environ.pop(_var, None)
+# Historical note kept because it explains the shape: the scrub used to be conditional on
+# CONCLAVE_TEST_LIVE=1, and that same flag doubled as the "run the live-instance tests"
+# signal — one switch for two orthogonal concerns. Entering the live lane therefore disarmed
+# hermeticity for the WHOLE suite, reddening four tests that legitimately expect a clean env
+# (test_backfill_cli, test_paths::test_repo_root_env_override, test_session_init::
+# TestRepoRoot::{test_env_override, test_missing_raises}). That collateral is why the flag
+# was never wired into CI, and why 31 gated tests went a month without executing anywhere.
 
 # Opt-in live lane: a path to an instance tree the `live_instance`-marked tests read.
 # Deliberately NOT one of the vars above — an ambient CONCLAVE_AI_ROOT export must never
@@ -84,26 +84,6 @@ def _contain_run_log(tmp_path, monkeypatch):
     the same relative path bare-tmp_path read-tests expect, so those stay green;
     tests that leave CONCLAVE_AI_ROOT unset (the polluters) are now contained."""
     monkeypatch.setenv("CONCLAVE_RUN_LOG_DIR", str(tmp_path / "agent-memory" / "run-log"))
-
-
-@pytest.fixture(autouse=True)
-def _hermetic_instance_env(monkeypatch):
-    """Clear ambient instance-root env vars so the suite is hermetic by default.
-
-    The SessionStart hook exports CONCLAVE_AI_ROOT (and consumers may export
-    CLAUDE_PROJECT_DIR / VOIDPAY_AI_ROOT). Left set, they steer repo_root() and
-    every registry resolver at the LIVE instance, so path/registry tests read the
-    real .conclave tree instead of their own fixture — inflating the baseline and
-    masking regressions (feedback f69060/i1, 240857/i2). Tests that need an
-    instance root set it explicitly (e.g. the `ai_root` fixture via monkeypatch,
-    which runs after this autouse clear). CONCLAVE_ENGINE_ROOT (CODE root) is left
-    untouched — it is not an instance root.
-
-    Unconditional by design: tests that want a live instance get one from
-    _live_instance_root below, which sets a root back AFTER this clear rather than
-    suppressing the clear for everyone."""
-    for var in _INSTANCE_ROOT_VARS:
-        monkeypatch.delenv(var, raising=False)
 
 
 @pytest.fixture(autouse=True)
