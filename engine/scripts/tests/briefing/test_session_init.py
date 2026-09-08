@@ -326,6 +326,94 @@ class TestMainArgValidation:
         assert len(bullets) == 1, f"re-init stacked a duplicate: {bullets}"
 
 
+class TestUnclosedSessionIsSurfaced:
+    """#229 / spec 117 R9+A4: a start may not erase an unclosed session record.
+
+    session_init used to open with an unconditional
+    `hot.remove("now", advisor, hot.SESSION_OPEN)`, so every start silently deleted
+    whatever the previous one left. Of the 9 `session open` entries this instance ever
+    committed to Now, 4 disappeared with no close — the drain is where they went.
+    """
+
+    def _bullets(self, hot_md: Path, header: str) -> list[str]:
+        out, inside = [], False
+        for line in hot_md.read_text(encoding="utf-8").split("\n"):
+            if line == header:
+                inside = True
+                continue
+            if inside and line.startswith("## "):
+                break
+            if inside and line.startswith("- "):
+                out.append(line)
+        return out
+
+    def _threads(self, hot_md: Path) -> list[str]:
+        return self._bullets(hot_md, "## Open threads")
+
+    def _run(self, root: Path, monkeypatch, token: str) -> None:
+        monkeypatch.setenv("CONCLAVE_AI_ROOT", str(root))
+        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root))
+        monkeypatch.setenv("LOCK_DIR", str(root / "locks"))
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", token)
+        monkeypatch.setattr(session_init, "_step1_load_briefing", lambda a, r: (0, []))
+        monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: ([], []))
+        monkeypatch.setattr(session_init, "_step1c_reflexion", lambda a, r: [])
+        monkeypatch.setattr(session_init, "_scan_overlays", lambda a, r: [])
+        monkeypatch.setattr(session_init, "_step_cadence_guard", lambda: [])
+        session_init.main(["--advisor", "privacy-trust"])
+
+    def _root(self, tmp_path: Path) -> Path:
+        root = _make_root(tmp_path)
+        _write(root / ".claude" / "agents" / "privacy-trust.md", "# advisor\n")
+        return root
+
+    def test_a_session_that_never_closed_survives_the_next_start(self, tmp_path, monkeypatch):
+        """The A4 instrument. Restoring the unconditional drain reddens this."""
+        root = self._root(tmp_path)
+        self._run(root, monkeypatch, "aaaaaaaa-1111")
+        self._run(root, monkeypatch, "bbbbbbbb-2222")
+
+        hot_md = root / "agent-memory" / "hot.md"
+        threads = self._threads(hot_md)
+        assert len(threads) == 1, f"the unclosed session was erased, not superseded: {threads}"
+        assert "never closed" in threads[0]
+        assert "aaaaaaaa" in threads[0], threads[0]
+
+    def test_the_new_session_is_the_only_one_in_now(self, tmp_path, monkeypatch):
+        """Superseding is a move, not a copy: Now stays a set of live sessions."""
+        root = self._root(tmp_path)
+        self._run(root, monkeypatch, "aaaaaaaa-1111")
+        self._run(root, monkeypatch, "bbbbbbbb-2222")
+
+        bullets = self._bullets(root / "agent-memory" / "hot.md", "## Now")
+        assert len(bullets) == 1, bullets
+        assert "bbbbbbbb" in bullets[0], bullets[0]
+
+    def test_the_unclosed_session_is_printed(self, tmp_path, monkeypatch, capsys):
+        """A4: the start *prints* it. Evidence kept in a file nobody reads at start
+        is evidence lost more slowly, not evidence kept."""
+        root = self._root(tmp_path)
+        self._run(root, monkeypatch, "aaaaaaaa-1111")
+        capsys.readouterr()
+        self._run(root, monkeypatch, "bbbbbbbb-2222")
+
+        captured = capsys.readouterr()
+        assert "never closed" in captured.out + captured.err
+
+    def test_the_same_session_reopening_says_nothing(self, tmp_path, monkeypatch, capsys):
+        """session-init runs twice per Claude session — the SessionStart hook for every
+        advisor, then the bound advisor's skill. A false 'never closed' on every start
+        is worse than none, because the operator learns to ignore the true one."""
+        root = self._root(tmp_path)
+        self._run(root, monkeypatch, "aaaaaaaa-1111")
+        capsys.readouterr()
+        self._run(root, monkeypatch, "aaaaaaaa-1111")
+
+        captured = capsys.readouterr()
+        assert "never closed" not in captured.out + captured.err
+        assert self._threads(root / "agent-memory" / "hot.md") == ["- (none)"]
+
+
 # ---------------------------------------------------------------------------
 # Resolved-findings surfacing (G2) — must track the #49b bullet format
 # ---------------------------------------------------------------------------

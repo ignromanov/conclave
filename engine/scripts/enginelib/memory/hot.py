@@ -39,6 +39,12 @@ _EMPTY_PLACEHOLDER = "- (none)"
 # will eventually be spelled two ways — the defect class that left Now empty (#149).
 SESSION_OPEN = "session open"
 
+# What an entry becomes when the next session finds it still open. It deliberately
+# shares no substring with SESSION_OPEN: close_session drains Now by that key, and a
+# superseded line that still matched would be destroyed by the very next close --
+# which is how the evidence was lost the first time (#229).
+SESSION_NEVER_CLOSED = "session never closed"
+
 _TEMPLATE = """\
 # Hot — live memory
 
@@ -64,6 +70,24 @@ _TEMPLATE = """\
 
 {today} by engine memory hot-init
 """
+
+
+def session_open_line(token: str) -> str:
+    """The `Now` entry content for an open session, fenced by its session token.
+
+    The token is what distinguishes "this session, registering again" from "a session
+    that never closed": session-init runs twice per Claude session -- once from the
+    SessionStart hook for every advisor, once from the bound advisor's skill -- so a
+    bare re-registration must be a no-op, not a report of an abandoned session
+    (spec 117 R7). Truncated to 8 characters on the git short-sha convention: the line
+    is read by humans in hot.md, and 8 hex characters do not collide within an
+    instance's history.
+
+    An empty token yields the bare key, which is the pre-token behaviour: with nothing
+    to fence on, two sessions are indistinguishable and none may be called stale.
+    """
+    token = (token or "").strip()[:8]
+    return f"{SESSION_OPEN} ({token})" if token else SESSION_OPEN
 
 
 def init(force: bool = False, hot_path: Path | None = None) -> str:
@@ -331,3 +355,125 @@ def remove(section: str, advisor: str, match: str) -> int:
         snapshot_write(hot, "\n".join(out) + "\n")
 
     return removed
+
+
+def supersede_stale_session(advisor: str, token: str) -> list[str]:
+    """Move this advisor's `Now` entries from *other* sessions into `Open threads`.
+
+    Spec 117 R9: a start may not erase an unclosed session record, only mark it
+    superseded. Before this, session_init opened with an unconditional
+    `remove("now", advisor, SESSION_OPEN)`, so every start deleted whatever the last
+    one left behind -- 4 of the 9 `session open` entries this instance ever committed
+    vanished with no close and no trace (44%).
+
+    `Open threads` is the destination because it is grow-only and already means
+    "unfinished". The moved line keeps the original timestamp, so the age of the
+    abandonment survives, and drops the SESSION_OPEN key, so the next close cannot
+    drain it (see SESSION_NEVER_CLOSED).
+
+    Args:
+        advisor: the entry's author -- another advisor's open session is never touched
+        token:   the *current* session's fencing token; entries carrying it are this
+                 session's own and stay put
+
+    Returns:
+        The stale entries, verbatim, in file order -- the caller surfaces them.
+        Empty when there is nothing to supersede, or when `token` is empty (with no
+        token the two cases are indistinguishable, and a report that cannot be told
+        apart from a false one is worse than no report).
+
+    Raises:
+        ValueError:        empty advisor, or a section header missing
+        FileNotFoundError: hot.md does not exist
+    """
+    if not advisor:
+        raise ValueError("advisor is required")
+    token = (token or "").strip()[:8]
+    if not token:
+        return []
+
+    hot = paths.hot_md_path()
+    if not hot.is_file():
+        raise FileNotFoundError(f"hot.md not found at {hot} -- run engine memory hot-init")
+
+    author_marker = f"] {advisor}: "
+    own_fence = f"({token})"
+    now_header = _SECTION_MAP["now"]
+    threads_header = _SECTION_MAP["open-threads"]
+    stamp = datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M%z")
+    lock_file = Path(os.environ.get("LOCK_DIR", "/tmp/conclave-locks")) / "hot-md.lock"
+
+    with with_lock(lock_file):
+        raw_lines = hot.read_text(encoding="utf-8").rstrip("\n").split("\n")
+
+        stale: list[str] = []
+        in_now = False
+        for raw_line in raw_lines:
+            if raw_line == now_header:
+                in_now = True
+                continue
+            if in_now and raw_line.startswith("## "):
+                in_now = False
+                continue
+            if (
+                in_now
+                and raw_line.startswith("- ")
+                and author_marker in raw_line
+                and SESSION_OPEN in raw_line
+                and own_fence not in raw_line
+            ):
+                stale.append(raw_line)
+
+        if not stale:
+            return []
+
+        moved: list[str] = []
+        for raw_line in stale:
+            # author_marker is present by construction, so partition always splits.
+            head, _, content = raw_line.partition(author_marker)
+            note = content.replace(SESSION_OPEN, SESSION_NEVER_CLOSED, 1)
+            moved.append(f"{head}{author_marker}{note} -- superseded at {stamp}")
+
+        out: list[str] = []
+        in_now = False
+        in_threads = False
+        now_kept = 0
+        now_found = False
+        threads_found = False
+
+        for raw_line in raw_lines:
+            # Close the open section before opening the next one -- the two sections
+            # are adjacent in the template, so testing for the new header first would
+            # leave Now unterminated and spill its placeholder into Open threads.
+            if raw_line.startswith("## "):
+                if in_now and now_kept == 0:
+                    out.append(_EMPTY_PLACEHOLDER)
+                if in_threads:
+                    out.extend(moved)
+                in_now = in_threads = False
+                out.append(raw_line)
+                if raw_line == now_header:
+                    in_now, now_found = True, True
+                elif raw_line == threads_header:
+                    in_threads, threads_found = True, True
+                continue
+            if in_now and raw_line.startswith("- "):
+                if raw_line in stale or _PLACEHOLDER_RE.match(raw_line):
+                    continue
+                now_kept += 1
+            if in_threads and _PLACEHOLDER_RE.match(raw_line):
+                continue
+            out.append(raw_line)
+
+        if in_now and now_kept == 0:
+            out.append(_EMPTY_PLACEHOLDER)
+        if in_threads:
+            out.extend(moved)
+
+        for found, header in ((now_found, now_header), (threads_found, threads_header)):
+            if not found:
+                raise ValueError(f"section header not found: {header}")
+
+        snapshot_write(hot, "\n".join(out) + "\n")
+
+    return stale

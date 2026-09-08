@@ -700,11 +700,24 @@ def main(argv: list[str] | None = None) -> int:
     # Register this session in hot.md's Now — the section's only producer (#149).
     # Remove-then-append rather than a bare append: re-running session-init for an
     # advisor that is already open must refresh its line, not stack a second one.
+    #
+    # The remove is fenced by this session's token, and an entry carrying someone
+    # else's is superseded into Open threads instead of dropped (#229, spec 117 R9):
+    # an unclosed session is the only evidence that a session was abandoned, and the
+    # unconditional drain that used to stand here is where 4 of this instance's 9
+    # recorded sessions went. The fence matters because session-init runs twice per
+    # Claude session — the SessionStart hook for every advisor, then the bound
+    # advisor's own skill — so an unfenced check would cry abandonment every start.
+    #
     # Best-effort, exactly like the seed above: Now is a convenience, never a gate.
     try:
         from enginelib.memory import hot
-        hot.remove("now", advisor, hot.SESSION_OPEN)
-        hot.append("now", advisor, hot.SESSION_OPEN)
+        token = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+        for stale in hot.supersede_stale_session(advisor, token):
+            print(f"  hot: a previous session never closed — {stale}", file=sys.stderr)
+        entry = hot.session_open_line(token)
+        hot.remove("now", advisor, entry)
+        hot.append("now", advisor, entry)
     except (OSError, ValueError) as exc:
         print(f"  hot: Now registration skipped ({exc})", file=sys.stderr)
 
