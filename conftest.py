@@ -40,10 +40,13 @@ Refusing would also fire on the *normal* case — the hook sets the variable in 
 session by design — and a gate that fires normally is a gate that gets worked around.
 What is abnormal is the two roots disagreeing, and that is what gets reported below.
 
-Scoped deliberately to `CONCLAVE_ENGINE_ROOT`. The instance-root scrub lives in
-`engine/scripts/tests/conftest.py` and is left where it is; that it does not cover the
-`feedback/tests` testpath under an explicit-path invocation is a real, separate hole,
-filed rather than folded in here.
+## The DATA roots followed (GH#239)
+
+Originally scoped to `CONCLAVE_ENGINE_ROOT` alone, with the instance-root scrub left in
+`engine/scripts/tests/conftest.py`. That it did not cover the `feedback/tests` testpath
+under an explicit-path invocation was filed rather than folded in, and is now fixed here:
+the scrub and the per-test `_hermetic_instance_env` fixture moved up to this file. See
+their own docstrings below for why the sibling conftest could not hold them.
 """
 from __future__ import annotations
 
@@ -51,7 +54,62 @@ import os
 import warnings
 from pathlib import Path
 
+import pytest
+
 ENGINE_ROOT_VAR = "CONCLAVE_ENGINE_ROOT"
+
+#: Every variable a DATA-root resolver follows. The retired `VOIDPAY_AI_ROOT` alias stays in
+#: the list because clearing it is not the same as honouring it — a tree that still exports
+#: it must not steer a test run. `enginelib.live_lane` carries the same list for the child
+#: environments it builds.
+INSTANCE_ROOT_VARS = ("CONCLAVE_AI_ROOT", "VOIDPAY_AI_ROOT", "CLAUDE_PROJECT_DIR")
+
+# Hermeticity is UNCONDITIONAL and belongs HERE, not in a testpath's own conftest (GH#239).
+#
+# This pop and the `_hermetic_instance_env` fixture below lived in
+# `engine/scripts/tests/conftest.py` until they were measured: `engine/scripts/feedback/tests`
+# is a declared testpath with no conftest of its own, so it was protected only when that
+# *sibling* directory's conftest happened to be imported first. Which is decided by the
+# invocation, and the narrower one — a single failing file by explicit path, the invocation a
+# person reaches for while iterating — collected neither.
+#
+#   pytest engine/scripts/feedback/tests/<file>   →  CONCLAVE_AI_ROOT = the operator's tree
+#   pytest                                        →  CONCLAVE_AI_ROOT = None
+#
+# The per-test fixture had the same directory scope, so those tests had no per-test clear at
+# all. The cost of the class is on record: a non-hermetic run against a live instance rewrote
+# the frontmatter of 34 DATA files — 16 decisions, 18 sessions — inside a test that names
+# itself a safety gate (GH#131, finding 4).
+#
+# It used to be conditional on CONCLAVE_TEST_LIVE=1, and that same flag doubled as the "run
+# the live-instance tests" signal — one switch for two orthogonal concerns, so entering the
+# live lane disarmed hermeticity for the whole suite. The live lane now has its own variable
+# and its own marker (`_live_instance_root`, still in the sibling conftest, which sets a root
+# back AFTER this clear rather than suppressing it for everyone).
+#
+# CONCLAVE_ENGINE_ROOT is deliberately NOT in the list: it is the CODE root, handled above by
+# derivation rather than by clearing, because the suite needs one and can compute it.
+for _var in INSTANCE_ROOT_VARS:
+    os.environ.pop(_var, None)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_instance_env(monkeypatch):
+    """Clear ambient instance-root env vars per test, so the suite is hermetic by default.
+
+    The import-time pop above covers the process; this covers a test that sets one and a
+    fixture that restores it. Both are needed — the pop cannot undo a `monkeypatch.setenv`
+    from a neighbouring test, and a fixture alone runs too late for collection-time work.
+
+    The SessionStart hook exports CONCLAVE_AI_ROOT, and consumers may export
+    CLAUDE_PROJECT_DIR or the retired VOIDPAY_AI_ROOT. Left set, they steer `repo_root()` and
+    every registry resolver at the LIVE instance, so path and registry tests read the real
+    `.conclave` tree instead of their own fixture — inflating the baseline and masking
+    regressions. Tests that need an instance root set one explicitly (the `ai_root` fixture
+    monkeypatches it, and runs after this autouse clear).
+    """
+    for var in INSTANCE_ROOT_VARS:
+        monkeypatch.delenv(var, raising=False)
 
 # The CODE root of the tree this file lives in. In a linked worktree this is the
 # worktree, which is the whole point: it is the same tree pytest.ini's rootdir-relative
