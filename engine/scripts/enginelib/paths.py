@@ -276,6 +276,9 @@ def sessions_dir() -> Path: return advisors_memory_dir() / "sessions"
 def decisions_dir() -> Path: return advisors_memory_dir() / "decisions"
 def mentions_dir() -> Path: return advisors_memory_dir() / "mentions"
 def hot_md_path() -> Path: return agent_memory_dir() / "hot.md"
+# The tail of hot.md: lines compaction caps out of the live buffer are appended here
+# rather than dropped, so the cap bounds what is shown and never what is kept (#139).
+def hot_archive_path() -> Path: return agent_memory_dir() / "hot-archive.md"
 def executor_memory_dir(eid: str) -> Path: return executors_memory_dir() / eid
 def handoffs_dir() -> Path: return repo_root() / "ops" / "handoffs"
 def gh_cache_dir() -> Path: return agent_memory_dir() / "gh-cache"

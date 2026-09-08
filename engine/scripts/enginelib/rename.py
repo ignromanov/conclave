@@ -337,7 +337,12 @@ def _classify(path: Path, data_root: Path, claude_dirs: list[Path]) -> str:
     # id. Found by the `unclassified` bucket on a real instance, not by design.
     if parts[:2] in (("ops", "feedback"), ("ops", "handoffs"), ("ops", "decisions")):
         return HISTORY
-    if rel.as_posix() == "agent-memory/hot.md" or rel.name in (
+    # hot-archive.md holds hot.md's own evicted lines (#139), so it takes hot.md's
+    # class and not HISTORY: HISTORY rewrites frontmatter _ID_FIELDS, the archive
+    # has no frontmatter, and the ids it carries live in `] <advisor>: ` markers
+    # that only the CONFIG token rewrite reaches. Left unclassified it would be
+    # reported and skipped on every rename, keeping a retired id forever.
+    if rel.as_posix() in ("agent-memory/hot.md", "agent-memory/hot-archive.md") or rel.name in (
         "role-manifest.yaml", "roster.yaml",
     ):
         return CONFIG

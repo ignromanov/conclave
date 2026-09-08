@@ -45,6 +45,19 @@ SESSION_OPEN = "session open"
 # which is how the evidence was lost the first time (#229).
 SESSION_NEVER_CLOSED = "session never closed"
 
+# How many `Recent decisions` bullets survive a compaction. Named because the
+# literal `5` was spelled twice in the two flush sites of _compact_text, and a
+# cap spelled twice is a cap that will eventually be spelled two ways (#139).
+_RECENT_DECISIONS_CAP = 5
+
+_ARCHIVE_TEMPLATE = """\
+# Hot archive — lines evicted from hot.md
+
+> Append-only, written by `enginelib.memory.hot` when compaction caps a section.
+> hot.md is the live buffer under a word budget; this is its tail. Nothing is
+> ever removed from here — the cap bounds what is *shown*, never what is *kept*.
+"""
+
 _TEMPLATE = """\
 # Hot — live memory
 
@@ -111,15 +124,45 @@ def init(force: bool = False, hot_path: Path | None = None) -> str:
     return "wrote"
 
 
-def _compact_text(body: str) -> str:
-    """Compact Recent decisions to last 5 bullets; preserve everything else.
+def _compact_text(body: str) -> tuple[str, list[str]]:
+    """Compact Recent decisions to the last `_RECENT_DECISIONS_CAP` bullets.
 
-    Replicates the bash compaction awk in hot-md-append.sh.
-    Blanks and non-bullet lines inside the section are dropped.
+    Returns the rewritten body **and every line it removed**, in file order.
+
+    That second element is the fix for #139, and it is a return channel rather
+    than a behaviour change on purpose: capping a live word-budgeted buffer is
+    correct, but capping it with nothing to report left `append()` unable to
+    archive or announce what it had just destroyed. No care at the call site can
+    recover a line the compactor has already dropped on the floor.
+
+    Two kinds of line are removed, and only the first is bounded:
+
+      * bullets beyond the cap — expected, one per append once the list is full;
+      * any non-bullet, non-blank line inside the section (a note, a sub-item) —
+        unbounded, no cap involved, and never re-emitted.
+
+    Blank lines inside the section are normalised away as before and are *not*
+    reported: they carry nothing, and an eviction report padded with blanks is a
+    report nobody reads.
     """
     out: list[str] = []
+    evicted: list[str] = []
     in_rd = False
-    rd: list[str] = []
+    section: list[str] = []
+
+    def flush() -> list[str]:
+        """Split the collected section into survivors and evictions, in order."""
+        bullets = sum(1 for ln in section if ln.startswith("- "))
+        drop = max(0, bullets - _RECENT_DECISIONS_CAP)
+        kept: list[str] = []
+        seen = 0
+        for ln in section:
+            if not ln.startswith("- "):
+                evicted.append(ln)
+                continue
+            seen += 1
+            (evicted if seen <= drop else kept).append(ln)
+        return kept
 
     for raw_line in body.rstrip("\n").split("\n"):
         if raw_line == "## Recent decisions":
@@ -127,27 +170,43 @@ def _compact_text(body: str) -> str:
             out.append(raw_line)
             continue
         if raw_line.startswith("## ") and in_rd:
-            kept = rd[-5:] if len(rd) > 5 else rd
+            kept = flush()
             out.extend(kept)
             if kept:
                 out.append("")
-            rd = []
+            section = []
             in_rd = False
             out.append(raw_line)
             continue
         if in_rd:
-            if raw_line.startswith("- "):
-                rd.append(raw_line)
-            # else: eat blank lines and non-bullet content inside the section
+            if raw_line.strip():
+                section.append(raw_line)
             continue
         out.append(raw_line)
 
     # EOF inside Recent decisions — flush without trailing blank
-    if in_rd and rd:
-        kept = rd[-5:] if len(rd) > 5 else rd
-        out.extend(kept)
+    if in_rd and section:
+        out.extend(flush())
 
-    return "\n".join(out) + "\n"
+    return "\n".join(out) + "\n", evicted
+
+
+def _archive_evicted(archive: Path, lines: list[str], advisor: str) -> None:
+    """Append evicted hot.md lines to the archive, seeding its header if absent.
+
+    Read-modify-write rather than `open("a")`: `snapshot_write` is this module's
+    only write path, and it gives the archive the same atomic tmp+replace every
+    hot.md write already has. The caller holds the hot.md lock, so the read-back
+    cannot interleave, and the file grows by one small block per compaction.
+    """
+    stamp = datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M%z")
+    prior = (
+        archive.read_text(encoding="utf-8").rstrip("\n")
+        if archive.is_file()
+        else _ARCHIVE_TEMPLATE.rstrip("\n")
+    )
+    block = f"\n\n## {stamp} — evicted by {advisor}\n\n" + "\n".join(lines)
+    snapshot_write(archive, prior + block + "\n")
 
 
 def append(section: str, advisor: str, line: str, no_compact: bool = False) -> str:
@@ -236,7 +295,23 @@ def append(section: str, advisor: str, line: str, no_compact: bool = False) -> s
         if not no_compact:
             current = hot.read_text(encoding="utf-8")
             if len(current.split()) > 500:
-                snapshot_write(hot, _compact_text(current))
+                compacted, evicted = _compact_text(current)
+                if evicted:
+                    # Archive BEFORE the truncating write, never after: if the
+                    # archive write fails, hot.md keeps its lines and the loss
+                    # simply does not happen. The reverse order would make the
+                    # crash window the exact data loss this guards against.
+                    archive = paths.hot_archive_path()
+                    _archive_evicted(archive, evicted, advisor)
+                    # never-silent-delete has two halves — the data survives AND
+                    # someone is told. An archive nobody is told about is still a
+                    # silent event to the session that caused it, which is how a
+                    # keel-coo close evicted a sage-cto decision unnoticed (#139).
+                    _log.warning(
+                        "hot.md compaction evicted %d line(s) → %s: %s",
+                        len(evicted), archive, " | ".join(evicted),
+                    )
+                snapshot_write(hot, compacted)
 
     # Layer-1 briefing regen (best-effort, fd-suppressed; mirrors mention.create)
     if advisors.is_canonical_advisor(advisor):
