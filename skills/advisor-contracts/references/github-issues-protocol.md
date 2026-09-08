@@ -118,7 +118,7 @@ Milestones are **instance data** — release trains, grant cycles, and campaign 
 project, not to the engine. Create them on the board and reference them by exact title:
 
 ```bash
-gh issue list --milestone "<exact milestone title>" --state open
+gh issue list --milestone "<exact milestone title>" --state open --limit 200
 ```
 
 The only convention the engine assumes is that a catch-all `Backlog` milestone with no due date
@@ -184,27 +184,27 @@ Done → reopen issue (never reverse Done directly)
 
 ```bash
 # Both repos — advisor's issues
-gh issue list -R ${OWNER}/${AI_REPO} --label advisor:NAME --state open \
+gh issue list -R ${OWNER}/${AI_REPO} --label advisor:NAME --state open --limit 200 \
   --json number,title,labels \
   --template '{{range .}}AI#{{.number}} | {{.title}} | {{pluck "name" .labels | join ", "}}{{"\n"}}{{end}}'
 
-gh issue list -R ${OWNER}/${MAIN_REPO} --label advisor:NAME --state open \
+gh issue list -R ${OWNER}/${MAIN_REPO} --label advisor:NAME --state open --limit 200 \
   --json number,title,labels \
   --template '{{range .}}GH#{{.number}} | {{.title}} | {{pluck "name" .labels | join ", "}}{{"\n"}}{{end}}'
 
 # Blockers
-gh issue list -R ${OWNER}/${MAIN_REPO} --label p0 --state open \
+gh issue list -R ${OWNER}/${MAIN_REPO} --label p0 --state open --limit 200 \
   --json number,title --template '{{range .}}GH#{{.number}} {{.title}}{{"\n"}}{{end}}'
 
-gh issue list -R ${OWNER}/${AI_REPO} --label p0 --state open \
+gh issue list -R ${OWNER}/${AI_REPO} --label p0 --state open --limit 200 \
   --json number,title --template '{{range .}}AI#{{.number}} {{.title}}{{"\n"}}{{end}}'
 
 # By milestone (exact title from the instance's board)
-gh issue list --milestone "<milestone title>" --state open \
+gh issue list --milestone "<milestone title>" --state open --limit 200 \
   --json number,title --template '{{range .}}#{{.number}} {{.title}}{{"\n"}}{{end}}'
 
 # By type
-gh issue list -R ${OWNER}/${AI_REPO} --label grant --state open \
+gh issue list -R ${OWNER}/${AI_REPO} --label grant --state open --limit 200 \
   --json number,title,labels \
   --template '{{range .}}AI#{{.number}} | {{.title}} | {{pluck "name" .labels | join ", "}}{{"\n"}}{{end}}'
 ```

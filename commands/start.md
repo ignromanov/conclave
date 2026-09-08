@@ -146,14 +146,19 @@ Classify user request by scale:
 ROOT="${CONCLAVE_ENGINE_ROOT:-${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/engine}}"
 : "${ROOT:?no engine root — export CONCLAVE_ENGINE_ROOT (the engine/ dir) or CLAUDE_PLUGIN_ROOT}"
 ADVISOR="<advisor>"   # the slug this session is bound to
+# `--limit` is not decoration: without it gh returns 30 rows, so the count is a plausible
+# number and not a measurement. Measured 2026-09-08 — this query reported 30 for an advisor
+# with 75 open issues, and Step 3c then reconciled the briefing against that 30.
 for REPO in $(PYTHONPATH="$ROOT/scripts" python3 -m engine lifecycle gh-repos); do
-  gh issue list -R "$REPO" --label "advisor:$ADVISOR" --state open \
+  gh issue list -R "$REPO" --label "advisor:$ADVISOR" --state open --limit 200 \
     --json number,title --jq 'length' &
 done
 wait
 ```
 
 Show: "You have N open issues (AI: X, Code: Y). P0 blockers: [list or none]."
+If N equals the `--limit`, the queue is truncated and not measured — say so and re-run with a
+higher bound; never report the cap as a total.
 If user's question relates to an open issue — mention it. Then answer directly.
 
 #### 3b. Feature/Epic Tier (full)
@@ -165,9 +170,9 @@ ROOT="${CONCLAVE_ENGINE_ROOT:-${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/engine}}
 : "${ROOT:?no engine root — export CONCLAVE_ENGINE_ROOT (the engine/ dir) or CLAUDE_PLUGIN_ROOT}"
 ADVISOR="<advisor>"
 for REPO in $(PYTHONPATH="$ROOT/scripts" python3 -m engine lifecycle gh-repos); do
-  gh issue list -R "$REPO" --label "advisor:$ADVISOR" --state open &
+  gh issue list -R "$REPO" --label "advisor:$ADVISOR" --state open --limit 200 &
   # P0 blockers, including ones assigned to other advisors
-  gh issue list -R "$REPO" --label p0 --state open &
+  gh issue list -R "$REPO" --label p0 --state open --limit 200 &
   # Possibly mis-routed: open p1 carrying SOMEONE ELSE'S advisor label. The p0 line above
   # already reads cross-advisor; p1 did not, and that is the whole blind spot.
   gh issue list -R "$REPO" --label p1 --state open --limit 200 \
@@ -193,7 +198,8 @@ what makes the blind spot visible; the full table would be tens of rows of other
 every session, and a wall nobody reads restores the invisibility it was meant to cure. Scan the
 five titles: if one is plainly this advisor's domain, say so and propose a relabel — do not
 silently adopt it, and do not relabel another advisor's queue without saying which issue and why.
-Widen the query (drop `--limit`, add `--label p2`) only when chasing a specific suspicion.
+Widen the query (raise `--limit`, add `--label p2`) only when chasing a specific suspicion.
+Dropping `--limit` does not widen it — it narrows the result to gh's default 30.
 
 **Alternative** — single Project Board query (shows both repos + all custom fields):
 ```bash
