@@ -7,9 +7,15 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+# `positive` added 2026-09-08 (spec 117 lens rewrite, operator-approved). Every other member
+# names a defect, so the corpus could only ever be defects: 244 items, 0 positive. That was
+# read for months as evidence that the retrospective prompts were breakage-shaped. The prompts
+# were a contributing cause; the enum was a sufficient one — with nowhere to put a positive
+# finding, no wording could have produced one. Admissible form is narrow by design and lives in
+# the prompt, not here: "artefact X removed step Y", never "what worked well" (W3 rows 12/17).
 Category = Literal["script-defect", "doc-contradiction", "naming-inconsistency",
                     "skill-inaccuracy", "skill-gap", "process-friction",
-                    "data-access", "idea"]
+                    "data-access", "idea", "positive"]
 Layer = Literal["infra", "skill", "contract", "memory", "workflow"]
 Severity = Literal["low", "medium", "high", "critical"]
 Frequency = Literal["first-time", "occasional", "every-dispatch"]
@@ -79,7 +85,15 @@ class FeedbackItem(BaseModel):
     fingerprint: str | None = None      # set by feedback_emit.py
     observation: str
     interpretation: str | None = None
-    suggested_fix: str
+    # Optional since 2026-09-08 (spec 117 lens rewrite, operator-approved). Mandatory, this
+    # field was W3 row 20 — "what should we build next?" — required on every item, and that
+    # row is rated CONFABULATED: solution-space speculation with no in-context referent. The
+    # evidence gate below carries the mandate instead.
+    #
+    # Deliberately a plain optional and NOT a validator reading "required unless evidence".
+    # `evidence` is already mandatory for every non-migrated item, so that branch would be
+    # unreachable — a guard that can never fire, indistinguishable from a working one.
+    suggested_fix: str | None = None
     severity: Severity
     frequency: Frequency
     occurrence_count: int | None = None

@@ -207,7 +207,10 @@ def cmd_digest(rows: list[dict], as_json: bool = False) -> None:
             "category": rep.get("category", ""),
             "layer": rep.get("layer", ""),
             "location": rep.get("location", {}),
-            "suggested_fix": rep.get("suggested_fix", ""),
+            # `or ""`, not a get-default: since suggested_fix became optional the index
+            # writes the key with a null, and `.get(k, "")` only substitutes for a MISSING
+            # key — a present null passes straight through and changes the type.
+            "suggested_fix": rep.get("suggested_fix") or "",
             "frequency": rep.get("frequency", ""),
             "status": rep.get("status", "open"),
             "members": [

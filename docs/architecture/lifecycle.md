@@ -198,18 +198,26 @@ All other failures are non-blocking (wiki-failure-policy: defer per ADR-0003).
 
 ### Phase: Lifecycle Retrospective
 
-Five lenses scan for improvement signals — even when the session went smoothly:
+Six prompts, answered in order from the session transcript. Each asks for an episode or an
+artefact — a moment, a command, its output, a quoted line, a step not taken:
 
-| Lens | What to look for | Feedback category |
-|------|-----------------|-------------------|
-| broke | Script exit ≠ 0, missing file, contract violation | `script-defect` |
-| unexpected | Output shape drift, naming mismatch, docs out of sync | `doc-contradiction` |
-| script-improvement | Brittle parse, missing `--dry-run`, opaque error | `skill-gap` / `process-friction` |
-| automation | Work done by hand that a script could do deterministically | `idea` |
-| context-reduction | Re-read of already-loaded file, large file for one fact | `process-friction` |
+| Prompt | What the answer consists of | Feedback category |
+|--------|----------------------------|-------------------|
+| job | The spec/issue numbers worked on, each glossed | — (frames the phase) |
+| stuck | One moment: the command run and the output returned, both quoted | `script-defect` / `process-friction` / `data-access` |
+| instead | What was executed next, quoted, with a count if repeated | `process-friction` / `skill-gap` |
+| acted-on | A line acted on, quoted, with the path of the artefact carrying it | `doc-contradiction` / `naming-inconsistency` / `skill-inaccuracy` |
+| removed-step | "Artefact X removed step Y" — both halves named | `positive` |
+| unexecuted | A claim made with no command behind it, plus the command that would decide it | `idea` |
 
-Each finding is emitted as a `/team.feedback` item (cap: 5 per session). This phase feeds
-the self-improvement loop directly — it is the primary signal source for recurring patterns.
+`nothing` is a complete answer to every prompt. Each finding is emitted as a `/team.feedback`
+item (cap: 5 per session). This phase feeds the self-improvement loop directly — it is the
+primary signal source for recurring patterns.
+
+The prompts replaced five breakage-shaped lenses on 2026-09-08 (spec 117, commissioned by
+helm-ceo). Two facts drove it: an agent's account of *what it did* is recoverable from its
+context while its account of *why* is not, and the corpus had zero positive items because the
+category enum had no positive member — not because the lenses were negative.
 
 ### Phase: Reflexion
 
@@ -332,7 +340,7 @@ Originally filed as feedback item `it-1` in `fb-1781159734-e51973`.
   ├─ artifact filing (decisions, mentions, session, handoff)
   ├─ mandatory checklist (commits, GH sync)      ← constitution III
   ├─ study phase (wiki health)
-  ├─ lifecycle retrospective (5 lenses)          ← self-improvement loop signal
+  ├─ lifecycle retrospective (6 prompts)         ← self-improvement loop signal
   └─ reflexion → close-session.sh               ← constitution III
 
 /team.handoff  (if work is incomplete)
