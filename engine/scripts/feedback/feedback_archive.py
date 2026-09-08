@@ -112,6 +112,23 @@ def _all_done(items: list[dict]) -> bool:
     )
 
 
+def _archive_row_is_reconstructable(row: dict) -> bool:
+    """True only when the row carries enough to stand in for the markdown it replaces.
+
+    Both conditions must hold: `items` is a non-empty list and every element carries a
+    non-empty `observation` (the item body the archive exists to preserve), and `body` is
+    present as a key — an empty string is a genuine no-notes review, a missing key is not.
+    """
+    items = row.get("items")
+    if not items or not isinstance(items, list):
+        return False
+    if not all(isinstance(it, dict) and it.get("observation") for it in items):
+        return False
+    if "body" not in row:
+        return False
+    return True
+
+
 def _archive_month(created_str: str) -> str:
     """Return 'YYYY-MM' from a created datetime string."""
     try:
@@ -242,6 +259,26 @@ def main(argv: list[str] | None = None) -> int:
                 "items": items,
                 "body": body,
             }
+
+            # Check reconstructability BEFORE writing anything. The row is built from
+            # `meta`, which lives in the markdown file the guard would be refusing to
+            # delete — so checking first loses nothing: a refused review leaves no trace
+            # in the ledger at all, the markdown is untouched, and a retry after the
+            # review itself is repaired goes through the normal path on the next run
+            # (there is no stale ledger row for `_load_archived_ids` to pick up and no
+            # "already archived" refusal to fight through).
+            if not _archive_row_is_reconstructable(row):
+                if not row.get("items"):
+                    reason = "items is empty"
+                elif "body" not in row:
+                    reason = "body key is missing"
+                else:
+                    reason = "an item has no observation"
+                msg = (f"ERROR: refusing to unlink {md_file.name}: "
+                       f"archive row cannot reconstruct it ({reason})")
+                print(msg, file=sys.stderr)
+                errors.append(msg)
+                continue
 
             # Append to archive JSONL
             with arch_file.open("a", encoding="utf-8") as f:

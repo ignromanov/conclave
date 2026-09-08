@@ -725,6 +725,71 @@ class TestCadenceGuard:
         assert any("warning" in ln.lower() for ln in lines)
         assert not any(ln.startswith("  feedback: triage due") for ln in lines)
 
+    def _make_feedback_script_with_unreachable(
+        self, root: Path, *, triage_due: bool, unreachable: int | None,
+        open_items: int = 5,
+    ) -> Path:
+        """Scaffold a fake feedback_triage.py that also prints unreachable_accepted=.
+
+        `unreachable=None` omits the key entirely, simulating an engine older than
+        this task — the absent-vs-zero distinction the parser must preserve.
+        """
+        scripts = root / "engine" / "scripts"
+        feedback_dir = scripts / "feedback"
+        feedback_dir.mkdir(parents=True, exist_ok=True)
+        due_str = "true" if triage_due else "false"
+        unreachable_line = (
+            f"print('unreachable_accepted={unreachable}')\n" if unreachable is not None else ""
+        )
+        script = feedback_dir / "feedback_triage.py"
+        script.write_text(
+            f"import sys\n"
+            f"if '--check' in sys.argv:\n"
+            f"    print('triage_due={due_str}')\n"
+            f"    print('open_items={open_items}')\n"
+            f"    {unreachable_line}"
+            f"    sys.exit(0)\n"
+            f"sys.exit(0)\n",
+            encoding="utf-8",
+        )
+        return script
+
+    def test_session_init_renders_unreachable_line_when_non_zero(self, tmp_path, monkeypatch):
+        """The unreachable-accepted line must render even when triage is NOT due —
+        this is the property the session_init restructure exists to guarantee. Today's
+        live data masks a broken (early-return) implementation because triage happens
+        to be due; pinning triage_due=false here is the only way to certify it."""
+        root = _make_root(tmp_path)
+        self._pin_engine_root(monkeypatch, root)
+        self._make_feedback_script_with_unreachable(
+            root, triage_due=False, unreachable=30
+        )
+        lines = session_init._step_cadence_guard()
+        assert any("reachable by nothing" in ln for ln in lines)
+        assert any("30" in ln for ln in lines)
+        assert not any(ln.startswith("  feedback: triage due") for ln in lines)
+
+    def test_session_init_drops_the_line_when_the_key_is_absent(self, tmp_path, monkeypatch):
+        """No unreachable_accepted= key in --check output → no line, and never a bare
+        0 standing in for "not measured" (Global Constraint 3)."""
+        root = _make_root(tmp_path)
+        self._pin_engine_root(monkeypatch, root)
+        self._make_feedback_script_with_unreachable(
+            root, triage_due=False, unreachable=None
+        )
+        lines = session_init._step_cadence_guard()
+        assert not any("reachable by nothing" in ln for ln in lines)
+        assert not any("0" in ln for ln in lines)
+
+    def test_session_init_drops_the_line_when_zero(self, tmp_path, monkeypatch):
+        root = _make_root(tmp_path)
+        self._pin_engine_root(monkeypatch, root)
+        self._make_feedback_script_with_unreachable(
+            root, triage_due=False, unreachable=0
+        )
+        lines = session_init._step_cadence_guard()
+        assert not any("reachable by nothing" in ln for ln in lines)
+
     def test_uses_sys_executable_not_bare_python3(self, tmp_path, monkeypatch):
         """The invoked interpreter must be sys.executable, matching the sibling subprocess
         calls in this file — not a bare 'python3' that may resolve to a pre-floor interpreter

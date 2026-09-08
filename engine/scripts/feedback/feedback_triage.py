@@ -52,6 +52,7 @@ from briefing.frontmatter_io import read_commented  # noqa: E402
 from briefing.paths import repo_root  # noqa: E402
 from enginelib import snapshot  # noqa: E402
 from enginelib.advisors import META_ADVISORS, canonical_advisors  # noqa: E402
+from enginelib.paths import project_root  # noqa: E402
 from feedback.feedback_emit import write_preserving_header  # noqa: E402
 from feedback.paths import index_path, last_triage_marker  # noqa: E402
 
@@ -154,6 +155,25 @@ def _find_review_file(root: Path, feedback_id: str) -> Path | None:
                 except Exception:
                     pass
     return None
+
+
+def unreachable_accepted(rows: list[dict]) -> list[dict]:
+    """Accepted rows carrying no predicate, no waiver and no issue link.
+
+    Such a row is reachable by no mechanism: `--monthly`'s zombie pass scopes to
+    open/deferred, and closing verification needs one of `verify`, `verify_waiver`
+    or `issue` to fire on. Sorted by `accepted_at` ascending (oldest first); rows
+    with no `accepted_at` sort last, since their age is unknown rather than zero.
+    """
+    found = [
+        row for row in rows
+        if row.get("status") == "accepted"
+        and not row.get("verify")
+        and not row.get("verify_waiver")
+        and not row.get("issue")
+    ]
+    found.sort(key=lambda r: r.get("accepted_at") or "9999-99-99")
+    return found
 
 
 # ---------------------------------------------------------------------------
@@ -314,6 +334,7 @@ def cmd_check(rows: list[dict], triage_marker: Path) -> None:
     print(f"open_items={open_count}")
     print(f"new_reviews={new_reviews}")
     print(f"days_since={days_since_str}")
+    print(f"unreachable_accepted={len(unreachable_accepted(rows))}")
 
 
 def cmd_monthly(rows: list[dict]) -> None:
@@ -336,14 +357,37 @@ def cmd_monthly(rows: list[dict]) -> None:
 
     if not found:
         print("No zombie items found (open/deferred > 90 days).")
-        return
+    else:
+        found.sort(key=lambda x: -x[0])
+        print(f"{'feedback_id':<25} {'item_id':<15} {'age_days':<10} {'status':<12} observation")
+        print("-" * 90)
+        for age, row in found:
+            print(f"{row.get('feedback_id', ''):<25} {row.get('item_id', ''):<15} "
+                  f"{age:<10} {row.get('status', ''):<12} {row.get('observation', '')[:40]}")
 
-    found.sort(key=lambda x: -x[0])
-    print(f"{'feedback_id':<25} {'item_id':<15} {'age_days':<10} {'status':<12} observation")
-    print("-" * 90)
-    for age, row in found:
-        print(f"{row.get('feedback_id', ''):<25} {row.get('item_id', ''):<15} "
-              f"{age:<10} {row.get('status', ''):<12} {row.get('observation', '')[:40]}")
+    # Second, independent section: accepted items reachable by no mechanism (no
+    # predicate, no waiver, no issue link). Printed unconditionally, even when
+    # count is 0 — this is an inventory surface, and a zero is load-bearing
+    # (Global Constraint 3). Keyed on accepted_at (R1), no age cutoff (R2).
+    unreachable = unreachable_accepted(rows)
+    print()
+    print(f"Unreachable accepted items (no predicate, no waiver, no issue link): "
+          f"{len(unreachable)}")
+    if unreachable:
+        print(f"{'feedback_id':<25} {'item_id':<15} {'age_days':<10} {'status':<12} observation")
+        print("-" * 90)
+        for row in unreachable:
+            accepted_at = row.get("accepted_at")
+            if accepted_at:
+                try:
+                    accepted = datetime.fromisoformat(accepted_at.replace("Z", "+00:00"))
+                    age_str = str((now - accepted).days)
+                except (ValueError, AttributeError):
+                    age_str = "—"
+            else:
+                age_str = "—"
+            print(f"{row.get('feedback_id', ''):<25} {row.get('item_id', ''):<15} "
+                  f"{age_str:<10} {row.get('status', ''):<12} {row.get('observation', '')[:40]}")
 
 
 def cmd_set(root: Path, feedback_id: str, item_id: str, status: str,
@@ -450,6 +494,10 @@ def cmd_set(root: Path, feedback_id: str, item_id: str, status: str,
             if status == "accepted" and (
                     status != previous or not item.get("accepted_at")):
                 item["accepted_at"] = now_str
+            # #218 — item-level touch, on THIS item only, same timestamp as meta's
+            # updated_at below so the two never disagree by a microsecond. Do not drop
+            # this: it is what stops closing one item from restamping its siblings.
+            item["touched_at"] = now_str
             found = True
             break
 
@@ -468,12 +516,20 @@ def cmd_set(root: Path, feedback_id: str, item_id: str, status: str,
 
 
 def cmd_set_verify(root: Path, feedback_id: str, item_id: str,
-                   predicate: dict) -> int:
+                   predicate: dict, *, force: bool = False,
+                   project_root_path: Path | None = None,
+                   code_root: Path | None = None) -> int:
     """Attach a verify: predicate to an existing item (093 P1 T3).
 
     Sanctioned write path so feeding an accepted backlog never needs hand-editing
     finalized frontmatter. Caller must hold the .triage-lock (the mkdir-poll lock is
     not reentrant, so cmd_set_verify — like cmd_set — never re-acquires it here).
+
+    #161 — the admission test (refuse a predicate that already passes or is broken)
+    lives HERE, not one level up in the CLI. `feedback_verify.py`'s --set-verify
+    branch keeps its own pre-check for the richer human-facing message, but that
+    made the guard a one-caller-deep property rather than an invariant: this is
+    the writer, so this is where every caller is bound by it.
     """
     from feedback.schema import Predicate
     try:
@@ -481,22 +537,34 @@ def cmd_set_verify(root: Path, feedback_id: str, item_id: str,
     except Exception as exc:  # noqa: BLE001
         print(f"ERROR: invalid predicate: {exc}", file=sys.stderr)
         return 1
+    # feedback_verify imports cmd_set_verify from this module, so this import
+    # stays inside the function to avoid the cycle.
+    from feedback_verify import classify_predicate  # noqa: PLC0415
+    verdict = classify_predicate(Predicate(**predicate), project_root_path or project_root(), code_root)
+    if verdict != "fail" and not force:
+        print(f"ERROR: refusing to attach verify to {feedback_id}/{item_id}: "
+              f"verdict={verdict} (expected 'fail')", file=sys.stderr)
+        return 1
     review_path = _find_review_file(root, feedback_id)
     if review_path is None:
         print(f"ERROR: review not found for feedback_id={feedback_id}", file=sys.stderr)
         return 1
     meta, body = read_commented(review_path)
+    now_str = datetime.now(UTC).isoformat()
     found = False
     for item in meta.get("items", []):
         if item.get("id") == item_id:
             item["verify"] = predicate
+            # #218 — item-level touch, on THIS item only; same timestamp as meta's
+            # updated_at below so the two never disagree by a microsecond.
+            item["touched_at"] = now_str
             found = True
             break
     if not found:
         print(f"ERROR: item_id={item_id} not found in feedback_id={feedback_id}",
               file=sys.stderr)
         return 1
-    meta["updated_at"] = datetime.now(UTC).isoformat()
+    meta["updated_at"] = now_str
     write_preserving_header(review_path, meta, body)
     print(f"Attached verify to {feedback_id}/{item_id}: kind={predicate.get('kind')}")
     return 0

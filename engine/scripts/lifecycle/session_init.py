@@ -513,12 +513,15 @@ def _step_cadence_guard() -> list[str]:
             f"skipping cadence check"
         ]
 
-    # Parse triage_due=<true|false>, open_items=<n> and new_reviews=<n> from stdout.
-    # new_reviews is absent on an engine older than #89; the clause it feeds is dropped
-    # rather than rendered as 0, which would assert a fact this run did not measure.
+    # Parse triage_due=<true|false>, open_items=<n>, new_reviews=<n> and
+    # unreachable_accepted=<n> from stdout. new_reviews and unreachable_accepted are
+    # absent on an engine older than the one that started measuring them; the clause
+    # each feeds is dropped rather than rendered as 0, which would assert a fact this
+    # run did not measure.
     triage_due = False
     open_items = 0
     new_reviews: int | None = None
+    unreachable: int | None = None
     for line in result.stdout.splitlines():
         if line.startswith("triage_due="):
             triage_due = line.split("=", 1)[1].strip().lower() == "true"
@@ -532,15 +535,27 @@ def _step_cadence_guard() -> list[str]:
                 new_reviews = int(line.split("=", 1)[1].strip())
             except ValueError:
                 pass
+        elif line.startswith("unreachable_accepted="):
+            try:
+                unreachable = int(line.split("=", 1)[1].strip())
+            except ValueError:
+                pass
 
+    lines: list[str] = []
     if triage_due:
         # "open reviews" named the wrong unit: the value is an ITEM count, and it printed
         # "27 open reviews" for 27 items spread across 4 reviews (#89).
         why = (f", {new_reviews} new reviews since the last triage"
                if new_reviews is not None else "")
-        return [f"  feedback: triage due — {open_items} open items{why}, "
-                f"run /conclave:triage"]
-    return []
+        lines.append(f"  feedback: triage due — {open_items} open items{why}, "
+                      f"run /conclave:triage")
+    # Independent of whether triage is due: these items are reachable by no other
+    # mechanism (the zombie pass above scopes to open/deferred), so an operator needs
+    # this line even on a session where nothing else fires.
+    if unreachable:
+        lines.append(f"  feedback: {unreachable} accepted items reachable by nothing "
+                      f"(no predicate, waiver or issue) — run /conclave:triage")
+    return lines
 
 
 # ---------------------------------------------------------------------------

@@ -89,6 +89,10 @@ class FeedbackItem(BaseModel):
     issue: int | None = None            # GH issue opened for this item at triage Step 4
     resolved_at: datetime | None = None
     accepted_at: str | None = None
+    # #218 — stamped ONLY on the item a write path actually modifies (cmd_set,
+    # cmd_set_verify), never backfilled onto siblings. Absent means unknown, not zero:
+    # existing reviews predate this field and Global Constraint 2 forbids backfilling them.
+    touched_at: datetime | None = None
     archived_at: str | None = None      # set by feedback_archive: item is in the ledger,
                                         # still verbatim here, and out of the working set
     migrated: bool = False

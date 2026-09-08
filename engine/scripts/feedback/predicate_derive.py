@@ -37,14 +37,29 @@ non-agentic deriver can honestly pin, not to maximize a number.
 """
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
-from pathlib import Path
-from typing import TypeGuard
+import sys
 
-from feedback_verify import _contained, _resolve, classify_predicate
+# Interpreter floor, enforced before the first thing that can fail below it — here,
+# `from typing import TypeGuard` below (TypeGuard was added in 3.10). /conclave:triage Step 2.5
+# launches this file directly, which is what puts it in the enforced entrypoint set.
+# Measured, not declared; see engine/__main__.py for the full note.
+if sys.version_info < (3, 11):  # noqa: UP036 — see engine/__main__.py
+    sys.stderr.write(
+        f"Conclave requires Python 3.11 or newer.\n"
+        f"This is Python {sys.version.split()[0]} at {sys.executable}.\n"
+        f"Install a newer interpreter (e.g. `uv python install 3.13`) and re-run.\n"
+    )
+    sys.exit(1)
 
-from feedback.schema import Predicate
+import re  # noqa: E402 — must follow the floor guard above
+import shlex  # noqa: E402
+from dataclasses import dataclass  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import TypeGuard  # noqa: E402
+
+from feedback_verify import _contained, _resolve, classify_predicate  # noqa: E402
+
+from feedback.schema import Predicate  # noqa: E402
 
 REMOVE_CUES = ("hardcode", "hardcodes", "hardcoded", "replace", "remove",
                "drop", "demote", "delete", "strip")
@@ -53,6 +68,33 @@ _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _BACKTICK_RE = re.compile(r"`([^`]+)`")
 # a path with an extension, e.g. hire.md, regen.py, .ai/foo.sh
 _PATH_RE = re.compile(r"([\w./-]+\.[A-Za-z0-9]+)")
+# proximity window (characters) for the removal-cue presentation check below —
+# wide enough to span "remove the old `X` and add" but not the whole suggested_fix
+_CUE_PROXIMITY_CHARS = 40
+
+
+def _unescape_literal(pattern: str) -> str:
+    """Reverse `re.escape()` well enough to recover the literal for display/search.
+    `re.escape` only ever inserts a backslash before the character it escapes, so
+    dropping every such backslash restores the original text (it does not touch `<`/`>`,
+    which `re.escape` leaves alone in the first place)."""
+    return re.sub(r"\\(.)", r"\1", pattern)
+
+
+def _cue_near_literal(fix: str, literal: str) -> bool:
+    """True if a REMOVE_CUES word sits within `_CUE_PROXIMITY_CHARS` of the literal's
+    occurrence in suggested_fix — this is presentation-only (see main()), not a rule
+    change. Proximity, not "anywhere in the fix" (which would flag any fix that merely
+    mentions both a keep-word and a remove-word elsewhere) and not "adjacent token"
+    (which would miss "remove the old `X` and add `Y`" phrasing)."""
+    fix_l, lit_l = fix.lower(), literal.lower()
+    idx = fix_l.find(lit_l)
+    if idx == -1:
+        return False
+    lo = max(0, idx - _CUE_PROXIMITY_CHARS)
+    hi = idx + len(lit_l) + _CUE_PROXIMITY_CHARS
+    span = fix_l[lo:hi]
+    return any(cue in span for cue in REMOVE_CUES)
 
 
 @dataclass
@@ -145,13 +187,13 @@ def derive_predicate(item: dict, checkout: Path) -> tuple[dict | None, str, str]
     return (None, "", "structured fields do not pin a checkable literal (prose-only fix)")
 
 
-def evaluate_item(item: dict, checkout: Path) -> Derivation:
+def evaluate_item(item: dict, checkout: Path, code_root: Path | None = None) -> Derivation:
     fid = item.get("feedback_id", "")
     iid = item.get("item_id") or item.get("id") or ""
     pred_dict, rule, reason = derive_predicate(item, checkout)
     if pred_dict is None:
         return Derivation(fid, iid, "NOT-DERIVABLE", "", None, None, reason)
-    verdict = classify_predicate(Predicate(**pred_dict), checkout)
+    verdict = classify_predicate(Predicate(**pred_dict), checkout, code_root)
     if verdict == "fail":
         bucket = "DERIVED-AND-RED"      # bug still demonstrable — counts
     elif verdict == "pass":
@@ -161,6 +203,60 @@ def evaluate_item(item: dict, checkout: Path) -> Derivation:
     return Derivation(fid, iid, bucket, rule, pred_dict, verdict, reason)
 
 
-def run(rows: list[dict], checkout: Path) -> list[Derivation]:
+def run(rows: list[dict], checkout: Path, code_root: Path | None = None) -> list[Derivation]:
     """Derive over accepted rows only (the backlog the kill-gate measures)."""
-    return [evaluate_item(r, checkout) for r in rows if r.get("status") == "accepted"]
+    return [evaluate_item(r, checkout, code_root) for r in rows if r.get("status") == "accepted"]
+
+
+def main(argv: list[str] | None = None) -> int:  # noqa: ARG001 — no flags today
+    """Report which UNCOVERED accepted items (no `verify:`, no `verify_waiver:`) a
+    deterministic rule can pin, and print a ready `--set-verify` invocation for each hit.
+
+    Read-only: this only measures and prints. Attaching a predicate is still the operator
+    running `feedback_verify.py --set-verify` themselves (Step 2.5 of triage.md), which
+    re-runs the admission test before writing anything."""
+    from feedback_triage import _load_index
+
+    from enginelib.paths import engine_root, project_root
+    from feedback.paths import index_path
+
+    root = project_root()
+    rows = _load_index(index_path())
+    uncovered = [r for r in rows if r.get("status") == "accepted"
+                 and not r.get("verify") and not r.get("verify_waiver")]
+    derivations = run(uncovered, root, code_root=engine_root().parent)
+    red = [d for d in derivations if d.bucket == "DERIVED-AND-RED"]
+    items_by_id = {(r.get("feedback_id", ""), r.get("item_id") or r.get("id") or ""): r
+                   for r in uncovered}
+
+    pct = (100.0 * len(red) / len(uncovered)) if uncovered else 0.0
+    print(f"uncovered={len(uncovered)} derived-and-red={len(red)} ({pct:.1f}%)")
+    for d in red:
+        p = d.predicate or {}
+        target = f"--file {shlex.quote(p['file'])}" if "file" in p \
+            else f"--path {shlex.quote(p['path'])}"
+        pattern = f" --pattern {shlex.quote(p['pattern'])}" if "pattern" in p else ""
+        root_flag = f" --root {p['root']}" if p.get("root") and p["root"] != "project" else ""
+
+        # Presentation-only annotation (Ruling R9 covers derive_predicate/bucket/verdict,
+        # not this): flag the two failure classes the branch's own doc names as usually
+        # wrong, without filtering anything out — the operator still decides.
+        markers: list[str] = []
+        literal = _unescape_literal(p["pattern"]) if "pattern" in p else p.get("path", "")
+        if "<" in literal and ">" in literal:
+            markers.append("placeholder")
+        if d.rule == "FC":
+            item = items_by_id.get((d.feedback_id, d.item_id))
+            fix = (item or {}).get("suggested_fix") or ""
+            if _cue_near_literal(fix, literal):
+                markers.append("removal cue near literal — check which side of it the literal is on")
+        warn = "".join(f"  ⚠ {m}" for m in markers)
+
+        print(f"  [{d.rule}] {d.feedback_id} {d.item_id} :: {d.reason}{warn}\n"
+              f"    --set-verify {d.feedback_id} {d.item_id} {p.get('kind')} "
+              f"{target}{pattern}{root_flag}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())  # `sys` is imported at module level for the floor guard above
