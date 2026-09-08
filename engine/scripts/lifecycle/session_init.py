@@ -1,6 +1,7 @@
 """session-init.py — session initialization helper (Phase 4, spec 085 / plugin 098).
 
 Absorbs team.start Steps 1/1b/1c + Overlay loading:
+  Step 1a:  first-launch detection — has this advisor a session record yet? (GH#169)
   Step 1:   gh-fetch + briefing build-and-compare (#14)
   Step 1b:  resume-scan (ops/specs/*/resume-prompt.md + handoffs addressed to <advisor>)
   Step 1c:  reflexion extract — last-3 sessions' `reflexion:` frontmatter
@@ -299,6 +300,49 @@ def _step1_load_briefing(advisor: str, root: Path) -> tuple[int, list[str]]:
 
 
 # ---------------------------------------------------------------------------
+# Step 1a — first-launch detection (GH#169)
+# ---------------------------------------------------------------------------
+
+def _detect_first_launch(advisor: str, root: Path) -> tuple[bool, str]:
+    """(is_first_launch, reason) — has this advisor ever closed a session?
+
+    The hire writes an `AWAITING_FIRST_LAUNCH` sentinel into the advisor's briefing and
+    three shipped documents said team.start detects it. Nothing did: the sentinel had a
+    writer, a test asserting the write, and no reader anywhere in the engine, so every
+    hire since #75 skipped First Launch in silence.
+
+    Reading the sentinel here would not fix it either. The briefing is a CACHE (spec 051 —
+    auto-generated, never hand-edited) and Step 1 below rebuilds it unconditionally on
+    every start, so a durable flag kept there is erased before any agent can act on it.
+    The truth is in the ledger: an advisor is on its first launch exactly while
+    `agent-memory/advisors/sessions/` holds no record of its own. Records are added there
+    and never rewritten, so the fact survives any number of briefing rebuilds and needs no
+    guard around briefing-build.
+
+    (The obvious word for that property is one of the charter norms the 104 eval fixture
+    holds out, and a `.py` hit is a hard build failure rather than a strippable one — hence
+    the paraphrase. Same trap as the `.md` carriers, minus the silent removal.)
+
+    Ownership comes from each record's `advisor:` frontmatter via files_for_advisor(), not
+    from the filename — a renamed advisor must not read as freshly hired.
+
+    An advisor hired long ago whose First Launch was skipped has session records and is
+    therefore NOT on first launch. That is deliberate: introducing an advisor with twenty
+    sessions behind it is not a bootstrap, and backfilling those is a separate decision.
+    """
+    sessions_dir = root / "agent-memory" / "advisors" / "sessions"
+    if not sessions_dir.is_dir():
+        return True, "no session ledger yet (fresh instance)"
+
+    from enginelib.advisors import files_for_advisor
+
+    records = files_for_advisor(sessions_dir, advisor, field="advisor")
+    if records:
+        return False, f"{len(records)} session record(s) on file"
+    return True, "no session record for this advisor"
+
+
+# ---------------------------------------------------------------------------
 # Step 1b — resume-scan
 # ---------------------------------------------------------------------------
 
@@ -568,6 +612,13 @@ def _advisor_summary(advisor: str, root: Path) -> tuple[int, list[str]]:
     Returns (exit_code, lines) where exit_code mirrors _step1_load_briefing's contract.
     """
     lines: list[str] = [f"[session-init] advisor={advisor}"]
+
+    # Step 1a — before the briefing rows, because the protocol's first-launch branch
+    # supersedes ordinary tier detection and the reader must meet it first. Always
+    # emitted, `yes` or `no`, with its reason: an absent line means the detector did
+    # not run, and that must not be readable as "not a first launch" (#169).
+    is_first, why = _detect_first_launch(advisor, root)
+    lines.append(f"  first-launch: {'yes' if is_first else 'no'} — {why}")
 
     # Step 1
     step1_code, step1_lines = _step1_load_briefing(advisor, root)

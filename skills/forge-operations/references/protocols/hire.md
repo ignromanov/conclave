@@ -190,12 +190,17 @@ Do NOT create: `BRIEFING.md`, `topics/*`, any dynamic-state files. These are sha
 
 ## Post-hire step
 
-**Do not** run `engine briefing build` now. The scaffold left the briefing holding the
-`AWAITING_FIRST_LAUNCH` sentinel; `/conclave:start` triggers the First Launch protocol
-**only** while that sentinel is present. Building the briefing here overwrites the stub and
-silently skips the advisor's First Launch. The first real briefing is produced by First
-Launch step 6 (`python -m engine briefing build`), after the advisor's first session closes
-— see `${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/first-launch-protocol.md`.
+Leave `engine briefing build` to First Launch step 6 — there is nothing to build from until
+the advisor's first session closes, and the `AWAITING_FIRST_LAUNCH` stub is the honest
+rendering of that state. See
+`${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/first-launch-protocol.md`.
+
+> Until GH#169 this step read "**do not** run it — First Launch fires **only** while the
+> sentinel is present". That was never true: nothing read the sentinel, and `session_init`
+> rebuilds the briefing on every start regardless, so the hazard the rule guarded against
+> happened anyway on the new advisor's very first `/conclave:start`. Detection is now
+> derived from the session ledger and cannot be overwritten by a build. Running the build
+> early is untidy, not destructive.
 
 ### 3c. Stamp `forge:` versions
 
@@ -218,8 +223,8 @@ Review the diff. Apply edits to `.claude/CLAUDE.md` and `team.quorum/SKILL.md` v
 Tell user: "Run `/conclave-<id>` then `/conclave:start`."
 
 First Launch logic lives in `${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/first-launch-protocol.md`.
-`team.start` detects `AWAITING_FIRST_LAUNCH` and executes the bootstrap inline.
-Hire does not run first-launch itself.
+`session_init` prints `first-launch: yes` for an advisor with no session record, and
+`/conclave:start` Step 1a executes the bootstrap inline. Hire does not run first-launch itself.
 
 ---
 

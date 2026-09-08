@@ -1158,3 +1158,111 @@ class TestHandoffDelivery:
         live, stale = session_init._step1b_resume_scan("kosmos-cxo", root)
 
         assert not any(archived.name in ln for ln in live + stale)
+
+
+# ---------------------------------------------------------------------------
+# First launch detection (GH#169)
+# ---------------------------------------------------------------------------
+
+def _session(root: Path, name: str, advisor: str | None) -> Path:
+    """A closed-session record, owned by frontmatter the way the ledger writes it."""
+    front = f"---\nadvisor: {advisor}\ndate: 2026-09-01\nslug: x\n---\n" if advisor else ""
+    path = root / "agent-memory" / "advisors" / "sessions" / name
+    _write(path, f"{front}\n## Goal\n\nx\n")
+    return path
+
+
+class TestFirstLaunchDetection:
+    """An advisor is on its first launch until the ledger holds a session of its own.
+
+    The predicate is deliberately NOT the `AWAITING_FIRST_LAUNCH` sentinel: that value
+    lives in the briefing, and `briefing build` rewrites the briefing on every single
+    start. #169 is what a durable flag stored in a regenerated cache looks like.
+    """
+
+    def test_no_session_record_means_first_launch(self, tmp_path):
+        root = _make_root(tmp_path)
+        assert session_init._detect_first_launch("kai-cto", root)[0] is True
+
+    def test_one_session_record_ends_it(self, tmp_path):
+        root = _make_root(tmp_path)
+        _session(root, "2026-09-01-kai-cto-bootstrap.md", "kai-cto")
+        assert session_init._detect_first_launch("kai-cto", root)[0] is False
+
+    def test_another_advisors_session_does_not_count(self, tmp_path):
+        root = _make_root(tmp_path)
+        _session(root, "2026-09-01-sage-cto-work.md", "sage-cto")
+        assert session_init._detect_first_launch("kai-cto", root)[0] is True
+
+    def test_ownership_is_frontmatter_not_filename(self, tmp_path):
+        """A record whose NAME says kai-cto and whose field says otherwise belongs to
+        the field — the same rule files_for_advisor enforces everywhere else."""
+        root = _make_root(tmp_path)
+        _session(root, "2026-09-01-kai-cto-work.md", "sage-cto")
+        assert session_init._detect_first_launch("kai-cto", root)[0] is True
+
+    def test_missing_sessions_dir_is_first_launch(self, tmp_path):
+        """A freshly bootstrapped instance has no ledger at all — that is first launch
+        for everyone, not a crash and not a silent False."""
+        root = tmp_path
+        (root / ".claude").mkdir(parents=True, exist_ok=True)
+        assert session_init._detect_first_launch("kai-cto", root)[0] is True
+
+    def test_reason_is_stated_in_words(self, tmp_path):
+        """Absence is not zero: the verdict carries why, so a reader can tell a measured
+        `no` from an instrument that did not run."""
+        root = _make_root(tmp_path)
+        is_first, reason = session_init._detect_first_launch("kai-cto", root)
+        assert is_first and reason
+        _session(root, "2026-09-01-kai-cto-bootstrap.md", "kai-cto")
+        is_first, reason = session_init._detect_first_launch("kai-cto", root)
+        assert not is_first and reason
+
+
+class TestFirstLaunchIsAlwaysReported:
+    def test_summary_emits_yes_for_a_fresh_advisor(self, tmp_path, monkeypatch):
+        root = _make_root(tmp_path)
+        monkeypatch.setattr(session_init, "_step1_load_briefing", lambda a, r: (0, []))
+        _, lines = session_init._advisor_summary("kai-cto", root)
+        assert any(ln.startswith("  first-launch: yes") for ln in lines), lines
+
+    def test_summary_emits_no_once_the_ledger_has_a_record(self, tmp_path, monkeypatch):
+        root = _make_root(tmp_path)
+        _session(root, "2026-09-01-kai-cto-bootstrap.md", "kai-cto")
+        monkeypatch.setattr(session_init, "_step1_load_briefing", lambda a, r: (0, []))
+        _, lines = session_init._advisor_summary("kai-cto", root)
+        assert any(ln.startswith("  first-launch: no") for ln in lines), lines
+
+    def test_the_verdict_survives_the_briefing_rebuild(self, tmp_path, monkeypatch):
+        """The #169 regression, stated as the property that failed.
+
+        The old design read `AWAITING_FIRST_LAUNCH` out of the briefing, and Step 1
+        rebuilds the briefing over it before any agent can look. Simulate exactly that:
+        the stub is on disk holding the sentinel, and the build replaces it. The verdict
+        must be unchanged, because it never depended on that file.
+        """
+        root = _make_root(tmp_path)
+        briefing = root / "agent-memory" / "advisors" / "briefings" / "kai-cto.md"
+        _write(briefing, "# Briefing\n\nAWAITING_FIRST_LAUNCH\n")
+
+        def _rebuild(advisor, r):
+            briefing.write_text("# Briefing — kai-cto\n\nreal content\n", encoding="utf-8")
+            return 2, ["  briefing-build: regenerated (1ms)"]
+
+        monkeypatch.setattr(session_init, "_step1_load_briefing", _rebuild)
+        _, lines = session_init._advisor_summary("kai-cto", root)
+
+        assert "AWAITING_FIRST_LAUNCH" not in briefing.read_text(encoding="utf-8")
+        assert any(ln.startswith("  first-launch: yes") for ln in lines), lines
+
+    def test_the_line_precedes_the_briefing_rows(self, tmp_path, monkeypatch):
+        """Ordering is a legibility claim, not a correctness one — but it is the claim
+        the protocol's Step 1a makes, so it is asserted rather than hoped for."""
+        root = _make_root(tmp_path)
+        monkeypatch.setattr(
+            session_init, "_step1_load_briefing", lambda a, r: (0, ["  briefing: unchanged (1ms)"])
+        )
+        _, lines = session_init._advisor_summary("kai-cto", root)
+        idx = [i for i, ln in enumerate(lines) if ln.startswith("  first-launch:")]
+        brief = [i for i, ln in enumerate(lines) if ln.startswith("  briefing")]
+        assert idx and brief and idx[0] < brief[0], lines

@@ -64,8 +64,8 @@ session start.
    (the briefing could not be built). A failed gh-fetch is non-fatal (#76): the run
    continues and prints a `degraded: gh-data-unavailable` line — board-derived
    sections come from the stale cache, the rest of the briefing is current.
-   The script handles: gh-fetch (TTL=900s), briefing build-and-compare (always rebuilds; writes
-   only if content differs), resume-scan (ops/specs/*/resume-prompt.md + handoffs addressed to the advisor),
+   The script handles: first-launch detection (Step 1a below), gh-fetch (TTL=900s),
+   briefing build-and-compare (always rebuilds; writes only if content differs), resume-scan (ops/specs/*/resume-prompt.md + handoffs addressed to the advisor),
    reflexion extract (last-3 sessions), overlay scan, and feedback cadence check.
    If a line starting with `  feedback:` appears in the output, triage is due — include it in
    the session-start summary and suggest running `/conclave:triage` this session.
@@ -79,6 +79,24 @@ session start.
    ```
    Read the Now / Recent decisions / Watch sections for live cross-agent state.
 5. The briefing and hot.md are auto-generated; do not edit either directly.
+
+### 1a. First Launch Check
+
+The session-init script (Step 1) prints one `  first-launch:` line per run, always, before
+the briefing rows:
+
+- `first-launch: yes — <reason>` → this advisor has never closed a session. **Execute
+  `first-launch-protocol.md` (auto-imported above) start to finish and stop there.** It
+  supersedes tier detection, the issue queue and the startup audit: a fresh advisor has no
+  queue, and Step 6 of that protocol — `engine session close` — is what ends the state.
+- `first-launch: no — <reason>` → continue with Step 1b.
+- **no line at all** → the detector did not run. That is not a `no`; say so and re-run
+  session-init before proceeding.
+
+The verdict comes from the session ledger, not from the briefing. Reading it out of the
+briefing is what GH#169 was: the `AWAITING_FIRST_LAUNCH` sentinel is written at hire into a
+file Step 1 rebuilds unconditionally, so it was gone before any agent could look, and every
+hire between #75 and the fix skipped First Launch without anything reporting a fault.
 
 ### 1b. Resume Check
 
