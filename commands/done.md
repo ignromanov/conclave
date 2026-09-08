@@ -131,7 +131,7 @@ Complete `/conclave:feedback` before continuing. The gate is the
      git fetch --quiet --prune origin
      # every branch this session pushed
      for BRANCH in <branches-pushed-this-session>; do
-       gh pr list --head "$BRANCH" --state all --json number --jq '.[].number'
+       gh pr list --head "$BRANCH" --state all --limit 100 --json number --jq '.[].number'
      done | sort -u | while read -r N; do
        gh pr view "$N" --json number,state,mergedAt,headRefName \
          --jq '"#\(.number) \(.state) merged=\(.mergedAt // "—") head=\(.headRefName)"'
