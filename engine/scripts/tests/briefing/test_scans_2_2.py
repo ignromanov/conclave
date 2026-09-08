@@ -51,6 +51,8 @@ def _make_spec(
     status: str = "proposed",
     milestone: str = "",
     ac_block: str = "",
+    ac_heading: str = "## Acceptance criteria",
+    ac_heading_only: bool = False,
 ) -> Path:
     """Write a minimal spec.md fixture under specs_root/<spec_id>-slug/spec.md."""
     slug = f"{spec_id}-slug"
@@ -68,8 +70,8 @@ def _make_spec(
     fm_lines.append("---")
     fm = "\n".join(fm_lines) + "\n\n"
     body = f"# Spec {spec_id}\n\n"
-    if ac_block:
-        body += f"## Acceptance criteria\n\n{ac_block}\n"
+    if ac_block or ac_heading_only:
+        body += f"{ac_heading}\n\n{ac_block}\n"
     _write(spec_dir / "spec.md", fm + body)
     return spec_dir / "spec.md"
 
@@ -107,6 +109,48 @@ class TestSpecProgress:
         _make_spec(specs_root, "001", "No AC spec", "kai-cto")
         result = spec_progress.build(ctx)
         assert result == "_(no advisor-owned spec acceptance criteria found)_"
+
+    @pytest.mark.parametrize("heading", [
+        "## 4. Acceptance",                                   # spec 115
+        "## Acceptance",                                      # bare
+        "## Acceptance (draft — refined in plan)",            # spec 091
+        "## 8. Acceptance criteria",                          # spec 103
+        "## 5. Acceptance and kill criteria (measurable)",    # spec 117
+        "## 7. Acceptance sketch (P1, red-first)",            # spec 106
+    ])
+    def test_numbered_and_bare_acceptance_headings_are_counted(
+        self, tmp_path: Path, heading: str
+    ) -> None:
+        """The corpus writes ten spellings of the heading; the regex matched one (#227).
+
+        `^##\\s+acceptance criteria` misses `## 4. Acceptance` and every numbered or
+        parenthesised variant. Nine of the twenty-one specs carrying an acceptance
+        block were invisible to the counter, spec 115's four checkboxes among them.
+        """
+        ctx = make_ctx(tmp_path)
+        specs_root = tmp_path / "ops" / "specs"
+        _make_spec(specs_root, "115", "State report", "kai-cto",
+                   ac_block="- [x] AC1\n- [x] AC2\n- [ ] AC3\n- [ ] AC4\n",
+                   ac_heading=heading)
+        result = spec_progress.build(ctx)
+        assert "2/4" in result, result
+
+    def test_acceptance_block_with_no_checkboxes_renders_unverifiable(
+        self, tmp_path: Path
+    ) -> None:
+        """A spec that declares acceptance and lists no boxes is unverifiable, not absent.
+
+        Zero and absent are different states: twelve specs carry an acceptance heading
+        with no checkbox under it, and dropping them renders identically to owning no
+        specs at all — which is what the advisor concludes.
+        """
+        ctx = make_ctx(tmp_path)
+        specs_root = tmp_path / "ops" / "specs"
+        _make_spec(specs_root, "117", "Session ledger", "kai-cto",
+                   ac_block="Prose, no boxes.\n", ac_heading="## 5. Acceptance")
+        result = spec_progress.build(ctx)
+        assert "unverifiable" in result, result
+        assert "117" in result
 
     def test_advisor_owned_open_box_flagged(self, tmp_path: Path) -> None:
         ctx = make_ctx(tmp_path)
