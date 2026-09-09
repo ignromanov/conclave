@@ -683,3 +683,26 @@ def test_apply_reports_a_close_the_write_path_refused(tmp_path):
     item = read_commented(path)[0]["items"][0]
     assert item["status"] == "accepted"
     assert item["owner"] == "forge:#102", "the link the guard protects must survive"
+
+
+# --- a dry run owes the operator the list it is proposing to write ---
+
+def test_dry_run_names_every_close_it_proposes(tmp_path):
+    """`auto-close=N` is a count, and the run that prints it writes nothing — its whole
+    purpose is review before `--apply`. HELD and BROKEN are each reported by name; the
+    closes were not, so the operator was asked to authorise N writes whose targets the
+    instrument refused to name. Measured 2026-09-09: a live sweep printed auto-close=8
+    and no item id anywhere in either stream."""
+    data_root, _target, path = _git_checkout_layout(tmp_path, "# MARKER: the fix landed\n")
+
+    res = _run_verify(data_root, [])
+    assert res.returncode == 0, res.stderr
+    assert "auto-close=1" in res.stdout, res.stdout
+
+    stream = res.stdout + res.stderr
+    assert "fb-cr-aaaaaa/i1" in stream, (
+        f"a proposed close must be named, not just counted\n{stream}")
+
+    from briefing.frontmatter_io import read_commented
+    assert read_commented(path)[0]["items"][0]["status"] == "accepted", \
+        "a dry run must not write"
