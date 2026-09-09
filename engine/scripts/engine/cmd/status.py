@@ -96,7 +96,140 @@ def _feedback_section(repo_root):
     )
 
 
-def _stub_ctx(repo_root):
+# gh-cache snapshots are written per advisor on a 900s TTL. Two thresholds over the
+# OLDEST snapshot in the union: one TTL is "the picture is due a refresh", four is
+# "this is no longer a current view of GitHub". Both derived from the producer's own
+# constant rather than chosen, so they move when it moves.
+_SNAPSHOT_WARN = timedelta(seconds=900)
+_SNAPSHOT_ERROR = timedelta(seconds=900 * 4)
+
+# Rule 7's axis: how long since the queue itself MOVED. A queue read every session
+# and touched by nobody is fresh by snapshot age and dead by this one.
+_MOVEMENT_WARN = timedelta(days=7)
+_MOVEMENT_ERROR = timedelta(days=30)
+
+
+def _gh_sections(repo_root):
+    """The two gh-cache sections, assembled instance-wide by walking the roster.
+
+    Instance scope here is an ITERATION over advisors, not a widened read, and the
+    difference is the whole of plan 057 T7. A widened read returns one number and
+    can say nothing about the caches behind it; walking the roster yields one shard
+    per advisor, each carrying its own capture time, so the union can report that it
+    is a mosaic of five different moments — and refuse to look authoritative when one
+    of them never reported at all.
+
+    The roster is `lifecycle_advisors`, NOT `known_advisors`. The neighbouring
+    docstring in `enginelib.advisors` says to enumerate on `known_advisors`, and that
+    advice is right for its question ("who was hired") and wrong for this one ("whose
+    work is in the pool"): `known_advisors` excludes forge-chro as META, and measured
+    on this instance 2026-09-09 forge-chro holds 73 of the 137 cached issues. A
+    projection built on it would print 64 and call itself instance-wide, which is the
+    §2 defect one layer up.
+    """
+    from briefing.scans import p0, queue
+    from briefing.scans._gh_cache import captured_at
+    from enginelib.advisors import lifecycle_advisors
+    from enginelib.status.reduce import MissingShard, Shard
+
+    queue_shards: list = []
+    p0_shards: list = []
+    newest_move: datetime | None = None
+
+    for advisor in sorted(lifecycle_advisors(repo_root)):
+        ctx = _stub_ctx(repo_root, advisor=advisor)
+        stamp = captured_at(ctx.gh_cache_dir / f"{advisor}.md")
+        if stamp is None:
+            # No snapshot is not an empty queue. `queue.collect` returns [] for both a
+            # missing cache and a cache holding zero items, so the file's own stamp is
+            # what separates them — which is why this branch reads the stamp first and
+            # does not call collect() at all.
+            reason = f"снимок не снят: agent-memory/gh-cache/{advisor}.md"
+            queue_shards.append(MissingShard(key=advisor, reason=reason))
+            p0_shards.append(MissingShard(key=advisor, reason=reason))
+            continue
+
+        items = queue.collect(ctx)
+        queue_shards.append(
+            Shard(
+                key=advisor, captured_at=stamp,
+                identities=tuple(queue.issue_identity(i) for i in items),
+            )
+        )
+        p0_shards.append(
+            Shard(
+                key=advisor, captured_at=stamp,
+                identities=tuple(queue.issue_identity(i) for i in p0.select(items)),
+            )
+        )
+        for item in items:
+            moved = _parse_gh_time(item.get("updatedAt", ""))
+            if moved is not None and (newest_move is None or moved > newest_move):
+                newest_move = moved
+
+    return (
+        _mosaic_section(
+            name="очередь", noun="issue открыто по инстансу",
+            shards=queue_shards, newest_move=newest_move,
+        ),
+        _mosaic_section(
+            name="p0", noun="p0-блокеров по инстансу",
+            shards=p0_shards, newest_move=newest_move,
+        ),
+    )
+
+
+def _parse_gh_time(value: str) -> datetime | None:
+    """gh's ISO-8601 with a Z suffix, or None on anything unparsable."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _mosaic_section(*, name, noun, shards, newest_move):
+    """One section over a mosaic, judged on both of its axes at once."""
+    from enginelib.status.model import Absent, Count, SectionResult, Staleness
+    from enginelib.status.reduce import combine_shards, worst_verdict
+
+    mosaic = combine_shards(shards)
+    if mosaic.nothing_reported:
+        missing = ", ".join(s.key for s in mosaic.missing) or "ростер пуст"
+        return SectionResult(
+            name=name,
+            measurement=Absent(reason=f"ни один снимок не снят ({missing})"),
+            verdict="unknown",
+        )
+
+    now = datetime.now(UTC)
+    verdicts = [
+        Staleness(warn_after=_SNAPSHOT_WARN, error_after=_SNAPSHOT_ERROR).assess(mosaic.oldest, now),
+        Staleness(warn_after=_MOVEMENT_WARN, error_after=_MOVEMENT_ERROR).assess(newest_move, now),
+    ]
+    if mosaic.is_floor:
+        # An incomplete union is uncertainty, not a smaller number. Rule 2 ranks
+        # uncertainty above known-bad, and `worst_verdict` makes that the outcome.
+        verdicts.append("unknown")
+
+    floor = " (пол, не итог)" if mosaic.is_floor else ""
+    stamp = mosaic.oldest.strftime("%H:%MZ") if mosaic.oldest else "—"
+    proof = (
+        f"union agent-memory/gh-cache/{{{','.join(mosaic.reporting)}}}.md — "
+        f"{len(mosaic.reporting)} снимков, старейший {stamp}"
+    )
+    if mosaic.missing:
+        proof += "; без снимка: " + ", ".join(s.key for s in mosaic.missing)
+
+    return SectionResult(
+        name=name,
+        measurement=Count(value=mosaic.total, noun=noun + floor, proof=proof),
+        verdict=worst_verdict(*verdicts),
+    )
+
+
+def _stub_ctx(repo_root, advisor: str = ""):
     """A ScanCtx for an instance-scoped read.
 
     `advisor` is typed `str` with no instance-wide path anywhere in the scan layer
@@ -111,7 +244,7 @@ def _stub_ctx(repo_root):
     from briefing.scans import ScanCtx
 
     return ScanCtx(
-        advisor="", short_name="", repo_root=repo_root,
+        advisor=advisor, short_name=advisor.split("-")[0], repo_root=repo_root,
         decisions_dir=repo_root / "agent-memory" / "advisors" / "decisions",
         sessions_dir=repo_root / "agent-memory" / "advisors" / "sessions",
         mentions_dir=repo_root / "agent-memory" / "advisors" / "mentions",
@@ -126,7 +259,6 @@ def _stub_ctx(repo_root):
 # that renders nothing at all is worse.
 _NOT_YET_WIRED = {
     "спеки": "не подключено (plan 057 T10)",
-    "очередь": "не подключено — per-advisor кэш, нужен scope (plan 057 T7)",
     "ветки": "не подключено — нужен join git cherry × gh pr (plan 057 T9)",
     "CI": "не подключено — statusCheckRollup, ничего его не проецирует (plan 057 T11)",
 }
@@ -135,13 +267,14 @@ _NOT_YET_WIRED = {
 def _status(args) -> int:
     from enginelib.paths import repo_root as data_root
     from enginelib.status.model import Absent, SectionResult
+    from enginelib.status.reduce import MAX_DEVIATION_CLUSTERS, deviations, over_cluster_budget
     from enginelib.status.render_terminal import glance, glance_overflows, work
 
     args._runlog_verb = "status"
     args._runlog_args = f"scope={'advisor' if args.advisor else 'instance'}"
 
     root = data_root()
-    sections = [_handoffs_section(root), _feedback_section(root)]
+    sections = [_handoffs_section(root), _feedback_section(root), *_gh_sections(root)]
     sections += [
         SectionResult(name=n, measurement=Absent(reason=r), verdict="unknown")
         for n, r in _NOT_YET_WIRED.items()
@@ -153,6 +286,16 @@ def _status(args) -> int:
         print(
             f"[status] WARNING: {len(sections)} секций при потолке в 12 строк — "
             "их надо группировать, а не резать",
+            file=sys.stderr,
+        )
+    if over_cluster_budget(sections):
+        # reduce.over_cluster_budget existed with no call site anywhere but its own
+        # test — a rule that is computed and never consulted is not a rule, and this
+        # projection is the surface it was written for. Wiring it reports a violation
+        # that predates T7: five deviations were already over the cap of four.
+        print(
+            f"[status] WARNING: {len(deviations(sections))} отклонений при кластерном "
+            f"бюджете {MAX_DEVIATION_CLUSTERS} (rule 2) — их надо группировать",
             file=sys.stderr,
         )
     if not args.glance:

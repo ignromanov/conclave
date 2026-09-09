@@ -104,6 +104,34 @@ def _format_row(item: dict) -> str | None:
     return f"{issue_ref} | {title} | {labels}{age_part}"
 
 
+def collect(ctx: ScanCtx) -> list[dict]:
+    """The rows this section is built from: the advisor's raw gh-cache items.
+
+    The public data seam GH#57 needs, and deliberately ADVISOR-scoped: one cache is
+    one advisor's view, and that is the honest unit. The instance-wide number is the
+    union of these across the roster, assembled by the caller — never by widening
+    this read, because a widened read has no way to report that one of the caches it
+    silently merged was two hours older than the rest (plan 057 §2, T7).
+
+    Returns the items unformatted. `build()` below is one printer over this shape;
+    the status projection is another, and it needs the labels and the repository as
+    data rather than as a joined string.
+    """
+    cache_path = ctx.gh_cache_dir / f"{ctx.advisor}.md"
+    return _read_raw_items(cache_path, advisor=ctx.advisor)
+
+
+def issue_identity(item: dict) -> str:
+    """A stable cross-cache key for one issue: "<repo>#<number>".
+
+    Deduping a mosaic needs an identity that survives appearing in two advisors'
+    caches. The number alone is not one — this instance runs two repos, and
+    conclave#57 and conclave-ai#57 are different issues.
+    """
+    repo = (item.get("repository") or {}).get("name", "")
+    return f"{repo}#{item.get('number')}"
+
+
 def build(ctx: ScanCtx) -> str:
     """Return markdown list of all open issues from gh-cache.
 

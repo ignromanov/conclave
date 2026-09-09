@@ -11,6 +11,7 @@ import json
 import re
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 # TTL in seconds matching briefing-build.sh.
@@ -66,3 +67,32 @@ def read_gh_cache(cache_path: Path, *, advisor: str) -> list[str]:
         labels = " ".join(lbl["name"] for lbl in item.get("labels", []))
         rows.append(f"#{num} | {title} | {labels}")
     return rows
+
+
+# Frontmatter stamp written by gh-fetch.sh: captured_at: "2026-09-09T21:51:08Z".
+_CAPTURED_AT_RE = re.compile(r'^captured_at:\s*"?([^"\n]+)"?\s*$', re.MULTILINE)
+
+
+def captured_at(cache_path: Path) -> datetime | None:
+    """When this snapshot was taken, from its own frontmatter — not its mtime.
+
+    An instance-wide count is a union of these snapshots, and its honesty depends
+    on the OLDEST of them (see `enginelib.status.reduce.Mosaic`). mtime would be
+    the convenient source and the wrong one: any tool that rewrites or copies the
+    file moves the mtime without re-fetching anything, so mtime answers "when did
+    this file last change" while the projection is asking "how old is this view of
+    GitHub". `read_gh_cache`'s own staleness INFO uses mtime for TTL, which is a
+    different question with a different tolerance; this is deliberately not that.
+
+    None when the file is absent or carries no parsable stamp — the caller must
+    then treat the shard as missing rather than as fresh.
+    """
+    if not cache_path.is_file():
+        return None
+    m = _CAPTURED_AT_RE.search(cache_path.read_text(encoding="utf-8"))
+    if not m:
+        return None
+    try:
+        return datetime.fromisoformat(m.group(1).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
