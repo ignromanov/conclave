@@ -5,6 +5,7 @@ plugin skills live at engine_root().parent/skills. The ':+' guards from
 lib/paths.sh:121-122 are mirrored: a CC var injects the default ONLY when set.
 """
 import os
+import warnings
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -106,14 +107,56 @@ def walk_for_data_root(start: Path | None = None) -> Path | None:
     return None
 
 
+class EngineRootMismatchWarning(UserWarning):
+    """The declared CODE root names a tree other than the one this code runs from.
+
+    Its own category so the one population that does this deliberately — the test suite,
+    which uses `CONCLAVE_ENGINE_ROOT` as a dependency-injection seam — can silence
+    exactly this and nothing else. See the repo-root `conftest.py`.
+    """
+
+
 def engine_root() -> Path:
     """CODE root = the engine/ dir. Env override, else derive from this file's
     location: __file__ = engine/scripts/enginelib/paths.py, so parents[2] == engine/
-    (parents[0]=enginelib, parents[1]=scripts, parents[2]=engine)."""
-    env = os.environ.get("CONCLAVE_ENGINE_ROOT") or _plugin_engine_default()
-    if env:
-        return Path(env).resolve()
-    return Path(__file__).resolve().parents[2]   # enginelib/ -> scripts/ -> engine/
+    (parents[0]=enginelib, parents[1]=scripts, parents[2]=engine).
+
+    An override that names a different tree is honoured, and warned about (GH#232).
+    Honoured because 81 assignments across 33 test files depend on it: the variable is
+    this suite's injection seam, and a hard check correct for production forbids that —
+    measured, 145 failures. Warned about because in production the two agreeing is the
+    only coherent state. Everything downstream is a relative offset from this value and
+    several go UPWARD (`forge_dir()` is `engine_root().parent / "skills" / ...`), so a
+    value one segment too high resolves shipped assets into a sibling of the checkout —
+    a path belonging to no repository — and the failure then surfaces frames later as a
+    missing template, naming a file instead of the variable that produced it.
+
+    The comparison is against this module's own location because that is correct by
+    construction: it is the tree that is executing. Two call sites already enforce the
+    same rule from outside — `session_init._pin_engine_root_to_own_copy` (GH#187) and the
+    repo-root `conftest.py` (#238) — each able to act because each knows its own context.
+    The resolver, reached by production and by synthetic-tree tests alike, does not, which
+    is why it reports rather than decides.
+    """
+    own = Path(__file__).resolve().parents[2]   # enginelib/ -> scripts/ -> engine/
+    env = os.environ.get("CONCLAVE_ENGINE_ROOT")
+    source = "CONCLAVE_ENGINE_ROOT"
+    if not env:
+        env, source = _plugin_engine_default(), "CLAUDE_PLUGIN_ROOT"
+    if not env:
+        return own
+    named = Path(env).resolve()
+    if named != own:
+        warnings.warn(
+            f"{source} resolves the CODE root to {named}, but this code is running from "
+            f"{own}. Shipped assets (skills/, agents/, templates) will be read from the "
+            f"first tree while the code comes from the second. The expected value is the "
+            f"engine/ dir itself: one segment too high resolves assets into a sibling of "
+            f"the checkout, which exists nowhere.",
+            EngineRootMismatchWarning,
+            stacklevel=2,
+        )
+    return named
 
 
 def plugin_agents_dir() -> Path:
