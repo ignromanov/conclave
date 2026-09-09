@@ -33,6 +33,13 @@ Per-advisor overlays live at `skills/team.<id>/contracts/session-lifecycle.md`.
 ### 3. During session
 - Advisor may edit code and commit **if** user requests AND no overlay forbids it.
 - Respect shared quality-loop contract.
+- A test lane pointed at a **live instance** — anything setting `CONCLAVE_LIVE_INSTANCE_ROOT`
+  at a tree the operator uses — runs only against a committed DATA tree, and its DATA diff is
+  read afterwards. Such a run has rewritten 34 DATA files from inside a test that called
+  itself a safety gate (GH#131); committed, that is a diff to revert, uncommitted it is gone.
+  The suite enforces the precondition rather than trusting this line: the `live_instance`
+  fixture refuses a root with uncommitted tracked changes. The line is here because the diff
+  afterwards is still yours to read.
 
 ### 4. Done (team.done)
 - Sync GH Issues (decisions, new actions, closed items).
