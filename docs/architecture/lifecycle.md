@@ -49,14 +49,24 @@ The lifecycle ritual is the enforcement mechanism for constitutions II and III:
 
 ## The five skills
 
-The mandatory ritual is composed of four skills plus one optional retrospective. In Conclave,
-all five are implemented as lifecycle skills — not agents. They carry no model; they are
-invocation-time protocols that any advisor runs.
+The mandatory ritual is composed of three skills — `start`, `done` and the `feedback` emission
+`done` gates on — plus `handoff` when work is incomplete. In Conclave, all of them are
+implemented as lifecycle skills — not agents. They carry no model; they are invocation-time
+protocols that any advisor runs.
 
 ```
-start → processing → [work] → done → handoff (if incomplete)
-                                    └─ retro (optional, every 3rd done)
+start → [work] → done → handoff (if incomplete)
+                      ├─ feedback (mandatory emission, gated)
+                      └─ retro (optional, every 3rd done)
+
+processing (operator-invoked router — reached from no other step)
 ```
+
+`processing` was described here as the mandatory second step until 2026-09-08. It is reachable
+from nothing: `start` ends by naming `done`, and no command names `/conclave:processing`. The
+arrow that stood here was the diagram asserting a route the files do not contain — pinned since by
+`engine/scripts/tests/test_lifecycle_reachability.py`, which walks the mention graph out from
+`start` rather than counting mentions.
 
 ---
 
@@ -107,7 +117,8 @@ never reached briefing build at all.
 ## team.processing — Work routing
 
 **Purpose:** Detect what kind of session this is (mode), then invoke the skill chain the request's
-type already carries from `start`. Runs after `start`, before any substantive work.
+type already carries from `start`. Invoked by the operator when routing is not already
+settled at `start` §5 — no lifecycle step routes into it.
 
 **Inputs:** current request content; tier from `team.start`.
 
