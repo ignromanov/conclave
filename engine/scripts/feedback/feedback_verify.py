@@ -421,7 +421,7 @@ def main(argv=None) -> int:
         # work lands. The snapshot each verdict was read against is printed, because
         # neither instrument in this loop used to say which one it read.
         by_key = {(r.get("feedback_id"), r.get("item_id")): r for r in rows}
-        closable: list[tuple[str, str]] = []
+        closable: list[tuple[str, str, str, str]] = []
         held: list[tuple[str, str, str, str]] = []
         for fid, iid in res.auto_close:
             vraw = (by_key.get((fid, iid)) or {}).get("verify") or {}
@@ -429,13 +429,21 @@ def main(argv=None) -> int:
                                          engine_root().parent)
             ok, snap = is_shipped(target)
             if ok:
-                closable.append((fid, iid))
+                closable.append((fid, iid, str(target), snap))
             else:
                 held.append((fid, iid, str(target), snap))
 
         print(f"auto-close={len(closable)} held-unshipped={len(held)} "
               f"candidates={len(res.llm_candidates)} "
               f"nominations={len(res.nominations)} broken={len(res.broken)}")
+        # Every close is named, like HELD and BROKEN beside it. Without a run that
+        # writes nothing has no reviewable content: `auto-close=N` asks the operator to
+        # authorise N writes while withholding their targets, and the dry run exists for
+        # exactly that review. Measured 2026-09-09: a live sweep printed auto-close=8
+        # and no item id in either stream.
+        for fid, iid, tgt, snap in closable:
+            suffix = "" if args.apply else " (dry run — re-run with --apply to write)"
+            print(f"  CLOSE {fid}/{iid}: evidence is in {snap} -> {tgt}{suffix}")
         for fid, iid, tgt, snap in held:
             print(f"  HELD {fid}/{iid}: evidence is not in {snap} -> {tgt} "
                   f"(land the work; the next sweep closes it)", file=sys.stderr)
@@ -454,7 +462,7 @@ def main(argv=None) -> int:
             # issue link). Its own stderr names the item; what the loop owes is not to
             # let `auto-close=N` stand as a count of closes that happened.
             refused = 0
-            for fid, iid in closable:
+            for fid, iid, _tgt, _snap in closable:
                 if cmd_set(root, fid, iid, "resolved", "verify:auto") != 0:
                     refused += 1
             if refused:
