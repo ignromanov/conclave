@@ -13,9 +13,9 @@ get subtly wrong belongs here once, not three times. Two rules qualify:
 """
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 
-from enginelib.status.model import Absent, Count, SectionResult, Verdict
+from enginelib.status.model import Count, SectionResult, Verdict
 
 # Rank order, most urgent first. `unknown` leads deliberately — see module docstring.
 _VERDICT_RANK: dict[Verdict, int] = {
@@ -53,29 +53,6 @@ def deviations(sections: Iterable[SectionResult]) -> list[SectionResult]:
 def over_cluster_budget(sections: Iterable[SectionResult]) -> bool:
     """True when the deviations exceed the four-cluster cap and must be grouped."""
     return len(deviations(sections)) > MAX_DEVIATION_CLUSTERS
-
-
-def tally(sections: Sequence[SectionResult]) -> list[tuple[str, str]]:
-    """The glance block's summary line, as (name, rendered-quantity) pairs.
-
-    Rule 0 of the slot order: "one counted-noun summary line, same categories in the
-    same order every time, zeros included". So this returns EVERY section in the
-    order given — a section is never dropped for being empty, because on an inventory
-    surface a zero is the answer, not the absence of one.
-
-    An unmeasured section yields its reason, not a number, and never "0".
-    """
-    out: list[tuple[str, str]] = []
-    for s in sections:
-        m = s.measurement
-        if isinstance(m, Absent):
-            out.append((s.name, f"— {m.reason}"))
-        elif isinstance(m, Count):
-            if m.of is None:
-                out.append((s.name, f"{m.value} {m.noun}"))
-            else:
-                out.append((s.name, f"{m.value} of {m.of} {m.noun}"))
-    return out
 
 
 def measured_total(sections: Iterable[SectionResult]) -> Count | None:

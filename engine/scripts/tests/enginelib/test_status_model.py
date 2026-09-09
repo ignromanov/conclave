@@ -18,8 +18,8 @@ from enginelib.status.reduce import (
     measured_total,
     over_cluster_budget,
     rank_sections,
-    tally,
 )
+from enginelib.status.render_terminal import glance, quantity
 
 NOW = datetime(2026, 9, 9, 12, 0, 0)
 
@@ -63,24 +63,25 @@ def test_measured_zero_and_absent_do_not_render_alike() -> None:
         name="triage",
         measurement=Absent(reason="не шёл ни разу (last-triage пуст)"),
     )
-    rendered = dict(tally([zero, never_ran]))
-    assert rendered["feedback"] == "0 of 237 records resolved"
-    assert rendered["triage"].startswith("— ")
-    assert rendered["feedback"] != rendered["triage"]
+    assert quantity(zero.measurement) == "0 из 237 records resolved"
+    assert quantity(never_ran.measurement).startswith("— ")
+    assert quantity(zero.measurement) != quantity(never_ran.measurement)
 
 
-def test_tally_keeps_zero_rows() -> None:
+def test_glance_keeps_zero_rows() -> None:
     """Rule 3 + the zero-rows carve-out: on an inventory surface a zero IS the answer.
 
     The session-summary contract omits zero rows; this surface renders them, and the
-    two contracts are scoped against each other explicitly. A tally that drops empties
-    would silently import the wrong one.
+    two contracts are scoped against each other explicitly. A printer that drops
+    empties would silently import the wrong one.
     """
     sections = [
         SectionResult("blockers", Count(0, "blockers", "gh pr list")),
         SectionResult("specs", Count(9, "specs done", "REGISTRY.md")),
     ]
-    assert [n for n, _ in tally(sections)] == ["blockers", "specs"]
+    block = glance("engine", "🦉", "состояние", "09.09", sections)
+    assert "**blockers**  0 blockers" in block
+    assert "**specs**  9 specs done" in block
 
 
 def test_measured_total_is_none_when_nothing_was_measured() -> None:
