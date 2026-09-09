@@ -17,7 +17,15 @@ description: >-
 
 # /conclave:processing — Work Routing
 
-> **MANDATORY** for every advisor session after `/conclave:start`. Works independently — no Quorum required.
+> **Operator-invoked**, not mandatory. Works independently — no Quorum required.
+>
+> This step called itself mandatory for every session until 2026-09-08. It is not reachable:
+> `commands/*.md` is the whole call graph and no file names `/conclave:processing` except this
+> one — `commands/start.md` ends by naming `/conclave:done`, and §5 there has already picked the
+> tier, the task type and the skill chain that this file is told to carry and not redetect. An
+> obligation nothing routes into has no failure mode, which is why nothing ever reported it
+> skipped. Pinned by `engine/scripts/tests/test_lifecycle_reachability.py`; spec 117's
+> mid-session checkpoint is placed elsewhere for this reason (117 §6, forge-chro).
 
 ## Question shape
 
