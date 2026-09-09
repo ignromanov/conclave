@@ -14,6 +14,7 @@ Extensions vs brief (matching fixtures.bash semantics):
 """
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -107,7 +108,57 @@ def _live_instance_root(request, monkeypatch, _hermetic_instance_env):
     root = Path(raw).resolve()
     if not root.is_dir():
         pytest.fail(f"{LIVE_INSTANCE_ROOT_VAR}={raw} is not a directory")
+    _refuse_a_dirty_live_root(root)
     monkeypatch.setenv("CONCLAVE_AI_ROOT", str(root))
+
+
+def _uncommitted_tracked_files(root: Path) -> list[str] | None:
+    """Tracked files modified under `root`, or None when `root` is not in a git tree.
+
+    `--untracked-files=no` is the whole predicate. A live lane seeded by
+    `engine test live` scaffolds a fresh instance that may land INSIDE this checkout, and
+    every file in it is untracked; counting those would fail the lane that has nothing to
+    lose. What a rewriting run destroys irrecoverably is a tracked file's uncommitted
+    edit, and that is what this asks about.
+    """
+    proc = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=no", "--", str(root)],
+        cwd=str(root), capture_output=True, text=True,
+    )
+    if proc.returncode != 0:            # not a working tree: nothing tracked, nothing to lose
+        return None
+    return [line[3:] for line in proc.stdout.splitlines() if line.strip()]
+
+
+def _refuse_a_dirty_live_root(root: Path) -> None:
+    """A lane pointed at a real instance runs only against a committed tree (GH#131).
+
+    The live lane is the one place in this suite where tests write to a tree the operator
+    is using. It has already cost 34 DATA files: a run in non-hermetic mode rewrote the
+    frontmatter of 16 decisions and 18 session records inside a test that names itself a
+    safety gate. Committed, that is a diff to inspect and revert; uncommitted, it is gone.
+
+    So the precondition is enforced here rather than written down. GH#131 finding 4 asked
+    for a sentence in `session-lifecycle.md` saying a live lane needs a clean DATA tree —
+    but the instruction that was missing then would have been read by the same person who
+    was about to run the lane anyway, and this week has produced three separate guards
+    whose reach depended on somebody remembering them. A check at the fixture runs on
+    every invocation of the lane, including the one nobody planned.
+
+    Fails, never skips: a skip is what a green run looks like, which is the defect this
+    fixture's own docstring already refuses one paragraph up.
+    """
+    dirty = _uncommitted_tracked_files(root)
+    if not dirty:
+        return
+    shown = "\n  ".join(dirty[:10])
+    more = f"\n  ... and {len(dirty) - 10} more" if len(dirty) > 10 else ""
+    pytest.fail(
+        f"{LIVE_INSTANCE_ROOT_VAR}={root} has uncommitted changes to {len(dirty)} tracked "
+        f"file(s), and the live lane writes to that tree:\n  {shown}{more}\n"
+        f"Commit or stash them first. This lane has already rewritten 34 DATA files in one "
+        f"run (GH#131); committed, such a run is a diff you can read and revert."
+    )
 
 
 @pytest.fixture
