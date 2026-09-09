@@ -301,3 +301,81 @@ def test_pytest_is_rooted_in_the_tree_this_file_lives_in(pytestconfig):
         f"pytest read its config from {pytestconfig.inipath}, not this checkout's "
         f"pytest.ini — testpaths, pythonpath and addopts are all coming from elsewhere"
     )
+
+
+# --- The CODE root: a value that disagrees with the running tree is announced (GH#232) ---
+
+# Runs inside the subprocess. Calls the resolver and reports nothing on stdout worth
+# reading — the assertion is about STDERR, which is where a warning lands.
+_ENGINE_ROOT_PROBE = (
+    "import enginelib.paths as m; m.engine_root(); print('resolved')"
+)
+
+
+def _resolve_engine_root(engine_root_value: str, cwd: Path) -> subprocess.CompletedProcess:
+    """Run the CODE-root resolver in a child with CONCLAVE_ENGINE_ROOT set to a value.
+
+    A subprocess, not a monkeypatch: the behaviour under test compares the environment
+    against `Path(__file__)`, and this module cannot be moved in-process. The child also
+    runs under Python's default warning filters, which is the state an operator's CLI run
+    is in — pytest installs its own, so an in-process assertion would measure pytest.
+    """
+    env = {k: v for k, v in os.environ.items() if k not in _SCRUB}
+    env["PYTHONPATH"] = str(_SCRIPTS)
+    env["CONCLAVE_ENGINE_ROOT"] = engine_root_value
+    return subprocess.run(
+        [sys.executable, "-c", _ENGINE_ROOT_PROBE],
+        cwd=str(cwd), env=env, capture_output=True, text=True, timeout=60,
+    )
+
+
+def test_an_engine_root_naming_another_tree_is_announced_on_stderr(tmp_path):
+    """A CODE root that is not the running tree is a misconfiguration, and says so.
+
+    GH#232's repro: `CONCLAVE_ENGINE_ROOT="$PWD"` — the checkout root, one segment above
+    the documented `engine/` dir. Every consumer is a relative offset from it and several
+    go UPWARD (`forge_dir()` is `engine_root().parent / "skills" / ...`), so a value one
+    level too high resolves shipped assets into a *sibling of the checkout*: a path that
+    exists in no repository. Steps 1-11 of the briefing build reported success; only the
+    render failed, naming a file rather than the variable that produced it.
+
+    The disagreement is with `Path(__file__).parents[2]` — the engine dir of the tree
+    this very module was imported from — because that value is correct by construction:
+    it is the code that is actually executing. In production the two agreeing is the only
+    coherent state, and this is the third place the rule is written down. The other two
+    are `session_init._pin_engine_root_to_own_copy` (GH#187) and the repo-root
+    `conftest.py` (#238), each of which could act because each knows its own context.
+
+    Not a raise. `CONCLAVE_ENGINE_ROOT` is also the suite's dependency-injection seam —
+    81 assignments across 33 files point it at a bare `tmp_path` on purpose — and a shape
+    check correct for production forbids that: applied as a probe, it produced 145
+    failures. The seam has to move off the variable (#131 finding 2) before the warning
+    can become an error.
+    """
+    proc = _resolve_engine_root(str(tmp_path), cwd=tmp_path)
+    assert proc.returncode == 0, f"probe crashed: {proc.stderr}"
+    running_tree = str(_SCRIPTS.parent)
+    for expected in ("CONCLAVE_ENGINE_ROOT", str(tmp_path), running_tree):
+        assert expected in proc.stderr, (
+            f"engine_root() accepted {str(tmp_path)!r} while running from "
+            f"{running_tree!r} and said nothing that names {expected!r}. The whole cost "
+            f"of this defect is that the failure surfaces frames away as a missing file; "
+            f"the notice has to name the variable and BOTH trees to be worth anything.\n"
+            f"--- stderr ---\n{proc.stderr}"
+        )
+
+
+def test_an_engine_root_that_agrees_with_the_running_tree_is_silent(tmp_path):
+    """The matching case is the normal one, and a line printed on every run is unread.
+
+    This is the half that keeps the warning above from becoming noise: the SessionStart
+    hook exports the variable in every ordinary session, correctly, and a notice that
+    fires then would train its reader to ignore it. Asserting silence here is what makes
+    the disagreement case mean something.
+    """
+    proc = _resolve_engine_root(str(_SCRIPTS.parent), cwd=tmp_path)
+    assert proc.returncode == 0, f"probe crashed: {proc.stderr}"
+    assert proc.stderr.strip() == "", (
+        "engine_root() warned about a value that names exactly the tree it is running "
+        f"from. That is the normal case in every session.\n--- stderr ---\n{proc.stderr}"
+    )
