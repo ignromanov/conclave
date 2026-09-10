@@ -92,3 +92,38 @@ def test_committed_but_unmerged_work_is_not_shipped(repo):
     ok, snapshot = is_shipped(repo / "a.py")
     assert ok is False, "a commit that never reached the upstream has not shipped"
     assert "origin/main" in snapshot
+
+
+def test_a_pushed_topic_branch_is_not_shipped(repo):
+    """#259 — `git push -u` makes a topic branch's own remote copy its upstream, so
+    preferring `@{upstream}` makes "shipped" mean "pushed to my own PR branch".
+
+    Every other test here configures the upstream as the INTEGRATION branch, which is
+    the one arrangement where the two answers coincide — which is why a sweep run from
+    a worktree with an open PR could close items against work that landed nowhere and
+    the suite stayed green. #160's working-tree guard does not see it: the tree is
+    clean, committed and pushed, to the wrong place.
+    """
+    upstream = repo.parent / "upstream.git"
+    _git(repo, "clone", "-q", "--bare", str(repo), str(upstream))
+    _git(repo, "remote", "add", "origin", str(upstream))
+    _git(repo, "fetch", "-q", "origin")
+    _git(repo, "remote", "set-head", "origin", "main")
+    _git(repo, "branch", "--set-upstream-to=origin/main", "main")
+
+    _git(repo, "checkout", "-q", "-b", "topic")
+    (repo / "a.py").write_text("the BUG is gone\n")
+    _git(repo, "commit", "-qam", "fix on a topic branch")
+    _git(repo, "push", "-q", "-u", "origin", "topic")
+    repo_of.cache_clear()
+    shipped_ref.cache_clear()
+
+    # Precondition: the fix is on the topic branch and on no integration branch.
+    on_main = _git(repo, "show", "origin/main:a.py").stdout
+    assert "BUG is gone" not in on_main
+
+    ok, snapshot = is_shipped(repo / "a.py")
+    assert ok is False, (
+        f"a fix living only on a pushed PR branch is not shipped (snapshot={snapshot})")
+    assert "topic" not in snapshot, (
+        f"the snapshot must name the integration branch, not the PR branch: {snapshot}")
