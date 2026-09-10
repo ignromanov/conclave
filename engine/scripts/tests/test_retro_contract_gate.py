@@ -264,3 +264,51 @@ def test_positive_producer_gate_catches_a_second_producer():
     )
     producers = [p for p, cats in _prompt_rows(section) if "positive" in cats]
     assert producers != ["removed-step"]
+
+
+# ---------------------------------------------------------------------------
+# The status enum has no gate, and drifted (#250)
+# ---------------------------------------------------------------------------
+# The category enum is held to the schema in three discovered copies. The status enum
+# was held nowhere, and the contract's row was measurably behind: it listed six members
+# while the schema had seven — `re-occurred`, set by feedback_emit._reopen_matches, has
+# been undocumented since it was introduced. An author reads the row and concludes the
+# status they need does not exist, which is exactly how `positive` ended up with no
+# terminal verb for a day and 6 items.
+
+def _contract_statuses(text: str) -> frozenset[str]:
+    """The status enum as the contract documents it — the `| `status` | ... |` row."""
+    for line in text.splitlines():
+        if line.startswith("| `status`"):
+            cells = line.split("|")
+            return frozenset(_BACKTICKED.findall(cells[2]))
+    raise AssertionError("no `| `status` |` row in the contract — the enum row was renamed")
+
+
+def test_contract_status_enum_matches_the_schema():
+    from feedback.schema import Status
+
+    schema = frozenset(typing.get_args(Status))
+    documented = _contract_statuses(CONTRACT.read_text(encoding="utf-8"))
+    assert documented == schema, (
+        f"the contract's status row disagrees with the schema — "
+        f"missing from the doc: {sorted(schema - documented)}; "
+        f"documented but not in the schema: {sorted(documented - schema)}")
+
+
+def test_every_status_the_schema_allows_is_reachable_through_triage():
+    """A status the validator accepts but `--set` refuses is a status no one can use.
+
+    `_VALID_STATUSES` derives from the same Literal, so this cannot drift — which is the
+    point of asserting it: the gate records that the derivation is load-bearing, so
+    replacing it with a hand-written set is a test failure and not a silent narrowing.
+    """
+    import sys
+
+    sys.path.insert(0, str(REPO_ROOT / "engine/scripts/feedback"))
+    from feedback_triage import _VALID_STATUSES
+
+    from feedback.schema import Status
+
+    assert _VALID_STATUSES == frozenset(typing.get_args(Status)), (
+        "triage accepts a different status set than the schema validates")

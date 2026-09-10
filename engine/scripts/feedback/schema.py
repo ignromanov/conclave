@@ -15,11 +15,11 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # the prompt, not here: "artefact X removed step Y", never "what worked well" (W3 rows 12/17).
 Category = Literal["script-defect", "doc-contradiction", "naming-inconsistency",
                     "skill-inaccuracy", "skill-gap", "process-friction",
-                    "data-access", "idea", "positive"]
+                    "data-access", "idea", "positive", "near-miss"]
 Layer = Literal["infra", "skill", "contract", "memory", "workflow"]
 Severity = Literal["low", "medium", "high", "critical"]
 Frequency = Literal["first-time", "occasional", "every-dispatch"]
-Status = Literal["open", "accepted", "in_progress", "resolved", "re-occurred", "rejected", "deferred"]  # `re-occurred` set by feedback_emit._reopen_matches when a new item's fingerprint matches a resolved item (any severity) — unless a live non-terminal dup exists, or the new item carries no `location.section`, in which case the match is file-level only and cannot distinguish a regression from a different defect in the same file (#59; spec 086 A4 / 093 §E, Reflexion §3 local-minima mitigation)
+Status = Literal["open", "accepted", "in_progress", "resolved", "re-occurred", "rejected", "deferred", "acknowledged"]  # `acknowledged` is terminal for the two categories that name no fix (`positive`, `near-miss`): `resolved` would claim a repair that never happened and `rejected` would call a valid finding invalid, so both used to sit non-terminal forever (#250)  # `re-occurred` set by feedback_emit._reopen_matches when a new item's fingerprint matches a resolved item (any severity) — unless a live non-terminal dup exists, or the new item carries no `location.section`, in which case the match is file-level only and cannot distinguish a regression from a different defect in the same file (#59; spec 086 A4 / 093 §E, Reflexion §3 local-minima mitigation)
 AgentType = Literal["advisor", "executor", "other"]
 
 

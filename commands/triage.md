@@ -82,6 +82,11 @@ For each cluster in the digest, choose one of:
 | `accepted` | Actionable, worth a fix. Assign an owner by `layer`. |
 | `rejected` | Not actionable or already covered elsewhere. |
 | `deferred` | Valid but not this sprint. Re-surfaces in the next triage. |
+| `acknowledged` | Valid, and there is nothing to fix. The only honest verdict for `positive` and `near-miss`, and the only one available to them: `accepted` means "worth a fix" and Step 2.5 will demand a predicate for a condition that was never open, `resolved` claims a repair that never happened, `rejected` calls a valid finding invalid. Terminal — it archives, and the archive step is what carries the finding into `hot.md`. |
+
+A `positive` or a `near-miss` is classified in one step: read it, then `acknowledged`.
+There is no owner to assign and no issue to open, and the digest ranks both below every
+defect whatever their severity, so they cost the reviewer a read and nothing else (#250).
 
 **Owner routing by `layer`** (informational — override as needed):
 
@@ -93,6 +98,7 @@ For each cluster in the digest, choose one of:
 | `memory` | forge |
 | `workflow` | quorum |
 | *(any, `category: idea`)* | both forge + quorum |
+| *(any, `category: positive` / `near-miss`)* | no owner — `acknowledged`, not assigned |
 
 ### Step 2.5 — Attach the closing condition BEFORE you accept (#165)
 

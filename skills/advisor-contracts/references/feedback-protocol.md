@@ -56,7 +56,7 @@ Frontmatter holds structured fields; the body holds optional `notes`.
 | Field | Values / rule |
 |-------|---------------|
 | `id` | **string** (e.g. `"i1"`) — a bare YAML int (`id: 1`) is type-invalid and rejects the whole review at finalize |
-| `category` | `script-defect` · `doc-contradiction` · `naming-inconsistency` · `skill-inaccuracy` · `skill-gap` · `process-friction` · `data-access` · `idea` · `positive` |
+| `category` | `script-defect` · `doc-contradiction` · `naming-inconsistency` · `skill-inaccuracy` · `skill-gap` · `process-friction` · `data-access` · `idea` · `positive` · `near-miss` |
 | `layer` | `infra` · `skill` · `contract` · `memory` · `workflow` |
 | `location` | **mandatory** — typed object: `{ file, line?, skill?, section? }`. `location.skill`, when set, is a skill-path slug matching `team.*` / `exec.*` / `workflow.*` / `util.*` (e.g. `team.sage-cto`), **not** a bare agent name |
 | `fingerprint` | auto — normalized `(location, category)` hash, computed at emission time |
@@ -67,7 +67,8 @@ Frontmatter holds structured fields; the body holds optional `notes`.
 | `frequency` | `first-time` · `occasional` · `every-dispatch` |
 | `occurrence_count` | optional int — raw count when known |
 | `evidence` | **mandatory** — tool-call id / file excerpt. Missing ⇒ item rejected at ingest |
-| `status` | `open` · `accepted` · `in_progress` · `resolved` · `rejected` · `deferred` |
+| `status` | `open` · `accepted` · `in_progress` · `resolved` · `re-occurred` · `rejected` · `deferred` · `acknowledged` |
+| | `acknowledged` is terminal for the categories that name no fix (`positive`, `near-miss`): `resolved` would claim a repair that never happened, `rejected` would call a valid finding invalid. `re-occurred` is set by the emitter, not at triage. |
 | `owner` | optional — assigned at triage when `status: accepted` |
 | `resolved_at` | ISO8601 — set when `status → resolved` |
 | `migrated` | bool, default `false` — legacy entries imported by `feedback_migrate.py` |
@@ -81,6 +82,8 @@ Frontmatter holds structured fields; the body holds optional `notes`.
 `layer` → fix owner: `skill` / `contract` / `memory` / `infra` → **Forge**;
 `workflow` → **the facilitator role** (the `quorum` slot, if the instance hired one).
 `category: idea` → reviewed by both.
+`category: positive` / `near-miss` → **no owner**. Neither names a fix, so neither is
+assigned or issued; triage reads it and sets `acknowledged`, which is terminal.
 
 ## How to emit
 
