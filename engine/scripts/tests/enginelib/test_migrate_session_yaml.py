@@ -1,7 +1,8 @@
 """#255 — repairing 38 session records whose frontmatter does not parse.
 
-The corpus is append-only history and the reflexion is the only copy of a lesson, so
-every test here is about what the migration must NOT do as much as what it must.
+A session record is written once and never revised, and the reflexion is the only copy
+of a lesson, so every test here is about what the migration must NOT do as much as
+what it must.
 """
 from __future__ import annotations
 
@@ -178,8 +179,8 @@ class TestRepairChunkDirectly:
     Measured: disabling both guards is what finally trips the gate, with
     "field 'reflexion' changed: 'first line\\nsecond line' -> '>-\\nfirst line\\nsecond line'".
 
-    Defence in depth is right for append-only history, but it leaves each guard
-    individually untested. These exercise repair_chunk on its own.
+    Defence in depth is right for records that are written once and never revised,
+    but it leaves each guard individually untested. These exercise repair_chunk on its own.
     """
 
     def test_a_block_scalar_chunk_is_refused_not_flattened(self):

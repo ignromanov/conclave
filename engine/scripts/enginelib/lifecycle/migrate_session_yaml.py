@@ -11,8 +11,9 @@ value into frontmatter raw:
 Both writers are fixed (#256 for the first, as_flow_list for the second). This repairs
 what is already on disk, and only that.
 
-Why it is not a sed. These records are append-only history and the reflexion is what
-session-init hands the next session as a prior -- it exists nowhere else. A field-only
+Why it is not a sed. A session record is written once and never revised, and the
+reflexion is what session-init hands the next session as a prior -- it exists nowhere
+else. A field-only
 migration through an audited write path is exactly the shape of the 2026-08-31 incident
 that erased 58 days of item age, so the discipline here is:
 
