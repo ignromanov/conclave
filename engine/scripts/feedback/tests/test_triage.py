@@ -178,6 +178,42 @@ def test_monthly_lists_old_open_items(tmp_path):
     assert "fb-555-eeeee" in result.stdout or "it-old" in result.stdout, result.stdout
 
 
+def test_monthly_writes_nothing(tmp_path):
+    """--monthly is a report, and the contract every advisor auto-imports said it closes.
+
+    feedback-protocol.md line 126 read "Monthly: `feedback_triage.py --monthly` closes
+    zombie items older than 90 days" while cmd_monthly performs no write of any kind;
+    commands/triage.md described it correctly. The wrong half was the one loaded at every
+    /conclave:start, and it teaches that a stale backlog drains itself.
+
+    This pins the fact the corrected line asserts: byte-identical review files, and no
+    file created or removed anywhere under the DATA root.
+    """
+    old_item = _valid_item("it-zombie")
+    old_meta = _valid_review_meta(feedback_id="fb-777-ddddd", items=[old_item])
+    old_meta["created"] = "2025-01-01T10:00:00Z"
+    old_meta["updated_at"] = "2025-01-01T10:00:00Z"
+    review = _write_review(tmp_path, "2026-05-22", "atlas-zombie.md", old_meta)
+
+    before = {p: p.read_bytes() for p in sorted(tmp_path.rglob("*")) if p.is_file()}
+    result = run_triage(tmp_path, ["--monthly"])
+    assert result.returncode == 0, result.stderr
+    assert "fb-777-ddddd" in result.stdout, "the zombie must be listed at all"
+    after = {p: p.read_bytes() for p in sorted(tmp_path.rglob("*")) if p.is_file()}
+
+    # The index is a cache the command rebuilds defensively; every other file must be
+    # untouched, and nothing may appear or vanish outside it.
+    def _tracked(d):
+        return {k: v for k, v in d.items() if "_index" not in k.parts}
+
+    assert set(_tracked(after)) == set(_tracked(before)), (
+        f"files appeared/vanished: "
+        f"{set(_tracked(after)) ^ set(_tracked(before))}")
+    for path, blob in _tracked(before).items():
+        assert after[path] == blob, f"--monthly rewrote {path}"
+    assert review.read_bytes() == before[review]
+
+
 def test_set_without_owner(tmp_path):
     """--set without --owner still updates status."""
     _write_review(tmp_path, "2026-05-22", "atlas-noown.md",
