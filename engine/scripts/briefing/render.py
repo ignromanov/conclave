@@ -19,24 +19,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from briefing.paths import hot_md_path, templates_dir
-from briefing.scans import (
-    ScanCtx,
-    closeability,
-    code_repo,
-    current_work,
-    decisions,
-    drift,
-    identity,
-    interrupted,
-    mentions,
-    owed,
-    p0,
-    plans,
-    queue,
-    roadmap,
-    sessions,
-    spec_progress,
-)
+from briefing.scans import ScanCtx
+from briefing.sections import SECTIONS
 
 # Regex for {{key}} placeholders — key is alphanumeric + underscore.
 _PLACEHOLDER_RE = re.compile(r"\{\{([a-zA-Z0-9_]+)\}\}")
@@ -108,22 +92,8 @@ def build(ctx: ScanCtx, out_path: Path) -> None:
     values: dict[str, str] = {
         "advisor": ctx.audience,
         "generated_at": _generated_at(),
-        "who_i_am": identity.build(ctx),
-        "recent_decisions": decisions.build(ctx),
-        "my_queue": queue.build(ctx),
-        "p0_blockers": p0.build(ctx),
-        "last_sessions": sessions.build(ctx),
-        "mentions": mentions.build(ctx),
-        "current_work": current_work.build(ctx),
-        "spec_progress": spec_progress.build(ctx),
-        "owed": owed.build(ctx),
-        "roadmap": roadmap.build(ctx),
-        "drift": drift.build(ctx),
-        "interrupted": interrupted.build(ctx),
-        "plans": plans.build(ctx),
-        "closeability": closeability.build(ctx),
-        "code_repo": code_repo.build(ctx),
     }
+    values.update({section.key: section.scan.build(ctx) for section in SECTIONS})
 
     content = render_content(values)
     write_if_changed(content, out_path)
