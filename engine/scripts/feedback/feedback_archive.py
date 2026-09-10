@@ -41,7 +41,10 @@ from briefing.frontmatter_io import read_commented  # noqa: E402
 from briefing.paths import repo_root  # noqa: E402
 from feedback.feedback_emit import write_preserving_header  # noqa: E402
 
-_DONE_STATUSES = {"resolved", "rejected"}
+# `acknowledged` is terminal too (#250). Leaving it out would keep every positive and
+# near-miss out of the archive, and the archive step is what appends a finding to
+# hot.md -- the only route by which a near-miss reaches a later briefing.
+_DONE_STATUSES = {"resolved", "rejected", "acknowledged"}
 
 
 def _load_archived_item_keys(arch_dir: Path) -> set[tuple[str, str]]:

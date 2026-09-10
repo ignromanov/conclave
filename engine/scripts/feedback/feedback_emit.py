@@ -251,7 +251,7 @@ Field-type rules — a mismatch rejects the WHOLE review at finalize:
   (e.g. `team.sage-cto`), NOT a bare agent name like `sage-cto`.
 
 Closed enums — any other value is rejected at finalize:
-- category: script-defect · doc-contradiction · naming-inconsistency · skill-inaccuracy · skill-gap · process-friction · data-access · idea · positive
+- category: script-defect · doc-contradiction · naming-inconsistency · skill-inaccuracy · skill-gap · process-friction · data-access · idea · positive · near-miss
 - layer: infra · skill · contract · memory · workflow
 - severity: low · medium · high · critical
 - frequency: first-time · occasional · every-dispatch

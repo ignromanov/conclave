@@ -110,6 +110,9 @@ from feedback.schema import Status as _Status  # noqa: E402
 # be silently rejected by triage write-back (#89). Add a status to schema.Status only.
 _VALID_STATUSES = set(_typing.get_args(_Status))
 
+# Categories that report no defect and therefore carry no fix to schedule (#250).
+_NON_DEFECT_CATEGORIES = frozenset({"positive", "near-miss"})
+
 
 def _rebuild_index(root: Path) -> int:
     """Defensively rebuild index via feedback_index.main().
@@ -219,8 +222,12 @@ def cmd_digest(rows: list[dict], as_json: bool = False) -> None:
             ],
         })
 
-    # Sort: critical first, then by hit_count desc
+    # Sort: every defect first (critical-first among themselves), then the categories
+    # that name no fix. Severity on a `positive` or a `near-miss` describes how much was
+    # learned, not how much is broken, so ranking the two on one scale spends a
+    # reviewer's attention on rows with nothing to decide (#250).
     entries.sort(key=lambda e: (
+        e["category"] in _NON_DEFECT_CATEGORIES,
         _SEVERITY_ORDER.get(e["severity"], 99),
         -e["hit_count"],
     ))
