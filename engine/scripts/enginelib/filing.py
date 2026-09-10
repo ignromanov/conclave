@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from enginelib import advisors, paths, template
+from enginelib import advisors, frontmatter, paths, template
 from enginelib.snapshot import snapshot_write
 
 _log = logging.getLogger(__name__)
@@ -417,8 +417,14 @@ def close_session(opts: CloseSessionOpts) -> str:
     # 11. handoff_val = handoff_slug if handoff_file set, else ""
     handoff_val = opts.handoff_slug if opts.handoff_file else ""
 
-    # 12. reflexion_val: default to EM DASH (U+2014) if not provided
-    reflexion_val = opts.reflexion or "—"
+    # 12. reflexion_val: default to EM DASH (U+2014) if not provided.
+    # Both this and duration_estimate are free prose landing inside frontmatter, so
+    # both go through as_block: the template substitutes `{{reflexion}}` raw, and a
+    # reflexion saying "the gate passed: the mutation did not" is a ScannerError, not
+    # a reflexion. Measured 2026-09-09: 39 of 77 session records did not parse as YAML.
+    # chomp=True so a multi-line value round-trips to exactly what was passed.
+    reflexion_val = frontmatter.as_block(opts.reflexion or "—", chomp=True)
+    duration_val = frontmatter.as_block(opts.duration_estimate, chomp=True)
 
     # 13. Load template and render
     tpl = paths.templates_dir() / "session.md"
@@ -432,7 +438,7 @@ def close_session(opts: CloseSessionOpts) -> str:
         "issues": issues_val,
         "handoff": handoff_val,
         "mentions_resolved": mentions_val,
-        "duration_estimate": opts.duration_estimate,
+        "duration_estimate": duration_val,
         "reflexion": reflexion_val,
         "goal": opts.goal,
         "body": body_text,

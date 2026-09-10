@@ -62,13 +62,18 @@ def fm_get_block(file: Path, key: str) -> str | None:
     return "\n".join(ln[pad:] if ln.strip() else "" for ln in body)
 
 
-def as_block(value: str, indent: int = 2) -> str:
+def as_block(value: str, indent: int = 2, *, chomp: bool = False) -> str:
     """Render *value* as the right-hand side of a frontmatter key.
 
     Emits a `|` block scalar whenever the text cannot be a plain YAML scalar,
     and only then. Multi-line is the obvious case; the one that actually bites
     is a single line containing ": " — a description that says
     "Not for: engine architecture" is a ScannerError, not a description.
+
+    *chomp* emits `|-` instead of `|`, so a multi-line value round-trips to
+    exactly what was passed in rather than gaining a trailing newline. Callers
+    writing a ledger field want it; the description renderers do not care, so
+    it is opt-in and their output is unchanged.
     """
     text = value.strip()
     if not text:
@@ -84,7 +89,8 @@ def as_block(value: str, indent: int = 2) -> str:
     if not needs_block:
         return lines[0]
     pad = " " * indent
-    return "|\n" + "\n".join(pad + ln if ln else "" for ln in lines)
+    header = "|-" if chomp else "|"
+    return header + "\n" + "\n".join(pad + ln if ln else "" for ln in lines)
 
 
 def fm_set(file: Path, key: str, value: str) -> None:
