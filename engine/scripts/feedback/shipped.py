@@ -45,11 +45,19 @@ def repo_of(directory: Path) -> Path | None:
 def shipped_ref(repo: Path) -> str:
     """The ref that stands for 'shipped', most authoritative first.
 
-    The upstream of the current branch is the honest answer: work is shipped when it has
-    landed there. `origin/HEAD` covers a detached or never-pushed branch. `HEAD` is the
-    floor — it no longer proves the work is merged, only that it is committed, which still
-    catches the case the issue measured (an uncommitted edit closing an item)."""
-    for ref in ("@{upstream}", "origin/HEAD"):
+    `origin/HEAD` — the integration branch — is the honest answer: work is shipped when it
+    has landed there. `@{upstream}` is the fallback for a repo whose remote HEAD was never
+    set, and `HEAD` is the floor: it no longer proves the work is merged, only that it is
+    committed, which still catches the case #160 measured (an uncommitted edit closing an
+    item).
+
+    The order used to be the other way round, and that made `git push -u` decide what
+    "shipped" means: on a topic branch the upstream is the branch's OWN remote copy, so a
+    fix pushed to an open PR read as shipped and `--apply` would close items against work
+    that had landed nowhere (#259). Every test here but one configures the upstream as the
+    integration branch, which is the single arrangement where the two answers coincide —
+    so the suite stayed green over it."""
+    for ref in ("origin/HEAD", "@{upstream}"):
         rc, _ = _git(repo, "rev-parse", "--verify", "--quiet", ref)
         if rc == 0:
             rc2, name = _git(repo, "rev-parse", "--abbrev-ref", ref)
