@@ -321,3 +321,75 @@ def test_session_frontmatter_is_yaml_for_a_hostile_duration(seed_advisors, tmp_p
         encoding="utf-8").split("---\n", 2)[1]
     meta = yaml.safe_load(fm)
     assert meta["duration_estimate"] == "3h: two of them on one bug"
+
+
+def test_the_writer_and_the_engines_own_reader_agree(seed_advisors, tmp_path):
+    """The gate that #256 needed and did not have.
+
+    `test_session_frontmatter_is_yaml_for_every_reflexion` validates the record with
+    `yaml.safe_load` -- the right parser, and not the one the engine uses. session-init
+    reads the field line-by-line (`_extract_reflexion`), so #256 could switch the writer
+    to block scalars, pass its own test, and hand every following session the literal
+    "|-" as its prior. Asserting the format is not asserting the consumer.
+
+    This test spans both: write through the real CLI, read through the real reader.
+    """
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lifecycle"))
+    import session_init
+
+    seed_advisors(_ADVISOR, "spark-cmo")
+    for n, reflexion in enumerate(_HOSTILE_REFLEXIONS):
+        if "\n" in reflexion:
+            continue  # rendered as one bullet by design; covered in test_session_init
+        body = _write_body(tmp_path)
+        r = _run_close(body, slug=f"roundtrip-{n}", reflexion=reflexion)
+        assert r.returncode == 0, r.stderr
+        path = sessions_dir() / f"{_DATE}-{_ADVISOR}-roundtrip-{n}.md"
+        got = session_init._extract_reflexion(path)
+        assert got == reflexion, (
+            f"the engine's own reader disagrees with its own writer:\n"
+            f"  wrote: {reflexion!r}\n  read : {got!r}")
+
+
+def test_list_fields_survive_hash_prefixed_ids(seed_advisors, tmp_path):
+    """`--issues-touched '#17,#18'` renders as `issues: [#17,#18]`, and `#` opens a YAML
+    comment: the flow sequence never closes, so the parser runs to the next key and
+    blames it. 9 of 77 live records fail this way, and the error's problem_mark points
+    at `mentions_resolved: []` two lines below -- an innocent line.
+
+    Distinct from the ": " hazard #256 fixed. `_as_list` interpolates the CSV raw, and
+    `--gh-issue`'s own help text advertises the `#12` form, so the writer still produced
+    invalid frontmatter after #256 shipped. Measured by running this CLI, 2026-09-09.
+    """
+    import yaml
+
+    seed_advisors(_ADVISOR, "spark-cmo")
+    body = _write_body(tmp_path)
+    r = _run_close(body, slug="hash-ids", issues_touched="#17,#18")
+    assert r.returncode == 0, r.stderr
+    fm = (sessions_dir() / f"{_DATE}-{_ADVISOR}-hash-ids.md").read_text(
+        encoding="utf-8").split("---\n", 2)[1]
+    try:
+        meta = yaml.safe_load(fm)
+    except yaml.YAMLError as exc:
+        raise AssertionError(
+            f"hash-prefixed issue ids broke the frontmatter:\n{fm}\n{exc}") from exc
+    assert isinstance(meta, dict)
+    assert meta["issues"], "the issue list must not be empty or commented out"
+    assert len(meta["issues"]) == 2, meta["issues"]
+    assert all("17" in str(v) or "18" in str(v) for v in meta["issues"]), meta["issues"]
+    # The neighbouring key is the one the parser blamed; pin that it survives.
+    assert meta["mentions_resolved"] == []
+
+
+def test_bare_numeric_ids_are_left_alone(seed_advisors, tmp_path):
+    """Most of the corpus already writes `issues: [250,251]`, which is valid. The fix
+    must not churn the shape that was never broken."""
+    seed_advisors(_ADVISOR, "spark-cmo")
+    body = _write_body(tmp_path)
+    r = _run_close(body, slug="plain-ids", issues_touched="250,251")
+    assert r.returncode == 0, r.stderr
+    text = (sessions_dir() / f"{_DATE}-{_ADVISOR}-plain-ids.md").read_text(encoding="utf-8")
+    assert "issues: [250,251]" in text, text.split("---\n", 2)[1]

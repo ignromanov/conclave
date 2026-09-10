@@ -1266,3 +1266,86 @@ class TestFirstLaunchIsAlwaysReported:
         idx = [i for i, ln in enumerate(lines) if ln.startswith("  first-launch:")]
         brief = [i for i, ln in enumerate(lines) if ln.startswith("  briefing")]
         assert idx and brief and idx[0] < brief[0], lines
+
+
+class TestReflexionExtractBlockScalar:
+    """#256 changed the writer to emit `reflexion:` as a YAML block scalar so a value
+    containing ": " stops breaking the frontmatter. This reader is line-based and takes
+    the remainder of the `reflexion:` line, which for a block scalar is the indicator
+    itself. Measured on the live corpus the same day: the first record written after
+    #256 merged surfaced as the literal `|-`.
+
+    A reflexion is what session-init hands the next session as a prior, so the failure
+    is silent and total: the line is present, non-empty, not "—", and carries nothing.
+    """
+
+    def test_block_scalar_reflexion_is_read_not_its_indicator(self, tmp_path):
+        f = tmp_path / "session.md"
+        _write(f, """\
+            ---
+            advisor: kai-cto
+            reflexion: |-
+              The gate passed: the mutation did not.
+            ---
+            body
+        """)
+        val = session_init._extract_reflexion(f)
+        assert val != "|-", "the block indicator was returned instead of the value"
+        assert val == "The gate passed: the mutation did not."
+
+    def test_multiline_block_scalar_joins_to_one_line(self, tmp_path):
+        """session-init renders one bullet per reflexion, so a multi-line value must
+        arrive as a single line rather than truncated to its first."""
+        f = tmp_path / "session.md"
+        _write(f, """\
+            ---
+            advisor: kai-cto
+            reflexion: |-
+              First: the instrument blocked the work.
+              Second: the reader never saw it.
+            ---
+        """)
+        val = session_init._extract_reflexion(f)
+        assert "the instrument blocked the work" in val
+        assert "the reader never saw it" in val, "later lines of the block were dropped"
+        assert "\n" not in val, "a reflexion must render as a single bullet line"
+
+    def test_plain_scalar_still_works(self, tmp_path):
+        """The corpus holds both shapes and will for as long as history does."""
+        f = tmp_path / "session.md"
+        _write(f, """\
+            ---
+            reflexion: a plain one-line value
+            ---
+        """)
+        assert session_init._extract_reflexion(f) == "a plain one-line value"
+
+
+class TestReflexionQuoting:
+    """`reflexion: "text"` is a quoted plain scalar and the quotes are syntax. A value
+    that merely opens with a quote is not quoted, and stripping it corrupts the lesson.
+
+    Found by the round-trip gate in test_session_close.py, not by inspection: stripping
+    each quote character independently ate the apostrophe from a value that opens with
+    one and does not close with it.
+    """
+
+    def test_a_matching_quote_pair_is_syntax(self, tmp_path):
+        f = tmp_path / "s.md"
+        _write(f, """\
+            ---
+            reflexion: "always read the briefing first"
+            ---
+        """)
+        assert session_init._extract_reflexion(f) == "always read the briefing first"
+
+    def test_an_unmatched_leading_quote_is_content(self, tmp_path):
+        f = tmp_path / "s.md"
+        _write(f, """\
+            ---
+            reflexion: |-
+              'quoted' and "double" both appear here
+            ---
+        """)
+        got = session_init._extract_reflexion(f)
+        assert got == ''''quoted' and "double" both appear here''', got
