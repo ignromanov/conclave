@@ -260,3 +260,64 @@ def test_close_refuses_a_handoff_with_no_reference(seed_advisors, tmp_path):
     assert not (handoffs_dir() / f"{_DATE}-{_ADVISOR}-no-reference.md").exists()
     assert not (sessions_dir() / f"{_DATE}-{_ADVISOR}-vid-review.md").exists(), \
         "session document written despite the handoff being refused"
+
+
+# --- the record a session writes must be YAML its readers can parse ---
+
+_HOSTILE_REFLEXIONS = [
+    "The gate passed: the mutation did not.",          # ": " -> reads as a mapping
+    "A cap owes its caller the list, not the count",   # comma in a plain scalar
+    "'quoted' and \"double\" both appear here",        # both quote styles
+    "- leading dash reads as a sequence item",         # block-sequence indicator
+    "# leading hash reads as a comment",               # comment indicator
+    "{a: 1} looks like a flow mapping",                # flow indicators
+    "trailing backslash \\",                           # escape at end of scalar
+    "line one\nline two",                              # embedded newline
+]
+
+
+def test_session_frontmatter_is_yaml_for_every_reflexion(seed_advisors, tmp_path):
+    """Free prose is substituted into `reflexion: {{reflexion}}` unquoted, so any
+    reflexion carrying ": " makes the record's own frontmatter invalid YAML.
+
+    Measured on the live corpus 2026-09-09: 39 of 77 session records (51%) do not
+    parse. It has stayed invisible because every engine reader of these records is
+    line-based on purpose (`enginelib.advisors._frontmatter_value`), so the first
+    consumer to reach for a YAML parser — or any external tool, Dataview included —
+    is the one that pays.
+    """
+    import yaml
+
+    seed_advisors(_ADVISOR, "spark-cmo")
+    for n, reflexion in enumerate(_HOSTILE_REFLEXIONS):
+        body = _write_body(tmp_path)
+        r = _run_close(body, slug=f"yaml-case-{n}", reflexion=reflexion)
+        assert r.returncode == 0, r.stderr
+        path = sessions_dir() / f"{_DATE}-{_ADVISOR}-yaml-case-{n}.md"
+        text = path.read_text(encoding="utf-8")
+        assert text.startswith("---\n"), path
+        fm = text.split("---\n", 2)[1]
+        try:
+            meta = yaml.safe_load(fm)
+        except yaml.YAMLError as exc:
+            raise AssertionError(
+                f"reflexion {reflexion!r} produced invalid YAML:\n{fm}\n{exc}") from exc
+        assert isinstance(meta, dict), f"frontmatter is not a mapping: {meta!r}"
+        assert meta["reflexion"] == reflexion, (
+            f"round-trip changed the value: {meta['reflexion']!r} != {reflexion!r}")
+        assert meta["advisor"] == _ADVISOR
+
+
+def test_session_frontmatter_is_yaml_for_a_hostile_duration(seed_advisors, tmp_path):
+    """`duration_estimate` is the second free-prose field in the same frontmatter and
+    breaks it the same way; fixing only the field that was reported leaves the next one."""
+    import yaml
+
+    seed_advisors(_ADVISOR, "spark-cmo")
+    body = _write_body(tmp_path)
+    r = _run_close(body, slug="yaml-duration", duration_estimate="3h: two of them on one bug")
+    assert r.returncode == 0, r.stderr
+    fm = (sessions_dir() / f"{_DATE}-{_ADVISOR}-yaml-duration.md").read_text(
+        encoding="utf-8").split("---\n", 2)[1]
+    meta = yaml.safe_load(fm)
+    assert meta["duration_estimate"] == "3h: two of them on one bug"
