@@ -32,7 +32,7 @@ _MAX_COMMITS = 5
 def build(ctx: ScanCtx) -> str:
     """Return a markdown summary of current active work for the advisor."""
     specs_root = ctx.repo_root / "ops" / "specs"
-    active = _find_active_specs(specs_root, ctx.advisor)
+    active = _find_active_specs(specs_root, ctx.advisor_filter)
 
     sections: list[str] = []
 
@@ -55,7 +55,7 @@ def build(ctx: ScanCtx) -> str:
 
 
 def _find_active_specs(
-    specs_root: Path, advisor: str
+    specs_root: Path, advisor: str | None
 ) -> list[tuple[Path, Path | None]]:
     """Return (spec_path, plan_path|None) pairs where spec status==in-progress."""
     if not specs_root.is_dir():
@@ -79,7 +79,7 @@ def _find_active_specs(
             continue
         # Optionally filter by advisor ownership.
         owner = post.metadata.get("owner", "") or post.metadata.get("advisor", "")
-        if advisor and owner and advisor not in str(owner):
+        if advisor is not None and owner and advisor not in str(owner):
             continue
         plan_md = spec_dir / "plan.md"
         results.append((spec_md, plan_md if plan_md.is_file() else None))
