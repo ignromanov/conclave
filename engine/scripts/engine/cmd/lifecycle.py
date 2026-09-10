@@ -180,6 +180,28 @@ def _migrate_add_type(args) -> int:
     return 0
 
 
+def _migrate_session_yaml(args) -> int:
+    from enginelib.lifecycle import migrate_session_yaml
+    from enginelib.paths import sessions_dir
+
+    args._runlog_verb = "migrate-session-yaml"
+    root = Path(args.root) if args.root else sessions_dir()
+    if not root.is_dir():
+        print(f"migrate-session-yaml: sessions dir not found: {root}", file=sys.stderr)
+        args._runlog_args = f"root={root},updated=0,skipped=0"
+        return 1
+    res = migrate_session_yaml.run(root, args.dry_run)
+    for line in res.would_update:
+        print(f"WOULD REPAIR {line}")
+    for path, why in res.failed:
+        print(f"REFUSED {path}: {why}", file=sys.stderr)
+    print(f"migrate-session-yaml: updated={res.updated} skipped={res.skipped} "
+          f"refused={len(res.failed)} under {root}")
+    args._runlog_args = (f"root={root},updated={res.updated},skipped={res.skipped},"
+                         f"refused={len(res.failed)}")
+    return 1 if res.failed else 0
+
+
 def _migrate_router_bootstrap(args) -> int:
     from enginelib.lifecycle import migrate_router_bootstrap
     from enginelib.paths import project_skills_dir
@@ -320,6 +342,16 @@ def register(sub) -> None:
     mg.add_argument("--root", default=None, help="Root dir (default: agent-memory).")
     mg.add_argument("--dry-run", action="store_true", help="Report WOULD INJECT without mutating.")
     mg.set_defaults(func=_migrate_add_tags)
+
+    ms = vsub.add_parser(
+        "migrate-session-yaml",
+        help="Repair session records whose frontmatter does not parse as YAML (#255).",
+    )
+    ms.add_argument("--root", default=None,
+                    help="Sessions dir (default: agent-memory/advisors/sessions).")
+    ms.add_argument("--dry-run", action="store_true",
+                    help="Report WOULD REPAIR without mutating.")
+    ms.set_defaults(func=_migrate_session_yaml)
 
     mr = vsub.add_parser(
         "migrate-router-bootstrap",
