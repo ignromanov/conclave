@@ -229,22 +229,28 @@ def _mosaic_section(*, name, noun, shards, newest_move):
     )
 
 
-def _stub_ctx(repo_root, advisor: str = ""):
-    """A ScanCtx for an instance-scoped read.
+def _stub_ctx(repo_root, advisor: str | None = None):
+    """A ScanCtx for this projection: instance-wide by default, one advisor on request.
 
-    `advisor` is typed `str` with no instance-wide path anywhere in the scan layer
-    (measured: zero occurrences of a scope or advisor-is-None branch across all 17
-    modules), so an instance-scoped caller must still supply one. The sections used
-    here read no advisor field, which is why the value is inert — and that is a
-    property of these two sections, not of the layer. Widening this to the sections
-    that DO read it is the explicit `scope` on ScanCtx, plan 057 T3.
+    Two callers, two scopes. The advisor-blind sections are read once with
+    `scope="instance"`; the advisor-KEYED ones (the gh-cache mosaics) are read once per
+    roster member, because no file holds their union — see plan 057 §11.
+
+    Until T3 this function took `advisor: str = ""` and relied on the empty string being
+    inert for the sections it fed. That was a property of those two sections, not of the
+    layer: the scans that DO read the field answer `advisor=""` by matching nothing, so
+    the same call widens for some sections and empties for others, indistinguishably.
+    `scope` is now explicit and the contradictions are rejected at construction.
     """
     from pathlib import Path
 
     from briefing.scans import ScanCtx
 
     return ScanCtx(
-        advisor=advisor, short_name=advisor.split("-")[0], repo_root=repo_root,
+        advisor=advisor,
+        short_name=advisor.split("-")[0] if advisor else "",
+        scope="advisor" if advisor else "instance",
+        repo_root=repo_root,
         decisions_dir=repo_root / "agent-memory" / "advisors" / "decisions",
         sessions_dir=repo_root / "agent-memory" / "advisors" / "sessions",
         mentions_dir=repo_root / "agent-memory" / "advisors" / "mentions",

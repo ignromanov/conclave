@@ -106,7 +106,7 @@ def build(ctx: ScanCtx, out_path: Path) -> None:
     team.start loads it separately.
     """
     values: dict[str, str] = {
-        "advisor": ctx.advisor,
+        "advisor": ctx.audience,
         "generated_at": _generated_at(),
         "who_i_am": identity.build(ctx),
         "recent_decisions": decisions.build(ctx),

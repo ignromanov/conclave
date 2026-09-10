@@ -57,10 +57,11 @@ def build(ctx: ScanCtx) -> str:
     Uses substring 'p0' match to filter rows — exact bash parity.
     Placeholder: _(no global p0 blockers)_
     """
-    cache_path = ctx.gh_cache_dir / f"{ctx.advisor}.md"
+    key = ctx.advisor_key
+    cache_path = ctx.gh_cache_dir / f"{key}.md"
     # Stderr suppressed in bash (2>/dev/null) — we still get rows; stale
     # warnings are a side-effect but harmless for the filter pass.
-    rows = read_gh_cache(cache_path, advisor=ctx.advisor)
+    rows = read_gh_cache(cache_path, advisor=key)
 
     p0_rows = [row for row in rows if "p0" in row]
     if not p0_rows:

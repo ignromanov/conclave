@@ -117,8 +117,8 @@ def collect(ctx: ScanCtx) -> list[dict]:
     the status projection is another, and it needs the labels and the repository as
     data rather than as a joined string.
     """
-    cache_path = ctx.gh_cache_dir / f"{ctx.advisor}.md"
-    return _read_raw_items(cache_path, advisor=ctx.advisor)
+    key = ctx.advisor_key
+    return _read_raw_items(ctx.gh_cache_dir / f"{key}.md", advisor=key)
 
 
 def issue_identity(item: dict) -> str:
@@ -138,8 +138,9 @@ def build(ctx: ScanCtx) -> str:
     Each line is enriched with repo prefix (#14) and issue age (#8).
     Placeholder: _(no open issues for advisor:<id>)_
     """
-    cache_path = ctx.gh_cache_dir / f"{ctx.advisor}.md"
-    items = _read_raw_items(cache_path, advisor=ctx.advisor)
+    key = ctx.advisor_key
+    cache_path = ctx.gh_cache_dir / f"{key}.md"
+    items = _read_raw_items(cache_path, advisor=key)
 
     lines = []
     for item in items:
@@ -148,7 +149,7 @@ def build(ctx: ScanCtx) -> str:
             lines.append(f"- {row}")
 
     if not lines:
-        return f"_(no open issues for {advisor_label(ctx.advisor)})_"
+        return f"_(no open issues for {advisor_label(key)})_"
     if _snapshot_truncated(cache_path):
         lines.append(
             f"- _(snapshot truncated at {len(lines)} — more open issues exist; "

@@ -121,7 +121,7 @@ def _last_session_mtime(ctx: ScanCtx) -> datetime | None:
     if not sess_dir.is_dir():
         return None
 
-    files = files_for_advisor(sess_dir, ctx.advisor, field="advisor")
+    files = files_for_advisor(sess_dir, ctx.advisor_filter, field="advisor")
     if not files:
         return None
 
