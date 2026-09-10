@@ -60,6 +60,7 @@ from enginelib.advisors import (  # noqa: E402 (follows the sys.path bootstrap a
     handoffs_for_advisor,
     with_meta,
 )
+from enginelib.frontmatter import fm_get_block  # noqa: E402
 from enginelib.paths import (  # noqa: E402
     check_legacy_data_root_env,
     walk_for_data_root,
@@ -407,23 +408,28 @@ def _step1b_resume_scan(advisor: str, root: Path) -> tuple[list[str], list[str]]
 # ---------------------------------------------------------------------------
 
 def _extract_reflexion(path: Path) -> str:
-    """Read the `reflexion:` value from YAML frontmatter of a session file."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
+    """Read the `reflexion:` value from YAML frontmatter of a session file.
+
+    Two shapes are live. `reflexion: some text` is what every record before #256
+    carries. `reflexion: |-` plus an indented block is what the writer emits since,
+    so that a value containing ": " no longer breaks the frontmatter -- and the
+    remainder of that line is the block indicator, not the value. Reading it as one
+    handed the next session the literal "|-" as its prior.
+
+    fm_get_block already distinguishes the two; this used to reimplement the flat
+    half of it and so never learned about the other. Joined with spaces because
+    session-init renders one bullet per reflexion.
+    """
+    text = fm_get_block(path, "reflexion")
+    if not text:
         return ""
-    in_front = False
-    for line in text.splitlines():
-        if line.strip() == "---":
-            if not in_front:
-                in_front = True
-                continue
-            else:
-                break
-        if in_front and line.startswith("reflexion:"):
-            val = line[len("reflexion:"):].strip().strip('"').strip("'")
-            return val
-    return ""
+    joined = " ".join(part.strip() for part in text.splitlines() if part.strip())
+    # `reflexion: "text"` is a quoted plain scalar and the quotes are syntax; a
+    # reflexion that merely opens with one ("'quoted' and \"double\" both appear")
+    # keeps it. Only a matching pair is an envelope.
+    if len(joined) > 1 and joined[0] == joined[-1] and joined[0] in "\"'":
+        joined = joined[1:-1]
+    return joined
 
 
 def _step1c_reflexion(advisor: str, root: Path) -> list[str]:
