@@ -392,9 +392,16 @@ Answer in order. The middle column states what a complete answer is made of — 
 | **instead** | The thing you executed next, quoted. If you ran it more than once, the number of times — a workaround executed three times is the automation candidate, and the count is in the transcript. | `process-friction` · `skill-gap` |
 | **acted-on** | A line you acted on, quoted, plus the path of the artefact that carried it. If acting on it produced something other than what the line said, both the line and what came back. | `doc-contradiction` · `naming-inconsistency` · `skill-inaccuracy` |
 | **removed-step** | One artefact, and the step it removed: *"X removed Y"*, where Y is a step you can name and would otherwise have taken. Both halves, or the answer is `nothing`. | `positive` |
-| **unexecuted** | One claim you made this session with no command run behind it, quoted, and the command that would decide it. | `idea` |
+| **unexecuted** | One claim you made this session with no command run behind it, quoted, and the command that would decide it. If you ran that command before the session ended, the answer is both halves plus what came back — that is the same finding carried to its end, not a different one. | `idea` · `near-miss` |
 
 `removed-step` is the only prompt that files a positive, and the named-step form is the whole of it: an artefact with no step beside it is not a finding here. Expect `nothing` often — that outcome is a measurement, not a failure of the prompt.
+
+`unexecuted` files `idea` when the claim is still undecided and `near-miss` when you ran
+the deciding command yourself: an error that did not ship, and the thing that caught it.
+Both are the same prompt — filing the second as `idea` invites exploring what is already
+settled, and filing it as `positive` says an artefact removed a step when what happened
+is that you re-read your own claim. Measured 2026-09-10: 3 of the 6 items in the corpus
+under `positive` were this, filed there because it was the only non-defect category (#250).
 
 ### Admission rules
 

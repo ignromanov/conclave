@@ -101,7 +101,7 @@ exists to close.
 | Field | Required | Values / rule |
 |-------|----------|---------------|
 | `id` | yes | short slug, e.g. `it-1` |
-| `category` | yes | `script-defect` · `doc-contradiction` · `naming-inconsistency` · `skill-inaccuracy` · `skill-gap` · `process-friction` · `data-access` · `idea` · `positive` |
+| `category` | yes | `script-defect` · `doc-contradiction` · `naming-inconsistency` · `skill-inaccuracy` · `skill-gap` · `process-friction` · `data-access` · `idea` · `positive` · `near-miss` |
 | `layer` | yes | `infra` · `skill` · `contract` · `memory` · `workflow` |
 | `location` | yes | typed object: `{file: "path/to/file.py", line?: N, skill?: "name", section?: "heading"}` — at least one of `file`, `skill`, or `section` must be set |
 | `observation` | yes | What the agent witnessed — a concrete output, error, or missing field. NOT an opinion. |
