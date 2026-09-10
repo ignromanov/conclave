@@ -123,7 +123,11 @@ Invoke `/conclave:triage` (the facilitator role + Forge) to run the triage pipel
 | 5 | `feedback_archive.py` — archive resolved reviews; append finding to `hot.md` |
 | 6 | `feedback_triage.py --complete-triage` — record the completion timestamp; the only write that resets the cadence clock |
 
-Monthly: `feedback_triage.py --monthly` closes zombie items older than 90 days.
+Monthly: `feedback_triage.py --monthly` **lists** items in `open`/`deferred` older than
+90 days, and — unconditionally, with no age cutoff — every `accepted` item carrying no
+predicate, no waiver and no issue link. It writes nothing. Both lists are work for a
+human: advance, reject or re-defer each one (`triage.md` § Monthly). Nothing in this
+system closes a stale item on its own.
 
 ## Reaction policy
 

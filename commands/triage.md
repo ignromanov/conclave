@@ -260,7 +260,18 @@ PYTHONPATH=engine/scripts \
   python engine/scripts/feedback/feedback_verify.py
 ```
 
-Prints `auto-close=N held-unshipped=H candidates=M nominations=K broken=B`.
+Prints `auto-close=N held-unshipped=H candidates=M nominations=K broken=B`, then names
+every close, every hold and every broken predicate by `<feedback_id>/<item_id>` — the
+counts are a summary of a list you can read, never a substitute for it (#251).
+
+**Run it from a clean tree.** `is_shipped` asks whether the working tree differs from the
+ref *for that path*, not whether the predicate's evidence is in the ref — so any modified
+file holds back every item whose predicate reads it, related to your edit or not. That is
+deliberate and conservative (`shipped.py`), and it is invisible in the output: a held item
+looks the same whether the work is genuinely unshipped or whether you simply have the file
+open. Measured 2026-09-09: editing one function moved a sweep from `auto-close=8` to
+`auto-close=7 held-unshipped=1`, and the held item's fix had been on `origin/master` for
+days.
 
 - **auto-close items**: predicate-passing items whose evidence is *also* in the shipped
   ref. Re-run with `--apply` to write `status=resolved` via `feedback_triage.py --set`
