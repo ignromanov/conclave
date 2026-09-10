@@ -93,6 +93,29 @@ def as_block(value: str, indent: int = 2, *, chomp: bool = False) -> str:
     return header + "\n" + "\n".join(pad + ln if ln else "" for ln in lines)
 
 
+def as_flow_list(csv: str) -> str:
+    """Render a comma-separated string as a YAML flow sequence: "a,b" -> "[a,b]".
+
+    Quotes only the elements that need it, so the shape most of the corpus already
+    carries -- `issues: [250,251]` -- is emitted byte-identically and a migration has
+    nothing to churn.
+
+    The element that needs it is `#17`: `#` opens a YAML comment, so `[#17,#18]` is an
+    unterminated flow sequence and the parser blames whichever key it reaches next.
+    `--gh-issue` advertises that exact form in its own help text, so it arrives here
+    routinely; 9 of 77 live session records were written this way (#255).
+    """
+    if not csv:
+        return "[]"
+    out = []
+    for raw in csv.split(","):
+        item = raw.strip()
+        if item and (item[0] in "#&*!|>%@`" or any(c in item for c in ":[]{}\"'")):
+            item = "'" + item.replace("'", "''") + "'"
+        out.append(item)
+    return "[" + ",".join(out) + "]"
+
+
 def fm_set(file: Path, key: str, value: str) -> None:
     p = Path(file)
     if not p.is_file():

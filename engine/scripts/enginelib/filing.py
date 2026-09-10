@@ -405,14 +405,12 @@ def close_session(opts: CloseSessionOpts) -> str:
     if opts.followups_file:
         followups_text = Path(opts.followups_file).read_text(encoding="utf-8")
 
-    # 10. Build list values: empty csv → "[]", else → "[<csv>]"
-    def _as_list(csv: str) -> str:
-        return "[]" if not csv else f"[{csv}]"
-
-    decisions_val = _as_list(opts.decisions_csv)
-    issues_val = _as_list(opts.issues_csv)
+    # 10. Build list values. Quoting the elements that need it belongs beside as_block
+    # in frontmatter: an id arriving as "#17" made the whole flow sequence a comment.
+    decisions_val = frontmatter.as_flow_list(opts.decisions_csv)
+    issues_val = frontmatter.as_flow_list(opts.issues_csv)
     resolved_ids_csv = ",".join(resolved_ids)
-    mentions_val = _as_list(resolved_ids_csv)
+    mentions_val = frontmatter.as_flow_list(resolved_ids_csv)
 
     # 11. handoff_val = handoff_slug if handoff_file set, else ""
     handoff_val = opts.handoff_slug if opts.handoff_file else ""
