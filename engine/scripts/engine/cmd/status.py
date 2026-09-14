@@ -260,17 +260,274 @@ def _stub_ctx(repo_root, advisor: str | None = None):
     )
 
 
+# ---------------------------------------------------------------------------
+# Branches × PR state (plan 057 T9)
+# ---------------------------------------------------------------------------
+#
+# The gathering half of the join. Every signal below is measured here and handed to
+# `enginelib.status.branches`, which rules on it and imports nothing — GH#106's edge
+# runs briefing -> enginelib and never back, and a subprocess call in the pure core
+# would bend it for a data source.
+#
+# Read-only by construction. Step 4 opens with `git fetch --prune origin`, which is
+# right for a session-start audit and wrong here: a projection that writes refs in
+# order to measure them is not a read-model, and the `--prune` is exactly what would
+# hide the stale-tracking-ref finding by repairing it unannounced.
+
+_GH_PR_LIMIT = 300
+
+
+def _git(root, *args, timeout: int = 15) -> str | None:
+    """git in `root`; `None` on any failure, the output otherwise.
+
+    `None` and `""` are different answers and both occur: `for-each-ref` over a repo
+    with no branches succeeds and prints nothing, while the same call in a directory
+    that is not a repository fails. Collapsing them renders "not a git repository" as
+    "no branches" — rule 6, one layer below the printer.
+    """
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            ["git", *args], cwd=str(root), capture_output=True, text=True, timeout=timeout,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return proc.stdout if proc.returncode == 0 else None
+
+
+def _default_branch(root) -> str | None:
+    """The default branch, derived the way Step 4 and `doctor._default_branch` derive it."""
+    out = _git(root, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
+    if out and out.strip():
+        return out.strip().split("/", 1)[-1]
+    for candidate in ("master", "main"):
+        if _git(root, "rev-parse", "--verify", "--quiet", f"refs/heads/{candidate}") is not None:
+            return candidate
+    return None
+
+
+def _gh_pull_requests(root):
+    """Every PR of the CODE repo as `(head branch, PullRequest)`, or None if gh cannot say.
+
+    ONE bounded call, for Step 4's own reason: "a `gh pr list` per branch is N
+    round-trips at every session start, and the audit that is slow is the audit that
+    gets skipped." `--limit` is separately required of every gh call site by
+    `tests/test_gh_query_bounds.py`, because an unbounded list silently truncates.
+
+    `headRefOid` is the field this whole task turns on: GitHub freezes it at the merged
+    commit, so it survives anything pushed to the branch afterwards.
+    """
+    import json
+    import subprocess
+
+    from enginelib.status.branches import PullRequest
+
+    try:
+        proc = subprocess.run(
+            [
+                "gh", "pr", "list", "--state", "all", "--limit", str(_GH_PR_LIMIT),
+                "--json", "number,state,headRefName,headRefOid",
+            ],
+            cwd=str(root), capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        payload = json.loads(proc.stdout or "[]")
+    except json.JSONDecodeError:
+        return None
+
+    out = []
+    for row in payload:
+        state = row.get("state")
+        if state not in ("OPEN", "MERGED", "CLOSED"):
+            continue
+        out.append((
+            row.get("headRefName", ""),
+            PullRequest(
+                number=int(row.get("number", 0)),
+                state=state,
+                head_oid=row.get("headRefOid", "") or "",
+            ),
+        ))
+    return out
+
+
+def _remote_heads(root) -> set[str] | None:
+    """Branch names the SERVER holds right now, or None when it could not be asked.
+
+    `ls-remote` and not `refs/remotes/origin/*`: the latter is a cache written by the
+    last fetch, and it outlives the branch it names. Measured 2026-09-14 on this
+    instance — a tracking ref survived its branch's deletion, `git status` reported
+    "ahead 8" against it, and the push that followed recreated the branch on the server.
+    """
+    out = _git(root, "ls-remote", "--heads", "origin", timeout=30)
+    if out is None:
+        return None
+    names = set()
+    for line in out.splitlines():
+        _, sep, ref = line.partition("refs/heads/")
+        if sep:
+            names.add(ref.strip())
+    return names
+
+
+def _worktree_branches(root) -> set[str]:
+    """Branches with a worktree checked out — Step 4's "second join", the cleanup half."""
+    out = _git(root, "worktree", "list", "--porcelain") or ""
+    return {
+        line.split("refs/heads/", 1)[1].strip()
+        for line in out.splitlines()
+        if line.startswith("branch ") and "refs/heads/" in line
+    }
+
+
+def _cached_remote_refs(root) -> set[str]:
+    """What this repository BELIEVES the server has. The belief is what can be stale."""
+    out = _git(root, "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin") or ""
+    names = set()
+    for line in out.splitlines():
+        short = line.strip()
+        if short.startswith("origin/") and short != "origin/HEAD":
+            names.add(short.split("/", 1)[1])
+    return names
+
+
+def _branch_facts(root, prs, remote_heads):
+    """One `BranchFact` per local branch except the default. None if `root` is no repo."""
+    from datetime import datetime
+
+    from enginelib.status.branches import BranchFact
+
+    default = _default_branch(root)
+    listing = _git(
+        root, "for-each-ref",
+        "--format=%(refname:short)\t%(committerdate:iso-strict)", "refs/heads",
+    )
+    if default is None or listing is None:
+        return None
+
+    # Compare against the ref that RECEIVED the merge. Step 4: `git fetch` advances
+    # origin/<default> and not the local branch of the same name, so comparing against
+    # the local one reports every branch merged since as unshipped — precisely the
+    # branches most likely to be removable.
+    base = f"origin/{default}"
+    if _git(root, "rev-parse", "--verify", "--quiet", base) is None:
+        base = default
+
+    worktrees = _worktree_branches(root)
+    cached = _cached_remote_refs(root)
+    by_ref: dict[str, list] = {}
+    for ref, pr in prs:
+        by_ref.setdefault(ref, []).append(pr)
+
+    facts = []
+    for line in listing.splitlines():
+        name, _, stamp = line.partition("\t")
+        name = name.strip()
+        if not name or name == default:
+            continue
+        try:
+            last_commit = datetime.fromisoformat(stamp.strip())
+        except ValueError:
+            continue
+
+        cherry = _git(root, "cherry", base, name)
+        unshipped = (
+            None if cherry is None
+            else sum(1 for ln in cherry.splitlines() if ln.startswith("+"))
+        )
+
+        branch_prs = tuple(sorted(by_ref.get(name, ()), key=lambda p: p.number))
+        merged = next((p for p in branch_prs if p.state == "MERGED"), None)
+        beyond = None
+        if merged is not None and merged.head_oid:
+            counted = _git(root, "rev-list", "--count", f"{merged.head_oid}..{name}")
+            if counted is not None and counted.strip().isdigit():
+                beyond = int(counted.strip())
+
+        if remote_heads is None:
+            remote = None
+        elif name in remote_heads:
+            remote = "present"
+        elif name in cached:
+            remote = "gone"
+        else:
+            remote = "never_pushed"
+
+        facts.append(
+            BranchFact(
+                name=name, unshipped=unshipped, last_commit=last_commit,
+                has_worktree=name in worktrees, prs=branch_prs,
+                beyond_merge=beyond, remote=remote,
+            )
+        )
+    return facts
+
+
+def _branches_section(root):
+    """The branch slot: local branches joined against PR state, ruled on, counted."""
+    from enginelib.status.branches import join, needs_action, section_verdict
+    from enginelib.status.model import Absent, Count, SectionResult
+
+    name = "ветки"
+    prs = _gh_pull_requests(root)
+    if prs is None:
+        return SectionResult(
+            name=name,
+            measurement=Absent(
+                reason=(
+                    "gh не ответил — без состояния PR join не существует, а каждый "
+                    "оставшийся сигнал Step 4 называет неверным поодиночке"
+                )
+            ),
+            verdict="unknown",
+        )
+
+    remote_heads = _remote_heads(root)
+    facts = _branch_facts(root, prs, remote_heads)
+    if facts is None:
+        return SectionResult(
+            name=name,
+            measurement=Absent(reason=f"не git-репозиторий или нет дефолтной ветки: {root}"),
+            verdict="unknown",
+        )
+
+    rows = join(facts, datetime.now(UTC))
+    proof = (
+        f"git for-each-ref refs/heads × gh pr list --state all --limit {_GH_PR_LIMIT} "
+        "× git ls-remote --heads origin"
+    )
+    if remote_heads is None:
+        proof += " (ls-remote не ответил — состояние веток на сервере не снято)"
+
+    return SectionResult(
+        name=name,
+        measurement=Count(
+            value=len(needs_action(rows)), of=len(rows),
+            noun="веток требуют действия", proof=proof,
+        ),
+        verdict=section_verdict(rows),
+        rows=tuple(rows),
+    )
+
+
 # Slots the projection owes and does not yet gather. Named, with the reason a human
 # can act on — an unwired slot that renders `0` is the lie rule 6 forbids, and one
 # that renders nothing at all is worse.
 _NOT_YET_WIRED = {
     "спеки": "не подключено (plan 057 T10)",
-    "ветки": "не подключено — нужен join git cherry × gh pr (plan 057 T9)",
     "CI": "не подключено — statusCheckRollup, ничего его не проецирует (plan 057 T11)",
 }
 
 
 def _status(args) -> int:
+    from pathlib import Path
+
+    from enginelib.paths import consumer_git_cwd, project_root
     from enginelib.paths import repo_root as data_root
     from enginelib.status.model import Absent, SectionResult
     from enginelib.status.reduce import MAX_DEVIATION_CLUSTERS, deviations, over_cluster_budget
@@ -280,7 +537,15 @@ def _status(args) -> int:
     args._runlog_args = f"scope={'advisor' if args.advisor else 'instance'}"
 
     root = data_root()
-    sections = [_handoffs_section(root), _feedback_section(root), *_gh_sections(root)]
+    # The branch slot reads the CODE repository, not the DATA one, and it uses the
+    # resolver already sanctioned for "git subprocesses that must read the CONSUMER's
+    # repository" rather than adding an eighth root resolver to the seven GH#107 counts.
+    sections = [
+        _handoffs_section(root),
+        _feedback_section(root),
+        *_gh_sections(root),
+        _branches_section(Path(consumer_git_cwd() or project_root())),
+    ]
     sections += [
         SectionResult(name=n, measurement=Absent(reason=r), verdict="unknown")
         for n, r in _NOT_YET_WIRED.items()
