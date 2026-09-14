@@ -1,4 +1,4 @@
-"""enginelib.integrity — append-only record of corruption and contention events.
+"""enginelib.integrity — a log of corruption and contention events, only ever added to.
 
 Opens the 30-day window spec 118's C1.0 needs. Deliberately not a metrics system:
 one JSON object per line, appended with O_APPEND so concurrent writers interleave
