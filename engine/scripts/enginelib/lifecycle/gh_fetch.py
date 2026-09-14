@@ -18,15 +18,16 @@ run(advisor, no_cache=False) -> "hit" | "refreshed" | "lock-error" | "gh-error" 
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
 import subprocess
 import sys
 from datetime import UTC, datetime
-from pathlib import Path
 
 from enginelib import gh, roster, snapshot
+from enginelib.lock import LockTimeout, lock_path_for, with_lock
 from enginelib.paths import consumer_git_cwd, ensure_dir, snapshot_path_for_advisor
 
 
@@ -191,9 +192,14 @@ def run(advisor: str, no_cache: bool = False) -> str:
     if not repos:
         return "unscoped"
 
-    # Acquire mkdir-lock before fetch to prevent concurrent double-fetch.
-    lock_dir = Path(f"{cache_path}.lock")
-    if not snapshot.acquire_lock(lock_dir, 10):
+    # Take the fetch lock: one refresh at a time, and a caller that can degrade.
+    # Lock under LOCK_DIR, not beside the cache. The old `{cache}.lock` was a
+    # DIRECTORY carrying no owner: a fetch killed mid-flight left it behind and every
+    # later session waited out the full timeout on a holder that no longer existed.
+    lock = contextlib.ExitStack()
+    try:
+        lock.enter_context(with_lock(lock_path_for(cache_path), timeout=10))
+    except LockTimeout:
         return "lock-error"
 
     try:
@@ -257,4 +263,4 @@ def run(advisor: str, no_cache: bool = False) -> str:
         snapshot.snapshot_write(cache_path, body)
         return "refreshed"
     finally:
-        snapshot.release_lock(lock_dir)
+        lock.close()

@@ -22,6 +22,7 @@ First step always: run feedback_index.py rebuild (defensive — resolves B2).
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -50,11 +51,15 @@ if str(_SCRIPTS_DIR) not in sys.path:
 from briefing.frontmatter_io import read as fm_read  # noqa: E402
 from briefing.frontmatter_io import read_commented  # noqa: E402
 from briefing.paths import repo_root  # noqa: E402
-from enginelib import snapshot  # noqa: E402
 from enginelib.advisors import META_ADVISORS, canonical_advisors  # noqa: E402
+from enginelib.lock import LockTimeout, lock_path_for, with_lock  # noqa: E402
 from enginelib.paths import project_root  # noqa: E402
 from feedback.feedback_emit import write_preserving_header  # noqa: E402
-from feedback.paths import index_path, last_triage_marker  # noqa: E402
+from feedback.paths import (  # noqa: E402
+    index_path,
+    last_triage_marker,
+    triage_lock_target,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -615,10 +620,13 @@ def main(argv: list[str] | None = None) -> int:
     # Serialize the whole triage mutation — index rebuild + any write-back — on a
     # DATA-root advisory lock, so two concurrent triage sessions on the same root
     # can't corrupt index.jsonl or clobber each other's review write-back (#51).
-    lock_dir = root / ".triage-lock"
+    lock_file = lock_path_for(triage_lock_target(root))
     lock_timeout = int(os.environ.get("CONCLAVE_TRIAGE_LOCK_TIMEOUT", "5"))
-    if not snapshot.acquire_lock(lock_dir, lock_timeout):
-        print(f"ERROR: could not acquire triage lock at {lock_dir} "
+    lock = contextlib.ExitStack()
+    try:
+        lock.enter_context(with_lock(lock_file, timeout=lock_timeout))
+    except LockTimeout:
+        print(f"ERROR: could not acquire triage lock at {lock_file} "
               f"(concurrent triage session?)", file=sys.stderr)
         return 1
     try:
@@ -673,7 +681,7 @@ def main(argv: list[str] | None = None) -> int:
 
         return 0
     finally:
-        snapshot.release_lock(lock_dir)
+        lock.close()
 
 
 if __name__ == "__main__":

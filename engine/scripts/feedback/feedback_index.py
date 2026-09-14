@@ -34,6 +34,10 @@ if str(_SCRIPTS_DIR) not in sys.path:
 
 from briefing.frontmatter_io import read as fm_read  # noqa: E402
 from briefing.paths import repo_root  # noqa: E402
+from enginelib import integrity  # noqa: E402
+from enginelib.lock import LockTimeout, lock_path_for, with_lock  # noqa: E402
+from enginelib.snapshot import snapshot_write  # noqa: E402
+from feedback.paths import index_lock_target, index_path  # noqa: E402
 from feedback.schema import Review, fingerprint  # noqa: E402
 
 
@@ -76,6 +80,48 @@ def _load_existing_index(idx_path: Path) -> dict[str, str]:
         except json.JSONDecodeError:
             pass
     return rows
+
+
+def _merge_rows(rows: list[dict], idx_path: Path, *, rebuild: bool) -> list[dict]:
+    """Rows to publish: a clean set on --rebuild, else new rows over the kept old ones.
+
+    Malformed existing lines are counted rather than dropped in silence. The detector
+    was already here (`except json.JSONDecodeError: pass`) — it just threw the evidence
+    away, which is why no one could say whether index corruption was rare or routine.
+    """
+    if rebuild:
+        # Clean rebuild: every live item is in `rows` (nothing was skipped), so
+        # write rows-only. Rows whose source review is gone simply don't reappear.
+        return rows
+
+    # Incremental default: existing rows not in the new batch are preserved,
+    # since _process_reviews skips items already indexed at a newer updated_at.
+    existing_rows: list[dict] = []
+    malformed = 0
+    if idx_path.exists():
+        for line in idx_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                existing_rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                malformed += 1
+
+    if malformed:
+        integrity.record(
+            integrity.log_path_beside(idx_path),
+            "index.malformed_line",
+            count=malformed,
+            path=str(idx_path),
+        )
+
+    # Build map of new rows keyed by (feedback_id, item_id)
+    new_keys = {(r["feedback_id"], r["item_id"]) for r in rows}
+
+    # Keep old rows not replaced by new ones
+    kept = [r for r in existing_rows if (r.get("feedback_id"), r.get("item_id")) not in new_keys]
+    return kept + rows
 
 
 def _process_reviews(dirs: list[Path], existing: dict[str, str], check: bool) -> tuple[list[dict], list[str], list[str], int]:
@@ -183,7 +229,9 @@ def main(argv: list[str] | None = None) -> int:
     root = repo_root()
 
     dirs = _review_dirs(root)
-    idx_path = root / "ops" / "feedback" / "_index" / "index.jsonl"
+    # One derivation, shared with the lock target: a lock keyed off a second
+    # spelling of this path would guard a file this writer never writes.
+    idx_path = index_path()
     # --rebuild passes an empty `existing` so no item is incrementally skipped —
     # every live review is re-processed and the write path emits rows-only (#9).
     existing = {} if args.rebuild else _load_existing_index(idx_path)
@@ -204,40 +252,31 @@ def main(argv: list[str] | None = None) -> int:
             )
         return 1 if (parse_errors or author_complete_drops) else 0
 
-    # Write index
+    # Write index — the read-modify-write below runs under the index's OWN lock.
+    #
+    # Its own, deliberately: `flock` is not reentrant across file descriptors, and
+    # triage rebuilds the index while holding the triage lock, so one shared lock
+    # would self-deadlock. Lock per resource, always taken triage -> index.
+    #
+    # Before 118 C1.1 there was no lock here at all, while the other writer (triage,
+    # via the post-commit hook's sibling path) held one. The lock existed; it was
+    # not the lock this writer took.
     idx_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if args.rebuild:
-        # Clean rebuild: every live item is in `rows` (nothing was skipped), so
-        # write rows-only. Rows whose source review is gone simply don't reappear.
-        merged = rows
-    else:
-        # Incremental default: existing rows not in the new batch are preserved,
-        # since _process_reviews skips items already indexed at a newer updated_at.
-        existing_rows: list[dict] = []
-        if idx_path.exists():
-            for line in idx_path.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    existing_rows.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
-
-        # Build map of new rows keyed by (feedback_id, item_id)
-        new_keys = {(r["feedback_id"], r["item_id"]) for r in rows}
-
-        # Keep old rows not replaced by new ones
-        kept = [r for r in existing_rows if (r.get("feedback_id"), r.get("item_id")) not in new_keys]
-        merged = kept + rows
-
-    tmp = idx_path.with_suffix(".tmp")
-    tmp.write_text(
-        "\n".join(json.dumps(r) for r in merged) + ("\n" if merged else ""),
-        encoding="utf-8",
-    )
-    os.replace(tmp, idx_path)
+    lock_file = lock_path_for(index_lock_target())
+    lock_timeout = float(os.environ.get("CONCLAVE_INDEX_LOCK_TIMEOUT", "10"))
+    try:
+        with with_lock(lock_file, timeout=lock_timeout):
+            merged = _merge_rows(rows, idx_path, rebuild=args.rebuild)
+            # snapshot_write, not a fixed `index.tmp`: it stages in `.tmp.<pid>` so two
+            # concurrent writers cannot rename each other's half-written file into place.
+            snapshot_write(
+                idx_path,
+                "\n".join(json.dumps(r) for r in merged) + ("\n" if merged else ""),
+            )
+    except LockTimeout:
+        print(f"ERROR: could not acquire the feedback index lock at {lock_file} "
+              f"(concurrent writer?)", file=sys.stderr)
+        return 1
 
     if parse_errors:
         for msg in parse_errors:

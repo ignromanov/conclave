@@ -1,4 +1,8 @@
-"""snapshot.py — atomic write, TTL staleness, mkdir-lock, schema validation.
+"""snapshot.py — atomic write, TTL staleness, schema validation.
+
+Locking left with 118 C1.1: `acquire_lock`/`release_lock` were an ownerless
+mkdir poll — a crashed holder left a directory nothing could prove was
+abandoned. `enginelib.lock.with_lock(path, timeout=...)` is the one primitive.
 Port of lib/snapshot.sh. I/O-free core: no stdout, no CLI parsing, no process exit — pure file I/O.
 """
 import os
@@ -41,30 +45,6 @@ def snapshot_is_stale(path: Path, ttl: int) -> bool:
     if (now - mtime) >= ttl:
         return True
     return False
-
-
-def acquire_lock(lock_dir: Path, timeout: int = 5) -> bool:
-    """mkdir-based poll lock. Returns True on acquisition, False on timeout.
-
-    Polls every 0.1s up to timeout*10 iterations (mirrors bash snapshot_acquire_lock).
-    """
-    lock_dir = Path(lock_dir)
-    max_iters = timeout * 10
-    for _ in range(max_iters):
-        try:
-            os.mkdir(lock_dir)
-            return True
-        except FileExistsError:
-            time.sleep(0.1)
-    return False
-
-
-def release_lock(lock_dir: Path) -> None:
-    """Best-effort rmdir; swallows all errors (mirrors bash snapshot_release_lock)."""
-    try:
-        os.rmdir(Path(lock_dir))
-    except OSError:
-        pass
 
 
 def validate_schema(path: Path, expected_version) -> bool:
