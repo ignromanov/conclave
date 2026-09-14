@@ -334,7 +334,7 @@ python -m engine lifecycle runlog-summary --advisor <advisor> --date <YYYY-MM-DD
 Output: one row body ready for the Summary column block. Examples:
 
 - Clean session (all exit 0 or 2) → `🟢 6 scripts · 3204ms · 0 errors`; **row is OMITTED from Summary**
-- One failure → `🟡 6 scripts · 3204ms · 1 errors · engine memory memory-index exit=1`
+- One failure → `🟡 6 scripts · 3204ms · 1 errors · engine memory index exit=1`
 - P0 failure → `🔴 …` and the row is prefixed with `✗` instead of `⚠`
 
 `exit=2` is a successful refresh (ADR-0003 loop-discipline §2), so an exit-2 script is never
