@@ -1,4 +1,4 @@
-"""Tests for briefing.schema — pydantic v2 models for the 10 page types."""
+"""Tests for briefing.schema — pydantic v2 models for the 10 registered page types."""
 from datetime import date, datetime
 
 import pytest
@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from briefing.schema import (
     PAGE_TYPES,
+    Checkpoint,
     Decision,
     Feedback,
     Handoff,
@@ -100,6 +101,64 @@ class TestSession:
                 type="session",
                 owner="kai-cto",
                 created=datetime(2026, 5, 20, 14, 0, 0),
+                schema_version="1",
+            )
+
+
+# ---------------------------------------------------------------------------
+# Checkpoint
+# ---------------------------------------------------------------------------
+
+class TestCheckpoint:
+    """spec 117 §6.2 — without a registered `checkpoint` type every record is an ERROR.
+
+    `validate_tree` walks `agent-memory/` recursively and excludes only `briefings/`, so
+    a checkpoint is reached whatever directory it sits in. Making `checkpoints/` a
+    SIBLING of `sessions/` avoids seven consumers breaking; it does not avoid this.
+    """
+
+    def test_valid(self):
+        c = Checkpoint(
+            type="checkpoint",
+            owner="kai-cto",
+            created=datetime(2026, 5, 20, 14, 0, 0),
+            session="a1b2c3d4",
+            schema_version=1,
+        )
+        assert c.type == "checkpoint"
+
+    def test_missing_session_raises(self):
+        """The session token is what `close_session` folds the checkpoint INTO.
+
+        A checkpoint that cannot name its session is an orphan the move step has no
+        destination for, so the field is required rather than optional. Ruled by
+        forge-chro when registering the type ahead of the mechanism; sage-cto owns the
+        record's shape and may widen it.
+        """
+        with pytest.raises(ValidationError):
+            Checkpoint(
+                type="checkpoint",
+                owner="kai-cto",
+                created=datetime(2026, 5, 20, 14, 0, 0),
+                schema_version=1,
+            )
+
+    def test_missing_owner_raises(self):
+        with pytest.raises(ValidationError):
+            Checkpoint(
+                type="checkpoint",
+                created=datetime(2026, 5, 20, 14, 0, 0),
+                session="a1b2c3d4",
+                schema_version=1,
+            )
+
+    def test_schema_version_string_rejected(self):
+        with pytest.raises(ValidationError):
+            Checkpoint(
+                type="checkpoint",
+                owner="kai-cto",
+                created=datetime(2026, 5, 20, 14, 0, 0),
+                session="a1b2c3d4",
                 schema_version="1",
             )
 
@@ -395,9 +454,9 @@ class TestMeeting:
 # ---------------------------------------------------------------------------
 
 class TestPageTypesRegistry:
-    def test_all_nine_types_present(self):
+    def test_all_ten_types_present(self):
         expected = {
-            "spec", "session", "decision", "mention", "feedback",
+            "spec", "session", "checkpoint", "decision", "mention", "feedback",
             "handoff", "retro", "open-question", "meeting",
         }
         assert set(PAGE_TYPES.keys()) == expected
@@ -405,6 +464,7 @@ class TestPageTypesRegistry:
     def test_registry_maps_to_correct_models(self):
         assert PAGE_TYPES["spec"] is Spec
         assert PAGE_TYPES["session"] is Session
+        assert PAGE_TYPES["checkpoint"] is Checkpoint
         assert PAGE_TYPES["decision"] is Decision
         assert PAGE_TYPES["mention"] is Mention
         assert PAGE_TYPES["feedback"] is Feedback

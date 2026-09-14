@@ -1,7 +1,9 @@
-"""schema.py — pydantic v2 models for the 10 ops page types.
+"""schema.py — pydantic v2 models for the ops page types.
 
-One frozen BaseModel per type (spec §4). `brief` is excluded — it is a compiled
-artifact with no frontmatter schema requirement.
+One frozen BaseModel per type (spec §4): 10 models, 10 registry entries. `brief` is the
+eleventh page type and is excluded from both — it is a compiled artifact with no
+frontmatter schema requirement. The counts are stated because they are a cache over the
+file below; `TestPageTypesRegistry` is what keeps them honest.
 
 snake_case keys throughout (Obsidian Bases requires bracket-notation for hyphens;
 pydantic needs no alias generator for snake_case). `type` is required on every page
@@ -53,6 +55,29 @@ class Session(BaseModel, frozen=True):
     # Optional fields
     duration: str | None = None
     sources: list[str] | None = None
+    related: list[str] | None = None
+    tags: list[str] | None = None
+
+
+class Checkpoint(BaseModel, frozen=True):
+    """agent-memory/advisors/checkpoints/ — an OPEN session record (spec 117 §6).
+
+    A sibling of `sessions/`, never inside it: 16 consumers read `sessions/` and 7 break
+    on a second shape there. Being a sibling does not exempt it from this registry —
+    `validate_tree` walks `agent-memory/` recursively, so an unregistered type would make
+    every checkpoint an ERROR wherever it sat.
+
+    Immutable like `Session`, and for the same reason: lines are appended during the
+    session and `close_session` folds the file into `sessions/` rather than editing it.
+    `session` is the `CLAUDE_CODE_SESSION_ID[:8]` token that names the destination.
+    """
+
+    type: Literal["checkpoint"]
+    owner: str
+    created: datetime
+    session: str
+    schema_version: StrictInt
+    # Optional fields
     related: list[str] | None = None
     tags: list[str] | None = None
 
@@ -173,6 +198,7 @@ class Meeting(BaseModel, frozen=True):
 PAGE_TYPES: dict[str, type[BaseModel]] = {
     "spec": Spec,
     "session": Session,
+    "checkpoint": Checkpoint,
     "decision": Decision,
     "mention": Mention,
     "feedback": Feedback,

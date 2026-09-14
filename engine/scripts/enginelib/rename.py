@@ -329,6 +329,18 @@ def _classify(path: Path, data_root: Path, claude_dirs: list[Path]) -> str:
         ("agent-memory", "advisors", "decisions"),
         ("agent-memory", "advisors", "mentions"),
         ("agent-memory", "advisors", "audits"),
+        # retros/ is written by commands/retro.md and by nothing else, which is why it
+        # was never here: it has no resolver in paths.py and no entry in the scaffolder,
+        # so every enumeration that learns a directory by being edited alongside its
+        # creator skipped it. Found by running plan() against the live instance —
+        # agent-memory/advisors/retros/2026-09-08-retro.md sat in `skipped`.
+        ("agent-memory", "advisors", "retros"),
+        # checkpoints/ is registered AHEAD of its producer, on spec 117 §6's design
+        # (ops/specs/117-session-ledger/design-sage-cto.md §6.1). A checkpoint is an
+        # in-flight session record that close_session folds into sessions/; it is not
+        # derivable, so REGEN would destroy work, and it names the advisor in its
+        # frontmatter, so HISTORY is the class that carries it across a rename.
+        ("agent-memory", "advisors", "checkpoints"),
     ):
         return HISTORY
     # ops/decisions/ holds cross-cutting Y-statements keyed by `by:`, which the
