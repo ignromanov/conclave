@@ -45,7 +45,7 @@ def build(ctx: ScanCtx) -> str:
 
     lines: list[str] = []
     for spec_path in sorted(specs_root.glob("*/spec.md")):
-        result = _process_spec(spec_path, ctx.advisor)
+        result = _process_spec(spec_path, ctx.advisor_filter)
         if result is not None:
             lines.append(result)
 
@@ -54,7 +54,7 @@ def build(ctx: ScanCtx) -> str:
     return "\n".join(lines)
 
 
-def _process_spec(spec_path: Path, advisor: str) -> str | None:
+def _process_spec(spec_path: Path, advisor: str | None) -> str | None:
     """Return a summary line for this spec if it belongs to the advisor, else None."""
     try:
         text = spec_path.read_text(encoding="utf-8")
@@ -86,7 +86,7 @@ def _process_spec(spec_path: Path, advisor: str) -> str | None:
     return f"- {done}/{total} ✓ — **{spec_id}**: {title}{prov}{flag}"
 
 
-def _count_checkboxes(text: str, advisor: str) -> tuple[int, int, int, bool]:
+def _count_checkboxes(text: str, advisor: str | None) -> tuple[int, int, int, bool]:
     """Return (total, done, advisor_open, has_block) for the acceptance block.
 
     ``has_block`` distinguishes "declares acceptance and lists nothing" from "declares
@@ -111,8 +111,10 @@ def _count_checkboxes(text: str, advisor: str) -> tuple[int, int, int, bool]:
             done += 1
         elif _OPEN_RE.match(line):
             total += 1
-            # Flag if line body mentions the advisor name (ownership hint).
-            if advisor in line:
+            # Flag if line body mentions the advisor name (ownership hint). Under
+            # instance scope there is no name to mention, so nothing is flagged —
+            # `"" in line` would have starred every open item on the board.
+            if advisor is not None and advisor in line:
                 advisor_open += 1
 
     return total, done, advisor_open, has_block

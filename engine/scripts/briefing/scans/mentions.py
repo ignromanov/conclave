@@ -82,7 +82,8 @@ def build(ctx: ScanCtx) -> str:
 
     Mirrors bash fm_get() + sort -t '|' -k1,1n -k2,2r exactly.
     """
-    open_dir = ctx.mentions_dir / ctx.advisor / "open"
+    key = ctx.advisor_key
+    open_dir = ctx.mentions_dir / key / "open"
     if not open_dir.is_dir():
         return _PLACEHOLDER
 
@@ -109,7 +110,7 @@ def build(ctx: ScanCtx) -> str:
 
     lines: list[str] = []
     for _rank, created, prio, mention_id, from_, ref, excerpt in entries:
-        path_ref = f"mentions/{ctx.advisor}/open/{mention_id}.md"
+        path_ref = f"mentions/{key}/open/{mention_id}.md"
         # Build enriched line progressively.
         from_part = f" from:{from_}" if from_ else ""
         ref_part = f" {ref}" if ref else ""

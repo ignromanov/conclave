@@ -249,12 +249,19 @@ class TestRender:
 
 class TestPlansIsMountedInTheBriefing:
     def test_render_wires_the_section(self) -> None:
-        """GH#183's own closing condition keys on render.py, not on this module — a scan
-        that exists and is never rendered leaves the briefing exactly as it was."""
-        from briefing import render
+        """GH#183's own closing condition keys on the RENDER path, not on this module — a
+        scan that exists and is never rendered leaves the briefing exactly as it was.
 
-        src = Path(render.__file__).read_text(encoding="utf-8")
-        assert '"plans": plans.build(ctx)' in src
+        Asserted against the registry, not against render.py's source text. Until 057 T5b
+        the dispatch was a dict literal in two files and this test grepped one of them for
+        the exact string `'"plans": plans.build(ctx)'`. The registry made that string
+        vanish, and this test was the only thing in the suite that noticed — a THIRD copy
+        of the dispatch, which the parity gate's own docstring did not know existed.
+        """
+        from briefing.sections import SECTIONS
+
+        assert "plans" in {section.key for section in SECTIONS}
+        assert plans in {section.scan for section in SECTIONS}
 
     def test_template_has_the_placeholder(self) -> None:
         from briefing.paths import templates_dir

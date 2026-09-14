@@ -106,6 +106,8 @@ def _build_parser() -> argparse.ArgumentParser:
     memory.register(sub)
     from engine.cmd import briefing
     briefing.register(sub)
+    from engine.cmd import status
+    status.register(sub)
     from engine.cmd import skill
     skill.register(sub)
     from engine.cmd import model

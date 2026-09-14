@@ -26,7 +26,7 @@ _CHECKBOX_TODO = re.compile(r"^\s*-\s+\[ \]")
 def build(ctx: ScanCtx) -> str:
     """Return markdown list of pending actions referencing the advisor."""
     specs_root = ctx.repo_root / "ops" / "specs"
-    hits = _scan_active_specs(specs_root, ctx.advisor, ctx.short_name)
+    hits = _scan_active_specs(specs_root, ctx.advisor_key, ctx.short_name)
 
     if not hits:
         return _PLACEHOLDER

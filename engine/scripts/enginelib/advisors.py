@@ -147,7 +147,7 @@ def advisor_label(advisor: str) -> str:
     return f"advisor:{advisor}"
 
 
-def files_for_advisor(directory: Path, advisor: str, *, field: str) -> list[Path]:
+def files_for_advisor(directory: Path, advisor: str | None, *, field: str) -> list[Path]:
     """Records under *directory* that belong to *advisor*, sorted by path.
 
     Ownership is read from the frontmatter *field* (`advisor:` for sessions,
@@ -160,9 +160,15 @@ def files_for_advisor(directory: Path, advisor: str, *, field: str) -> list[Path
     so legacy data behaves exactly as it did. A field, when present, always wins:
     a file whose name says one advisor and whose field says another belongs to
     the field's advisor.
+
+    `advisor=None` is instance scope: every owner. Attribution is what the field is
+    FOR, so with no predicate to apply there is nothing to attribute — and in
+    particular this is not "the records owned by ''", which is the empty set.
     """
     if not directory.is_dir():
         return []
+    if advisor is None:
+        return sorted(directory.glob("*.md"))
     out: list[Path] = []
     for f in sorted(directory.glob("*.md")):
         owner = _frontmatter_value(f, field)

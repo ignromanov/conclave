@@ -23,7 +23,7 @@ def build(ctx: ScanCtx) -> str:
     if not sess_dir.is_dir():
         return _PLACEHOLDER
 
-    matches = files_for_advisor(sess_dir, ctx.advisor, field="advisor")
+    matches = files_for_advisor(sess_dir, ctx.advisor_filter, field="advisor")
     if not matches:
         return _PLACEHOLDER
 

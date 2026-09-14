@@ -93,24 +93,8 @@ def main(argv: list[str] | None = None) -> int:
     # Import here so startup is fast for --help / bad advisor names.
     from briefing import paths, render
     from briefing.render import _generated_at  # noqa: PLC2701
-    from briefing.scans import (
-        ScanCtx,
-        closeability,
-        code_repo,
-        current_work,
-        decisions,
-        drift,
-        identity,
-        interrupted,
-        mentions,
-        owed,
-        p0,
-        plans,
-        queue,
-        roadmap,
-        sessions,
-        spec_progress,
-    )
+    from briefing.scans import ScanCtx
+    from briefing.sections import SECTIONS
 
     # Persona resolution lives in enginelib.advisors, which owns META_ADVISORS and
     # so can tell a hired advisor's instance-written persona from Forge's shipped
@@ -137,86 +121,16 @@ def main(argv: list[str] | None = None) -> int:
         plans_dir=paths.project_plans_dir(),
     )
 
-    # Run scans individually so each step can be timed.
-    t0 = _now_ms()
-    who_i_am = identity.build(ctx)
-    _emit_step("who-i-am", t0)
-
-    t0 = _now_ms()
-    recent_decisions = decisions.build(ctx)
-    _emit_step("decisions", t0)
-
-    t0 = _now_ms()
-    my_queue = queue.build(ctx)
-    _emit_step("my-queue", t0)
-
-    t0 = _now_ms()
-    p0_blockers = p0.build(ctx)
-    _emit_step("p0", t0)
-
-    t0 = _now_ms()
-    last_sessions = sessions.build(ctx)
-    _emit_step("sessions", t0)
-
-    t0 = _now_ms()
-    mention_body = mentions.build(ctx)
-    _emit_step("mentions", t0)
-
-    t0 = _now_ms()
-    current_work_body = current_work.build(ctx)
-    _emit_step("current-work", t0)
-
-    t0 = _now_ms()
-    spec_progress_body = spec_progress.build(ctx)
-    _emit_step("spec-progress", t0)
-
-    t0 = _now_ms()
-    owed_body = owed.build(ctx)
-    _emit_step("owed", t0)
-
-    t0 = _now_ms()
-    roadmap_body = roadmap.build(ctx)
-    _emit_step("roadmap", t0)
-
-    t0 = _now_ms()
-    drift_body = drift.build(ctx)
-    _emit_step("drift", t0)
-
-    t0 = _now_ms()
-    interrupted_body = interrupted.build(ctx)
-    _emit_step("interrupted", t0)
-
-    t0 = _now_ms()
-    plans_body = plans.build(ctx)
-    _emit_step("plans", t0)
-
-    t0 = _now_ms()
-    closeability_body = closeability.build(ctx)
-    _emit_step("closeability", t0)
-
-    t0 = _now_ms()
-    code_repo_body = code_repo.build(ctx)
-    _emit_step("code-repo", t0)
-
+    # One list, two readers (plan 057 T5b): this path times each scan, render.build does
+    # not, and that was the whole of the difference between the two dispatch literals.
     values: dict[str, str] = {
-        "advisor": advisor,
+        "advisor": ctx.audience,
         "generated_at": _generated_at(),
-        "who_i_am": who_i_am,
-        "recent_decisions": recent_decisions,
-        "my_queue": my_queue,
-        "p0_blockers": p0_blockers,
-        "last_sessions": last_sessions,
-        "mentions": mention_body,
-        "current_work": current_work_body,
-        "spec_progress": spec_progress_body,
-        "owed": owed_body,
-        "roadmap": roadmap_body,
-        "drift": drift_body,
-        "interrupted": interrupted_body,
-        "plans": plans_body,
-        "closeability": closeability_body,
-        "code_repo": code_repo_body,
     }
+    for section in SECTIONS:
+        t0 = _now_ms()
+        values[section.key] = section.scan.build(ctx)
+        _emit_step(section.step, t0)
 
     out_path = paths.briefings_dir() / f"{advisor}.md"
 

@@ -43,7 +43,7 @@ def build(ctx: ScanCtx) -> str:
 
     drifts: list[str] = []
     for spec_path in sorted(specs_root.glob("*/spec.md")):
-        result = _check_drift(spec_path, ctx.advisor, registry_statuses)
+        result = _check_drift(spec_path, ctx.advisor_filter, registry_statuses)
         if result is not None:
             drifts.append(result)
 
@@ -82,7 +82,7 @@ def _parse_registry(registry_path: Path) -> dict[str, str]:
 
 def _check_drift(
     spec_path: Path,
-    advisor: str,
+    advisor: str | None,
     registry_statuses: dict[str, str],
 ) -> str | None:
     """Return a drift line if spec status != registry status, else None."""

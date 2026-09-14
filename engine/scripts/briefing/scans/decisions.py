@@ -33,7 +33,7 @@ def build(ctx: ScanCtx) -> str:
     # 1. Advisor-specific decisions.
     dec_dir = ctx.decisions_dir
     if dec_dir.is_dir():
-        stems.extend(f.stem for f in files_for_advisor(dec_dir, ctx.advisor, field="by"))
+        stems.extend(f.stem for f in files_for_advisor(dec_dir, ctx.advisor_filter, field="by"))
 
     # 2. Cross-cutting Y-statements from ops/decisions/.
     ops_dec_dir = ctx.repo_root / "ops" / "decisions"

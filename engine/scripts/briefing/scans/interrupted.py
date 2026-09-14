@@ -22,10 +22,20 @@ _TERMINAL = {"complete", "completed", "done", "archived", "closed", "superseded"
 _MAX_ITEMS = 5
 
 
+def collect(ctx: ScanCtx) -> list[tuple[Path, str, str]]:
+    """The rows this section is built from: [(path, mtime_iso, status)].
+
+    The public data seam GH#57 needs. `build()` below is one printer over it; the
+    status projection is another. Deliberately unfiltered by advisor — this walk
+    always was instance-wide (it reads no advisor field at all), and the projection
+    needs that fact stated rather than rediscovered.
+    """
+    return _collect_open_handoffs(ctx.repo_root / "ops" / "handoffs")
+
+
 def build(ctx: ScanCtx) -> str:
     """Return markdown list of open resume-prompts sorted by mtime."""
-    handoffs_dir = ctx.repo_root / "ops" / "handoffs"
-    items = _collect_open_handoffs(handoffs_dir)
+    items = collect(ctx)
 
     if not items:
         return _PLACEHOLDER

@@ -30,8 +30,13 @@ _LINE_CAP_HARD = 20
 _AGENT_INFRA_LABEL = "agent-infra"
 
 
-def _read_items(cache_path: Path, advisor: str) -> list[dict]:
-    """Return raw JSON items from the gh-cache snapshot, or [] on any failure."""
+def _read_items(cache_path: Path) -> list[dict]:
+    """Return raw JSON items from the gh-cache snapshot, or [] on any failure.
+
+    Took an `advisor` argument until 057 T3 and never referenced it. The read is scoped
+    entirely by *cache_path*; the parameter read as a scope declaration at the call site
+    and declared nothing.
+    """
     if not cache_path.is_file():
         return []
     text = cache_path.read_text(encoding="utf-8")
@@ -107,8 +112,8 @@ def build(ctx: ScanCtx) -> str:
 
     Placeholder when there are no agent-infra issues.
     """
-    cache_path = ctx.gh_cache_dir / f"{ctx.advisor}.md"
-    items = _read_items(cache_path, ctx.advisor)
+    cache_path = ctx.gh_cache_dir / f"{ctx.advisor_key}.md"
+    items = _read_items(cache_path)
 
     infra_items = [it for it in items if _is_agent_infra(it)]
     if not infra_items:

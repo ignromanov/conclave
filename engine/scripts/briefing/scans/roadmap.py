@@ -40,7 +40,7 @@ def build(ctx: ScanCtx) -> str:
 
     entries: list[dict[str, str]] = []
     for spec_path in sorted(specs_root.glob("*/spec.md")):
-        entry = _extract_entry(spec_path, ctx.advisor)
+        entry = _extract_entry(spec_path, ctx.advisor_filter)
         if entry is not None:
             entries.append(entry)
 
@@ -58,7 +58,7 @@ def build(ctx: ScanCtx) -> str:
     return "\n".join(lines)
 
 
-def _extract_entry(spec_path: Path, advisor: str) -> dict[str, str] | None:
+def _extract_entry(spec_path: Path, advisor: str | None) -> dict[str, str] | None:
     """Return dict(id, title, status, milestone) if spec belongs to advisor."""
     try:
         text = spec_path.read_text(encoding="utf-8")

@@ -80,21 +80,24 @@ def resolve_id(raw: str) -> tuple[str, bool]:
     return (mapped, True) if mapped else (raw, False)
 
 
-def owns(fm: dict[str, str], advisor: str) -> str | None:
+def owns(fm: dict[str, str], advisor: str | None) -> str | None:
     """Return the name of the first ownership field naming *advisor*, else None.
 
     A spec belongs to an advisor when ANY of owner / advisor / owner_suggestion names
     them, after retired-id mapping. Reading only two of the three is why every
     spec-derived section rendered its placeholder for the advisor who owns four
     specs (#226).
+
+    `advisor=None` is instance scope — owned by ANYONE — and returns the first
+    ownership field carrying a value. `advisor=""` is not a scope and never was: it
+    matched nobody, so three spec-derived sections answered "give me everything" with
+    an empty render. ScanCtx now refuses to construct it (plan 057 T3).
     """
-    if not advisor:
-        return None
     for field in OWNER_FIELDS:
         value = fm.get(field)
         if not value:
             continue
-        if resolve_id(value)[0] == advisor:
+        if advisor is None or resolve_id(value)[0] == advisor:
             return field
     return None
 

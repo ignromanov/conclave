@@ -78,6 +78,30 @@ def test_missing_directory_yields_nothing(tmp_path):
     assert files_for_advisor(tmp_path / "absent", ADVISOR, field="advisor") == []
 
 
+def test_none_is_every_owner_not_the_empty_set(tmp_path):
+    """Instance scope (`advisor=None`, plan 057 T3) drops the predicate entirely.
+
+    Asserted here rather than through the three scans that consume it, because a scan
+    test reaches this function one indirection away and a plausible substitute — a filter
+    against the empty string — passes it. `""` is a real advisor id nobody has, so it
+    returns [], and the section renders as though the instance had no records at all.
+    """
+    mine = _renamed_session(tmp_path)
+    theirs = _w(
+        _sessions_dir(tmp_path) / "2026-08-07-someone-else-work.md",
+        "---\nadvisor: someone-else\ndate: 2026-08-07\n---\n",
+    )
+    legacy = _w(_sessions_dir(tmp_path) / "2026-08-05-no-field-at-all.md", "bare body\n")
+    d = _sessions_dir(tmp_path)
+
+    assert files_for_advisor(d, ADVISOR, field="advisor") == [mine]
+    assert files_for_advisor(d, None, field="advisor") == sorted([legacy, mine, theirs])
+    assert files_for_advisor(d, "", field="advisor") == [], (
+        "the empty advisor is one nobody is, not everybody — if this ever widens, "
+        "ScanCtx's invariant is the thing that stopped mattering"
+    )
+
+
 # ---------------------------------------------------------------------------
 # The five consumers
 # ---------------------------------------------------------------------------
