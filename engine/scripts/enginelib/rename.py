@@ -452,9 +452,15 @@ def _classify(path: Path, data_root: Path, claude_dirs: list[Path]) -> str:
     # has no frontmatter, and the ids it carries live in `] <advisor>: ` markers
     # that only the CONFIG token rewrite reaches. Left unclassified it would be
     # reported and skipped on every rename, keeping a retired id forever.
-    if rel.as_posix() in ("agent-memory/hot.md", "agent-memory/hot-archive.md") or rel.name in (
-        "role-manifest.yaml", "roster.yaml",
-    ):
+    # roster/norms.yaml is the third member of the roster-config family and the one
+    # that was missed. Its norms are written inline-flow (`- {type: …, role: <id>}`),
+    # so no frontmatter-field rule reaches them and HISTORY would be a silent no-op.
+    # Leaving it behind does not fail: `duty discharge` matches norms to the agent by
+    # `role:`, so the new id simply holds no obligations and the check the operator
+    # installed reports CLEAN — spec 091 P2's own failure mode, re-entered by a rename.
+    if rel.as_posix() in (
+        "agent-memory/hot.md", "agent-memory/hot-archive.md", "roster/norms.yaml",
+    ) or rel.name in ("role-manifest.yaml", "roster.yaml"):
         return CONFIG
     return UNCLASSIFIED
 

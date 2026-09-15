@@ -70,6 +70,14 @@ def _instance(tmp: Path) -> dict[str, Path]:
         tmp / "role-manifest.yaml",
         f"roles:\n  - id: {OLD}\n    seat: engineering\n  - id: {OTHER}\n",
     )
+    # The operator's norms file — the ONLY place a duty becomes binding (091 P2 §0).
+    # `role:` is an advisor id, written inline-flow, so no frontmatter rule reaches it.
+    p["norms"] = _w(
+        tmp / "roster" / "norms.yaml",
+        "version: 1\nnorms:\n"
+        f"  - {{type: obligation, role: {OLD}, mission: d_diff_preview_before_edit}}\n"
+        f"  - {{type: obligation, role: {OTHER}, mission: d_measure_before_ranking}}\n",
+    )
     p["hot"] = _w(
         tmp / "agent-memory" / "hot.md",
         f"- [2026-08-06T21:45-0300] {OLD}: closed session promo-stack-unblock\n",
@@ -520,6 +528,27 @@ def test_another_advisors_ledger_is_not_moved_by_a_mention(applied):
     assert p["other_ledger"].is_file(), "another advisor's ledger was moved"
     assert OLD in p["other_ledger"].read_text(), "another advisor's note was rewritten"
     assert p["other_ledger"] == tmp / "agent-memory" / "advisors" / OTHER / "duty-ledger.yaml"
+
+
+def test_the_operator_norm_follows_the_advisor(applied):
+    """A norm left naming the retired id does not fail — it silently stops obliging.
+
+    `roster/norms.yaml` is the only file that turns a duty from advice into an
+    obligation, and `duty discharge` matches norms to the agent by `role:`. A rename
+    that leaves the norm behind gives the new id zero obligations, so the check the
+    operator installed reports CLEAN for a duty nobody is bound by any more. That is
+    the precise failure spec 091 P2 was written to end, reintroduced by a rename.
+
+    CONFIG, not HISTORY: the norms are written inline-flow (`- {type: …, role: …}`),
+    which no frontmatter-field rule reaches, and a norm is live wiring describing the
+    roster as it is NOW — the same class its neighbours `roster.yaml` and
+    `role-manifest.yaml` already have.
+    """
+    _, p, _ = applied
+    body = p["norms"].read_text()
+    assert f"role: {NEW}" in body, "the obligation stayed bound to the retired id"
+    assert f"role: {OLD}" not in body
+    assert f"role: {OTHER}" in body, "another advisor's norm was rewritten"
 
 
 # ---------------------------------------------------------------------------
