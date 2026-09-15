@@ -865,6 +865,31 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError) as exc:
         print(f"  hot: Now registration skipped ({exc})", file=sys.stderr)
 
+    # The session's checkpoint record, created here because R1 says it exists from the
+    # moment the session starts. A record the agent creates on its first checkpoint
+    # cannot show the session that shipped nothing and never wrote one — and that is the
+    # case the ledger exists to expose, so the empty record has to be the default state
+    # rather than a state you have to opt into.
+    #
+    # No `directory=` here, deliberately, and it is the one line in this block worth
+    # arguing about. The hot.md seed two blocks up IS handed an explicit path from this
+    # file's own _repo_root(), which omits the plugin-mode CLAUDE_PROJECT_DIR branch that
+    # enginelib.paths carries — so the two can answer differently. hot.md survives that:
+    # `hot.append()` resolves through enginelib.paths anyway, and a seed in the wrong tree
+    # costs one stray skeleton. The checkpoint record cannot survive it. It has three
+    # writers — this, `engine session checkpoint`, and the close that folds it — and the
+    # other two resolve through paths.checkpoints_dir(). A record created under a
+    # different root is not a misplaced file; it is an empty one that every reader agrees
+    # on, and the close reports `requested 0` for a session that did work.
+    #
+    # Best-effort like both blocks above: a record mechanism that can refuse a session
+    # start is worse than the problem it solves.
+    try:
+        from enginelib.checkpoint import store
+        store.ensure(advisor, os.environ.get("CLAUDE_CODE_SESSION_ID", ""))
+    except OSError as exc:
+        print(f"  checkpoint: record not created ({exc})", file=sys.stderr)
+
     step1_code, lines = _advisor_summary(advisor, root)
     for line in lines:
         print(line)

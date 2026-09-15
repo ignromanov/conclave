@@ -1,6 +1,7 @@
 """Tests for lifecycle/session-init.py — session initialization helper."""
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import textwrap
@@ -1592,3 +1593,129 @@ class TestReflexionQuoting:
         """)
         got = session_init._extract_reflexion(f)
         assert got == ''''quoted' and "double" both appear here''', got
+
+
+class TestCheckpointRecordExistsFromTheStart:
+    """Spec 117 R1: the record exists from the moment the session starts.
+
+    The requirement is not "a record gets written eventually". A record the agent creates
+    on its first checkpoint is present exactly in the sessions that checkpointed, which
+    makes the ledger unable to describe the session that shipped nothing — the case 117
+    was written for. So the empty record is the default state, and these tests pin the
+    three things that can quietly take it away.
+    """
+
+    def _root(self, tmp_path: Path) -> Path:
+        root = _make_root(tmp_path)
+        _write(root / ".claude" / "agents" / "privacy-trust.md", "# advisor\n")
+        return root
+
+    def _run(self, root: Path, monkeypatch, token: str = "cccccccc-3333") -> int:
+        monkeypatch.setenv("CONCLAVE_AI_ROOT", str(root))
+        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root))
+        monkeypatch.setenv("LOCK_DIR", str(root / "locks"))
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", token)
+        monkeypatch.setattr(session_init, "_step1_load_briefing", lambda a, r: (0, []))
+        monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: ([], []))
+        monkeypatch.setattr(session_init, "_step1c_reflexion", lambda a, r: [])
+        monkeypatch.setattr(session_init, "_scan_overlays", lambda a, r: [])
+        monkeypatch.setattr(session_init, "_step_cadence_guard", lambda: [])
+        return session_init.main(["--advisor", "privacy-trust"])
+
+    def test_the_record_is_on_disk_before_any_work_is_done(self, tmp_path, monkeypatch):
+        """Reddens when the `store.ensure` call is removed from main()."""
+        from enginelib.checkpoint import store
+
+        root = self._root(tmp_path)
+        self._run(root, monkeypatch)
+
+        path = store.record_path("privacy-trust", "cccccccc-3333")
+        assert path.is_file(), (
+            "session-init finished without a checkpoint record — "
+            f"nothing at {path}"
+        )
+        header = path.read_text(encoding="utf-8")
+        assert "type: checkpoint" in header
+        assert "owner: privacy-trust" in header
+        assert "session: cccccccc" in header
+
+    def test_the_verb_appends_to_the_record_session_init_made(self, tmp_path, monkeypatch):
+        """Reddens when the two writers stop agreeing on the filename.
+
+        session-init creates the record and `engine session checkpoint` appends to it —
+        two code paths, no shared call, and if they derive different names the verb
+        silently starts a second file. The session then holds two records, each showing
+        half the work, and the close folds whichever one it finds.
+
+        **What this cannot catch, stated rather than implied.** The other half of the
+        agreement is the DATA root: session_init._repo_root() omits the plugin-mode
+        CLAUDE_PROJECT_DIR branch enginelib.paths carries, so the two CAN answer
+        differently. Not here. Both read CONCLAVE_AI_ROOT first, and a hermetic fixture
+        must set it — the only environment where they diverge is one where the walk runs
+        against the operator's real tree. A test that set that up would be writing into
+        the live instance, so this asserts the half it can execute and names the half it
+        cannot.
+        """
+        from engine.__main__ import main as engine_main
+        from enginelib.checkpoint import store
+
+        root = self._root(tmp_path)
+        self._run(root, monkeypatch)
+        created = store.record_path("privacy-trust", "cccccccc-3333")
+
+        assert engine_main(
+            ["session", "checkpoint", "--intent", "T5 — the record at start",
+             "--advisor", "privacy-trust"]
+        ) == 0
+
+        written = sorted(created.parent.glob("*.md"))
+        assert written == [created], f"the verb started a second record: {written}"
+        entries = store.read(created).entries
+        assert [e.text for e in entries] == ["T5 — the record at start"]
+
+    def test_a_second_init_under_one_token_keeps_what_was_appended(
+        self, tmp_path, monkeypatch
+    ):
+        """Reddens when `ensure` stops being O_EXCL, or is replaced by a write-if-absent.
+
+        session-init runs twice per Claude session — the SessionStart hook for every
+        advisor, then the bound advisor's own skill — under one token, therefore against
+        one filename. Any entry the first half of the session recorded sits in that file
+        when the second init arrives.
+        """
+        from enginelib.checkpoint import record, store
+
+        root = self._root(tmp_path)
+        self._run(root, monkeypatch)
+
+        path = store.record_path("privacy-trust", "cccccccc-3333")
+        store.append(path, record.render(record.KIND_INTENT, "the unit taken on"))
+        self._run(root, monkeypatch)
+
+        entries = store.read(path).entries
+        assert [e.text for e in entries] == ["the unit taken on"], (
+            f"the second session-init did not leave the record alone: {path.read_text()!r}"
+        )
+
+    @pytest.mark.skipif(
+        os.geteuid() == 0, reason="root ignores the mode bits this test relies on"
+    )
+    def test_an_unwritable_directory_does_not_block_the_session(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Reddens when the try/except around `store.ensure` is removed.
+
+        This is the requirement that outranks the record itself. Everything else 117 asks
+        for is worth having only while the ledger cannot stop a session from starting.
+        """
+        root = self._root(tmp_path)
+        advisors_dir = root / "agent-memory" / "advisors"
+        advisors_dir.chmod(0o500)
+        try:
+            rc = self._run(root, monkeypatch)
+        finally:
+            advisors_dir.chmod(0o755)
+
+        assert rc == 0, f"an unwritable checkpoints dir failed the session start (rc={rc})"
+        assert "checkpoint: record not created" in capsys.readouterr().err
+        assert not (advisors_dir / "checkpoints").exists()
