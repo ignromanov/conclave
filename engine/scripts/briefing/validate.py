@@ -17,7 +17,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from briefing.frontmatter_io import read
-from briefing.schema import PAGE_TYPES
+from briefing.schema import PAGE_LOCATIONS, PAGE_TYPES
 
 # Frontmatter line thresholds (spec §3 A5, research R6b).
 _WARN_AT = 10
@@ -60,7 +60,25 @@ def validate_file(path: Path) -> list[Finding]:
     """
     findings: list[Finding] = []
 
-    meta, _ = read(path)
+    try:
+        meta, _ = read(path)
+    except Exception as exc:
+        # A record whose YAML does not parse is the one finding this validator must never
+        # miss, and until now it was the one it could not survive: the exception came
+        # straight out of `read` and took the whole walk down with it. Run against the
+        # live instance on 2026-09-15 that happened on the 25th file, so every record
+        # after it went unexamined and the validator reported nothing at all.
+        #
+        # Same ruling as 2026-09-15 for the cadence check: one author's malformed file is
+        # that file's finding, not an outage for the corpus. Reported as ERROR with the
+        # parser's own words, because "does not parse" without the reason sends a reader
+        # to open a file and guess.
+        return [Finding(
+            path=path,
+            severity=Severity.ERROR,
+            message=f"frontmatter does not parse: {type(exc).__name__}: "
+                    f"{str(exc).splitlines()[0] if str(exc) else exc!r}",
+        )]
 
     if not meta:
         # No frontmatter — not an error for arbitrary markdown files, but we
@@ -119,12 +137,31 @@ def validate_file(path: Path) -> list[Finding]:
 
 
 def validate_tree(root: Path) -> list[Finding]:
-    """Walk agent-memory/ + ops/ under root and validate every .md file.
+    """Validate every record in the locations the schema actually claims.
 
-    Excludes briefings/ (compiled output) per spec §4 / research R6d.
+    Scoped to `PAGE_LOCATIONS` rather than walking `agent-memory/` + `ops/` whole. The
+    wide walk is what made this validator unusable: it reached 908 files on this instance
+    while the registry claims 581, so 327 records were judged at ERROR severity against a
+    schema that never named them — a spec's research note, a plan, a product analysis,
+    every one reported as "missing required field: type". A report that is 56% about
+    files outside its own contract is not a stricter report, it is an unreadable one.
+
+    Deriving the scope from the registry also means a type cannot be enforced in a place
+    the contract does not name, nor claimed in the contract and then never looked at.
+
+    A declared location that does not exist is skipped in silence HERE, deliberately: on
+    a fresh instance every one of them is absent and that is correct, and this function
+    cannot tell a young corpus from a stale contract. That distinction needs an instance
+    to look at, so it belongs to the caller that has one, not to this walk.
+
+    Excludes briefings/ (compiled output) per spec §4 / research R6d — now structurally,
+    since no location names it, with the explicit guard kept below as the second lock.
     """
     findings: list[Finding] = []
-    scan_dirs = [root / "agent-memory", root / "ops"]
+    seen: set[Path] = set()
+    scan_dirs = [root / rel
+                 for locations in PAGE_LOCATIONS.values()
+                 for rel in locations]
 
     for scan_dir in scan_dirs:
         if not scan_dir.is_dir():
@@ -133,6 +170,11 @@ def validate_tree(root: Path) -> list[Finding]:
             # Skip compiled briefings — they have no frontmatter schema.
             if "briefings" in md_file.parts:
                 continue
+            # Two types may share a tree (`decision` names two locations); a record must
+            # not be reported twice because the scope listed its directory twice.
+            if md_file in seen:
+                continue
+            seen.add(md_file)
             findings.extend(validate_file(md_file))
 
     return findings

@@ -207,3 +207,31 @@ PAGE_TYPES: dict[str, type[BaseModel]] = {
     "open-question": OpenQuestion,
     "meeting": Meeting,
 }
+
+# Where each type's records live, relative to the DATA root — spec 084 §4's own second
+# column, which until now existed only in the spec.
+#
+# The registry carries it because the validator has to walk SOMETHING, and walking
+# `agent-memory/` + `ops/` entire — which is what it did — is a walk far wider than the
+# contract it enforces. Measured 2026-09-15 on this instance: that walk reaches 908 files
+# while these locations hold 581, so 327 files were being judged against a schema that
+# never claimed them, at ERROR severity. An instrument whose scope exceeds its contract
+# does not report more; it reports noise, and noise is why nothing ran it.
+#
+# Keyed identically to PAGE_TYPES and gated by a test that the two key sets are equal, so
+# a type cannot be added in one place and forgotten in the other. A location that does not
+# exist is NOT skipped quietly: `validate_tree` reports it, because a contract naming a
+# place the corpus does not have is a fact about the contract, and five of these ten were
+# written before spec 086 re-homed feedback and spec 103 moved the trees.
+PAGE_LOCATIONS: dict[str, tuple[str, ...]] = {
+    "spec": ("ops/specs",),
+    "session": ("agent-memory/advisors/sessions",),
+    "checkpoint": ("agent-memory/advisors/checkpoints",),
+    "decision": ("agent-memory/advisors/decisions", "ops/decisions"),
+    "mention": ("agent-memory/advisors/mentions",),
+    "feedback": ("agent-memory/advisors/feedback",),
+    "handoff": ("ops/handoffs",),
+    "retro": ("ops/retros",),
+    "open-question": ("ops/open-questions",),
+    "meeting": ("ops/meetings",),
+}

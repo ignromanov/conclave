@@ -461,6 +461,22 @@ class TestPageTypesRegistry:
         }
         assert set(PAGE_TYPES.keys()) == expected
 
+    def test_every_type_declares_where_its_records_live(self):
+        """PAGE_LOCATIONS and PAGE_TYPES are one registry in two dicts (spec 084 §4).
+
+        The validator derives its walk from the locations, so a type present in only one
+        of these is either a schema enforced nowhere or a directory judged by nothing —
+        and both read exactly like a clean corpus.
+        """
+        from briefing.schema import PAGE_LOCATIONS
+
+        assert set(PAGE_LOCATIONS) == set(PAGE_TYPES), (
+            f"only in PAGE_LOCATIONS: {set(PAGE_LOCATIONS) - set(PAGE_TYPES)}; "
+            f"only in PAGE_TYPES: {set(PAGE_TYPES) - set(PAGE_LOCATIONS)}"
+        )
+        assert all(locs and all(isinstance(x, str) and x for x in locs)
+                   for locs in PAGE_LOCATIONS.values()), PAGE_LOCATIONS
+
     def test_registry_maps_to_correct_models(self):
         assert PAGE_TYPES["spec"] is Spec
         assert PAGE_TYPES["session"] is Session

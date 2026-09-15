@@ -331,6 +331,19 @@ def _records(args: argparse.Namespace) -> int:
     return _emit(records.run([sessions_dir(), decisions_dir(), mentions_dir()]))
 
 
+def _frontmatter(args: argparse.Namespace) -> int:
+    """Records whose frontmatter its declared type rejects (spec 084 §4)."""
+    from enginelib.audit import frontmatter as fm_audit  # noqa: PLC0415
+    from enginelib.paths import repo_root  # noqa: PLC0415
+
+    # repo_root(), not project_root(): records live in DATA and project_root() is the CODE
+    # checkout. Written the other way first, this audit reported "0 CRIT, 0 WARN" against
+    # a tree holding 463 findings — a clean bill of health from a walk over a directory
+    # that contains no records at all, caught only because the number to compare against
+    # had already been measured.
+    return _emit(fm_audit.run(repo_root()))
+
+
 # Maps CLI audit name → adapter callable `(args: Namespace) -> int`.
 # Findings audits: call `_emit(module.run(...))`. Non-Findings: own their format + exit code.
 _AUDITS: dict[str, Callable[[argparse.Namespace], int]] = {
@@ -351,6 +364,7 @@ _AUDITS: dict[str, Callable[[argparse.Namespace], int]] = {
     "routing-targets": _routing_targets,
     "output-discipline": _output_discipline,
     "records": _records,
+    "frontmatter": _frontmatter,
 }
 
 

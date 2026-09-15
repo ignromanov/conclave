@@ -308,3 +308,79 @@ class TestValidateTree:
         # A root with no agent-memory/ or ops/ dirs → no findings
         findings = validate_tree(tmp_path)
         assert findings == []
+
+
+# ---------------------------------------------------------------------------
+# F3 — the validator survives the corpus it validates, and stays inside its contract
+# ---------------------------------------------------------------------------
+
+class TestValidatorSurvivesAndIsScoped:
+    """Two properties the wide, unguarded walk did not have (spec 084 §4)."""
+
+    def _spec(self, path: Path, body: str) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        return path
+
+    def test_an_unparseable_record_is_a_finding_not_an_exception(self, tmp_path: Path):
+        """`resolved_note: Ruled: C0 killed` is a ScannerError, and it used to be fatal.
+
+        Run against the live instance on 2026-09-15 the walk raised out of `read` on the
+        25th file and examined nothing after it, so the validator reported NOTHING about
+        a corpus holding hundreds of findings. Same ruling as the cadence check took that
+        day: one malformed record is that record's finding, never an outage for the rest.
+        """
+        bad = self._spec(tmp_path / "ops" / "specs" / "broken.md",
+                         "---\ntype: spec\nnote: Ruled: C0 killed as written\n---\nbody\n")
+
+        findings = validate_file(bad)
+
+        assert findings, "an unparseable record must produce a finding"
+        assert all(f.severity == Severity.ERROR for f in findings)
+        assert "does not parse" in findings[0].message, findings[0].message
+        assert "ScannerError" in findings[0].message, (
+            f"the parser's own reason must reach the reader, or the finding sends them "
+            f"to open the file and guess: {findings[0].message!r}"
+        )
+
+    def test_the_walk_continues_past_an_unparseable_record(self, tmp_path: Path):
+        """The positive control for the test above, at tree level.
+
+        `validate_file` returning a finding proves nothing about the WALK if the walk
+        never reaches the next file. The good spec below sorts after the broken one.
+        """
+        self._spec(tmp_path / "ops" / "specs" / "a-broken.md",
+                   "---\ntype: spec\nnote: Ruled: C0 killed as written\n---\nbody\n")
+        self._spec(tmp_path / "ops" / "specs" / "z-later.md",
+                   "---\ntype: spec\nstatus: proposed\n---\nbody\n")
+
+        findings = validate_tree(tmp_path)
+        seen = {f.path.name for f in findings}
+
+        assert "a-broken.md" in seen, "the broken record must be reported"
+        assert "z-later.md" in seen, (
+            "the walk stopped at the broken record, so every record after it went "
+            "unexamined while the run reported success"
+        )
+
+    def test_a_record_outside_the_claimed_locations_is_not_judged(self, tmp_path: Path):
+        """Scope is the registry's, not `agent-memory/` + `ops/` entire.
+
+        Measured on this instance: the wide walk reached 908 files while the registry
+        claims 581, so 327 records — a spec's research note, a plan, a product analysis —
+        were reported at ERROR severity as "missing required field: type" by a schema
+        that never named them. The claimed record beside it proves the walk ran at all.
+        """
+        self._spec(tmp_path / "ops" / "research" / "round6.md",
+                   "---\ntitle: a research note the schema never claimed\n---\nbody\n")
+        self._spec(tmp_path / "ops" / "specs" / "claimed.md",
+                   "---\ntitle: no type here either\n---\nbody\n")
+
+        findings = validate_tree(tmp_path)
+        seen = {f.path.name for f in findings}
+
+        assert "claimed.md" in seen, "a record inside a claimed location must be judged"
+        assert "round6.md" not in seen, (
+            "a record outside every location in PAGE_LOCATIONS was judged against a "
+            "schema that does not claim it"
+        )
