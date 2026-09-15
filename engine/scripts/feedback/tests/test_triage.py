@@ -517,13 +517,25 @@ def test_the_gate_does_not_block_any_other_status(tmp_path):
         assert r.returncode == 0, f"{status}: {r.stderr}"
 
 
-def test_triage_aborts_when_draft_false_invalid(tmp_path):
-    """Triage must refuse to proceed when a _draft:false review fails schema validation.
+def test_invalid_draft_false_review_never_enters_the_queue_and_is_never_silent(tmp_path):
+    """A corrupted author-complete review stays out of the queue, and the run says so.
 
-    Regression for spec 086 AC2: the feedback-gate must run before the triage pipeline
-    so corrupted author-complete reviews never silently bypass the queue.
+    Spec 086 AC2 unchanged and read literally: the feedback-gate runs before the triage
+    pipeline so corrupted author-complete reviews never *silently* bypass the queue.
+    Both halves are asserted below — the review's items reach no digest, and the run
+    names the file.
+
+    What this test no longer asserts is the exit code, and that is the 2026-09-15
+    ruling rather than a relaxation. The abort made one author's defect an
+    instance-wide outage: a single hand-flipped `_draft: false` review took the
+    cadence check down for all three advisors of the safe-unfollow instance for ~34
+    hours, because session_init could only report "skipping cadence check". A gate
+    that reports nothing is read as "nothing is wrong", which is the silence AC2 was
+    written against, arriving by the other door.
+
+    The fatal path is not removed, only narrowed to what warrants it — see the
+    unreadable-file control below.
     """
-    # One valid review
     _write_review(tmp_path, "2026-05-22", "atlas-valid.md",
                   _valid_review_meta(feedback_id="fb-valid-000000"))
 
@@ -535,16 +547,50 @@ def test_triage_aborts_when_draft_false_invalid(tmp_path):
     bad_meta["_draft"] = False
     _write_review(tmp_path, "2026-05-22", "atlas-bad-complete.md", bad_meta)
 
-    # Any triage subcommand must fail
     for subcmd in (["--check"], ["--digest"]):
         result = run_triage(tmp_path, subcmd)
-        assert result.returncode != 0, (
-            f"triage {subcmd} must exit non-zero when _draft:false review is invalid; "
-            f"got 0. stderr={result.stderr!r}"
+        assert result.returncode == 0, (
+            f"triage {subcmd} must still produce a verdict when another author's review "
+            f"is invalid; stderr={result.stderr!r}"
         )
-        assert "aborted" in result.stderr.lower() or "DROPPED" in result.stderr, (
-            f"Expected abort message in stderr for {subcmd}; got: {result.stderr!r}"
+        assert "atlas-bad-complete.md" in result.stderr, (
+            f"the dropped review must be named on {subcmd}, or the bypass is silent; "
+            f"got: {result.stderr!r}"
         )
+
+    # It reached no digest: its item is absent while the valid review's is present.
+    digest = run_triage(tmp_path, ["--digest", "--json"])
+    assert digest.returncode == 0, digest.stderr
+    payload = json.loads(digest.stdout)
+    ids = {(row.get("feedback_id"), row.get("item_id")) for row in payload}
+    assert ("fb-valid-000000", "it-1") in ids, payload
+    assert not any(fid == "fb-bad-000000" for fid, _ in ids), (
+        f"the invalid review's items must not enter the queue; got {ids}"
+    )
+
+
+def test_an_unreadable_review_still_aborts(tmp_path):
+    """The control for the test above: narrowing the fatal path must not remove it.
+
+    A file that cannot be parsed at all is not one author's validation defect — the run
+    does not know what it is holding, and continuing past that is the unexplained
+    silence the abort exists to prevent. Without this control, "triage no longer aborts"
+    would be indistinguishable from "triage can no longer abort".
+    """
+    _write_review(tmp_path, "2026-05-22", "atlas-valid.md",
+                  _valid_review_meta(feedback_id="fb-valid-333333"))
+
+    broken = tmp_path / "ops" / "feedback" / "2026-05-22" / "atlas-unparseable.md"
+    broken.write_text(
+        '---\nfeedback_id: [unclosed\n  bracket: yes\n---\nbody\n',
+        encoding="utf-8",
+    )
+
+    result = run_triage(tmp_path, ["--check"])
+    assert result.returncode != 0, (
+        f"an unreadable review must still abort; stdout={result.stdout!r} "
+        f"stderr={result.stderr!r}"
+    )
 
 
 def test_set_preserves_data_classification_header(tmp_path):
@@ -953,3 +999,71 @@ def test_set_does_not_accuse_when_the_roster_cannot_be_read(tmp_path):
     assert result.returncode == 0, result.stderr
     meta_after, _ = fm_read(review_path)
     assert meta_after["items"][0]["owner"] == "kai"
+
+
+def test_one_invalid_review_does_not_silence_the_cadence_check(tmp_path):
+    """A single schema-invalid _draft:false review must not take the cadence down.
+
+    Measured instance, safe-unfollow 2026-09-14 -> 09-15: one review reached
+    `_draft: false` without ever passing `feedback_emit.py --finalize` — the author's
+    fill script ended with `s.replace("_draft: true", "_draft: false", 1)`, so the
+    validator never saw the file. Two of its five items carried no `location`.
+    The index dropped it and returned non-zero; triage aborted on that; session_init
+    printed "skipping cadence check" and exited 2. The cadence check was therefore
+    down for all three advisors of that instance for ~34 hours, and the warning
+    printed at every session start into the place startup noise goes.
+
+    Spec 086 AC2's invariant is that a corrupted review never *silently* bypasses the
+    queue. It is preserved here and read literally: the review still never enters the
+    index, and the run still names it. What changes is that one author's bypass no
+    longer denies every other advisor a verdict.
+
+    The count is asserted on stdout beside the verdict rather than in the exit code,
+    because an exit code is what the previous shape used and it was read as noise:
+    a run that skipped N reviews must not print the same thing as a run that skipped
+    none.
+    """
+    _write_review(tmp_path, "2026-05-22", "atlas-valid.md",
+                  _valid_review_meta(feedback_id="fb-valid-111111"))
+
+    # The measured shape: author-complete, and an item missing a required field.
+    bad_item = _valid_item("it-bad")
+    del bad_item["location"]
+    bad_meta = _valid_review_meta(feedback_id="fb-bad-111111")
+    bad_meta["items"] = [bad_item]
+    bad_meta["_draft"] = False
+    _write_review(tmp_path, "2026-05-22", "atlas-handflipped.md", bad_meta)
+
+    result = run_triage(tmp_path, ["--check"])
+
+    assert result.returncode == 0, (
+        f"one invalid review must not abort the cadence check; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "triage_due=" in result.stdout, (
+        f"the verdict must still be computed and printed; got {result.stdout!r}"
+    )
+    assert "skipped_invalid_reviews=1" in result.stdout, (
+        f"the skipped count must travel with the result, not as an exit code; "
+        f"got {result.stdout!r}"
+    )
+    assert "atlas-handflipped.md" in result.stderr, (
+        f"the skipped review must still be named so it can be repaired; "
+        f"got {result.stderr!r}"
+    )
+
+
+def test_check_reports_zero_skipped_when_every_review_is_valid(tmp_path):
+    """The control: the count is printed unconditionally, so its absence is not a clean bill.
+
+    Without this, `skipped_invalid_reviews` appearing only on the bad path would make a
+    silent run and a clean run identical to any consumer that greps for it — the same
+    shape as the gate this test's sibling replaces.
+    """
+    _write_review(tmp_path, "2026-05-22", "atlas-ok.md",
+                  _valid_review_meta(feedback_id="fb-ok-222222"))
+
+    result = run_triage(tmp_path, ["--check"])
+
+    assert result.returncode == 0, result.stderr
+    assert "skipped_invalid_reviews=0" in result.stdout, result.stdout
