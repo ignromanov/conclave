@@ -17,6 +17,7 @@ import yaml
 
 from evals.fixture import Fixture
 from evals.predicates import PREDICATES
+from evals.walk import walk_files
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,7 @@ def assert_seed_safe(fx: Fixture) -> None:
     forbidden = fx.root / ".conclave" / "eval"
     if forbidden.exists():
         raise AssertionError(f"seed leaks the eval into the fixture: {forbidden}")
-    strays = [str(p.relative_to(fx.root)) for p in fx.root.rglob("constitution.md")]
+    strays = [str(p.relative_to(fx.root)) for p in walk_files(fx.root)
+              if p.name == "constitution.md"]
     if strays:
         raise AssertionError(f"seed restored a charter into the fixture: {strays}")
