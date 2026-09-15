@@ -776,3 +776,87 @@ def test_the_sweep_still_aborts_when_a_review_cannot_be_read(tmp_path):
         f"stdout={res.stdout!r} stderr={res.stderr!r}"
     )
     assert "sweep aborted" in res.stderr, res.stderr
+
+
+# --- the post-write reconcile, at the sweep's own call site ---
+#
+# `feedback_verify.py` rebuilds twice: once before the sweep (may I report over this
+# index?) and once after `--apply`'s writes (does the cache still match the tree?). The
+# second call's exit code was dropped, so a sweep that closed items and then failed to
+# reconcile printed its closes and returned 0 over an index still calling them accepted.
+#
+# The lock cannot express this end to end — holding it for the whole run stops the FIRST
+# rebuild, which is a different defect with a different verdict. The seam that separates
+# them is call order, so the fixture fails the rebuild on its second call only. That is
+# deterministic, and it exercises both real call sites rather than a helper in isolation.
+
+def _fail_the_rebuild_on_call(monkeypatch, n: int, reasons: list[str] | None = None):
+    """Let the first n-1 rebuilds run for real; make the nth report a failure."""
+    from feedback import feedback_index
+
+    real = feedback_index.main
+    calls = {"n": 0}
+
+    def _flaky(argv, report=None):
+        calls["n"] += 1
+        if calls["n"] != n:
+            return real(argv, report=report)
+        if report is not None:
+            report.update({"author_complete_drops": [], "parse_errors": [],
+                           "unreadable": [], "review_count": 0,
+                           "exit_reasons": list(reasons or [])})
+        return 1
+
+    monkeypatch.setattr(feedback_index, "main", _flaky)
+    return calls
+
+
+def test_the_sweep_does_not_report_success_when_its_closes_left_the_index_stale(
+        tmp_path, monkeypatch, capsys):
+    """Reddens under: restoring the bare `_rebuild_index(root)` after the --apply writes.
+
+    Paired with the call-count assertion: if the sweep ever stops rebuilding after its
+    writes, `calls["n"] == 2` fails and this test cannot pass by accident.
+    """
+    import feedback_verify
+
+    path = _write_review_file(tmp_path, "sage-apply.md", _sweepable_meta("fb-stl-aaaaaa"))
+    monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
+    monkeypatch.setenv("LOCK_DIR", str(tmp_path) + ".locks")
+    calls = _fail_the_rebuild_on_call(monkeypatch, 2)
+
+    rc = feedback_verify.main(["--apply"])
+    err = capsys.readouterr().err
+
+    assert calls["n"] == 2, f"the sweep did not rebuild after its writes ({calls['n']} calls)"
+    assert rc != 0, "the sweep reported success over an index it failed to rebuild"
+    # The closes stand — the item really is resolved on disk. A non-zero that reads as
+    # "the sweep failed" would send the operator re-running writes that already landed.
+    from briefing.frontmatter_io import read_commented
+    assert read_commented(path)[0]["items"][0]["status"] == "resolved", \
+        "the writes must survive the reconcile failure"
+    assert "feedback_index.py --rebuild" in err, err
+
+
+def test_the_sweep_still_succeeds_when_the_post_write_rebuild_only_skipped_a_review(
+        tmp_path, monkeypatch, capsys):
+    """The control, and the 2026-09-15 ruling applied to the second rebuild too.
+
+    A rebuild that dropped one author's schema-invalid review DID rewrite the index; the
+    cache matches the tree for everything it holds. Treating that as a stale cache would
+    hand back the outage the ruling was written to end, one call site later.
+    """
+    import feedback_verify
+
+    from feedback import feedback_index
+
+    _write_review_file(tmp_path, "sage-apply.md", _sweepable_meta("fb-skp-aaaaaa"))
+    monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
+    monkeypatch.setenv("LOCK_DIR", str(tmp_path) + ".locks")
+    _fail_the_rebuild_on_call(
+        monkeypatch, 2, reasons=[feedback_index.REASON_AUTHOR_COMPLETE_INVALID])
+
+    rc = feedback_verify.main(["--apply"])
+    err = capsys.readouterr().err
+
+    assert rc == 0, f"a skipped review is not a stale cache: {err!r}"

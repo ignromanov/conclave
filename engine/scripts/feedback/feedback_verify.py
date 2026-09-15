@@ -310,9 +310,9 @@ def main(argv=None) -> int:
 
     from feedback_triage import (
         _load_index,
-        _rebuild_index,
         _rebuild_index_reporting,
         cmd_set,
+        reconcile_index_after_writes,
         skipped_reviews_note,
     )
     from shipped import is_shipped
@@ -393,6 +393,10 @@ def main(argv=None) -> int:
     except LockTimeout:
         print("ERROR: could not acquire triage lock (concurrent session?)", file=sys.stderr)
         return 1
+    # A dry run writes nothing and so has nothing to reconcile; only `--apply` reassigns
+    # this. Bound before the `try` rather than inside it, or the dry-run path reaches
+    # `return` with the name unbound.
+    reconcile_rc = 0
     try:
         # The same 2026-09-15 ruling the triage path carries, applied at the second
         # caller. It was ruled for the cadence check and left here, so one author's
@@ -491,11 +495,14 @@ def main(argv=None) -> int:
                 print(f"  {refused} of {len(closable)} closes were REFUSED by the write "
                       f"path (errors above); those items stay accepted", file=sys.stderr)
             # Reconcile the index against the just-written review files so no stale
-            # 'accepted' rows linger (phantom rows — critic Missing-item).
-            _rebuild_index(root)
+            # 'accepted' rows linger (phantom rows — critic Missing-item). Its exit code
+            # is the sweep's: a close the index still calls `accepted` is a close no
+            # consumer can see, and reporting 0 over it is what let the 093 loop look
+            # starved while it was in fact draining into a cache nobody rebuilt.
+            reconcile_rc = reconcile_index_after_writes("the sweep")
     finally:
         lock.close()
-    return 0
+    return reconcile_rc
 
 
 if __name__ == "__main__":

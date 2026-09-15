@@ -149,12 +149,14 @@ def _rebuild_index_reporting() -> IndexRebuild:
     on the instance this was written for is the permanent state, since the offending
     review is deliberately left unrepaired.
 
-    Deliberately separate from `_rebuild_index` rather than widening its return type.
-    Changing `_rebuild_index` to return a tuple left `feedback_verify.py:391`'s
+    This deliberately replaced a plain `_rebuild_index(root) -> int` rather than widening
+    that function's return type. Widening it left `feedback_verify.py:391`'s
     `if _rebuild_index(root) != 0:` comparing a tuple to an integer — always true, so
     --apply took its failure branch unconditionally and exited 1 with an empty stderr.
     Python will not catch that, and neither will any gate here; six sibling tests did.
-    A caller that only wants the verdict keeps getting an int.
+    The int-returning wrapper outlived that repair and is now gone: a caller that reads
+    only `.rc` cannot see the fatal/skipped distinction, and all three of its remaining
+    call sites were discarding even the int.
     """
     from feedback import feedback_index  # noqa: PLC0415
 
@@ -187,19 +189,41 @@ def skipped_reviews_note(skipped: list[str], absent_from: str) -> str:
     )
 
 
-def _rebuild_index(root: Path) -> int:
-    """Defensively rebuild index via feedback_index.main().
+def reconcile_index_after_writes(what: str) -> int:
+    """Rebuild the index after a run has already written, and report a failure loudly.
 
-    Returns the exit code from feedback_index.main().
-    Non-zero means one or more _draft:false reviews are schema-invalid, or a review
-    could not be read, or the index lock could not be taken. Callers that must tell
-    those apart use `_rebuild_index_reporting` above.
+    The same rebuild as the pre-write callers above, with the opposite verdict. BEFORE
+    the writes, a fatal rebuild means the run must not report over an index it never
+    produced, so it aborts. AFTER them there is nothing left to abort: the writes landed
+    and are correct on disk, and what failed is the cache every consumer reads.
 
-    `root` is unused and kept: feedback_index resolves the DATA root from the
-    environment, and three callers already pass it. Narrowing that signature is a
-    separate change from this one.
+    So `return 0` and "the operation failed" are both false, and the run says the two
+    things separately — its own stdout keeps reporting what it wrote, and this line plus
+    a non-zero exit report that the cache no longer matches. Measured on 8702a27: an
+    archive printed feedback_index's own lock ERROR on stderr, then "Done: 1 item(s)
+    archived" on stdout, and exited 0. The message existed; no decision read it.
+
+    The recovery named is the rebuild, because it is the idempotent half. Re-running the
+    WRITE is not: for `--set` it is a re-transition, the operation that rewrote all 53
+    `accepted_at` stamps on 2026-08-31.
+
+    A rebuild that only skipped a schema-invalid review is NOT a stale cache — it did
+    rewrite the index, which matches the tree for everything it holds. That is the
+    2026-09-15 ruling, read from the same `fatal` field as the pre-write callers so the
+    two vocabularies cannot drift apart.
+
+    The wording is a display contract and belongs to kosmos-cxo; this function only
+    keeps the three call sites from drifting.
     """
-    return _rebuild_index_reporting().rc
+    rebuild = _rebuild_index_reporting()
+    if not rebuild.fatal:
+        return 0
+    print(f"ERROR: {what} completed, but the feedback index could NOT be rebuilt "
+          f"(cause above), so it no longer matches the reviews on disk — every figure "
+          f"read from it is stale until that is fixed. The writes stand; do not repeat "
+          f"them. Clear the cause, then re-run `feedback_index.py --rebuild`.",
+          file=sys.stderr)
+    return rebuild.rc
 
 
 def _load_index(idx_path: Path) -> list[dict]:
@@ -748,7 +772,7 @@ def main(argv: list[str] | None = None) -> int:
                 # exactly one --set: the last item classified in a session stays invisible
                 # to the digest, --check and the dashboard until something else rebuilds.
                 # feedback_verify already does this after its own writes; cmd_set did not.
-                _rebuild_index(root)
+                set_rc = reconcile_index_after_writes("the --set write")
             return set_rc
 
         if args.digest:

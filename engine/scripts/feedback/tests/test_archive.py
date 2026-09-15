@@ -411,3 +411,95 @@ def test_archive_reconciles_the_index_it_just_invalidated(tmp_path):
     ids = {(r["feedback_id"], r["item_id"]) for r in rows}
     assert ("fb-888-aaaaaa", "it-1") not in ids, "archived item must leave the working set"
     assert ("fb-888-aaaaaa", "it-2") in ids, "the open sibling must stay in the working set"
+
+
+# --- the post-write reconcile (the third site of the 2026-09-15 exit-status family) ---
+#
+# The rebuild that runs AFTER the writes answers a different question from the one that
+# runs before them. Before: "may I report over this index?" — a failure aborts. After:
+# the writes have already landed and are correct on disk; what failed is the cache every
+# consumer reads. Aborting is meaningless (there is nothing left to abort) and returning
+# 0 is false, so the run says both things: the writes stand, the cache does not.
+#
+# Measured on 8702a27 with the index lock held: archive printed its own
+# "ERROR: could not acquire the feedback index lock" on stderr, then
+# "Done: 0 review(s) archived, 1 item(s) archived." on stdout, and exited 0. A message
+# existed and no decision read it — the same shape as #266 and #311.
+#
+# `feedback_archive.py` is the only one of the three sites reachable without a race: it
+# has no pre-write rebuild, so holding the lock for the whole run leaves the pre-write
+# path untouched because there is none.
+
+def _run_archive_with_the_index_lock_held(root: Path, monkeypatch):
+    import threading
+
+    from enginelib.lock import lock_path_for, with_lock
+    from feedback.paths import index_lock_target
+
+    monkeypatch.setenv("CONCLAVE_AI_ROOT", str(root))
+    monkeypatch.setenv("LOCK_DIR", str(root) + ".locks")
+    lock_file = lock_path_for(index_lock_target())
+
+    stop, held = threading.Event(), threading.Event()
+
+    def _hold():
+        with with_lock(lock_file, timeout=10):
+            held.set()
+            stop.wait(30)
+
+    t = threading.Thread(target=_hold, daemon=True)
+    t.start()
+    assert held.wait(10), "the holder thread never took the index lock"
+    try:
+        return subprocess.run(
+            [sys.executable, str(FEEDBACK_PKG / "feedback_archive.py")],
+            capture_output=True, text=True,
+            env={"PYTHONPATH": str(SCRIPTS_DIR), "CONCLAVE_AI_ROOT": str(root),
+                 "LOCK_DIR": str(root) + ".locks", "PATH": "/usr/bin:/bin",
+                 "CONCLAVE_INDEX_LOCK_TIMEOUT": "1"},
+        )
+    finally:
+        stop.set()
+        t.join(5)
+
+
+def test_archive_does_not_report_success_when_the_index_was_not_rebuilt(tmp_path, monkeypatch):
+    """Reddens under: restoring the bare `_rebuild_index(root)` that drops its exit code.
+
+    Paired with `test_archive_reconciles_the_index_it_just_invalidated` above, which is
+    the control: that one holds no lock and must stay green, so "archive exits non-zero"
+    cannot be satisfied by an archive that exits non-zero always.
+    """
+    mixed = [_valid_item("it-1", "resolved"), _valid_item("it-2", "open")]
+    _write_review(
+        tmp_path, "2026-05-22", "atlas-stale.md",
+        _valid_review_meta(feedback_id="fb-999-aaaaaa", items=mixed)
+    )
+    # Build the index BEFORE the lock is taken, so the failure under test is a cache left
+    # STALE — holding rows the tree no longer matches — and not merely one never written.
+    assert run_archive(tmp_path, ["--help"]).returncode == 0
+    subprocess.run(
+        [sys.executable, str(FEEDBACK_PKG / "feedback_index.py"), "--rebuild"],
+        capture_output=True, text=True,
+        env={"PYTHONPATH": str(SCRIPTS_DIR), "CONCLAVE_AI_ROOT": str(tmp_path),
+             "LOCK_DIR": str(tmp_path) + ".locks", "PATH": "/usr/bin:/bin"},
+        check=True,
+    )
+    index = tmp_path / "ops" / "feedback" / "_index" / "index.jsonl"
+    before = index.read_text()
+    assert '"it-1"' in before, "the fixture index must hold the row that goes stale"
+
+    result = _run_archive_with_the_index_lock_held(tmp_path, monkeypatch)
+
+    assert result.returncode != 0, (
+        "the archive reported success over an index it failed to rebuild\n"
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    # The writes stand. A non-zero that reads as "the archive failed" would send the
+    # operator looking for work that is already on disk.
+    assert "item(s) archived" in result.stdout, result.stdout
+    assert index.read_text() == before, "the index was rebuilt after all — wrong fixture"
+    assert "feedback_index.py --rebuild" in result.stderr, (
+        f"the recovery command must be named; it is the idempotent one, and re-running "
+        f"the write is not: {result.stderr!r}"
+    )
