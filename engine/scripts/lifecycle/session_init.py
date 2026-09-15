@@ -533,6 +533,13 @@ def _check_critical_feedback_pending(root: Path) -> int:
 # Cadence guard (feedback triage check)
 # ---------------------------------------------------------------------------
 
+# How much of a failed `--check`'s stderr the banner carries. The whole of it would be
+# unbounded — feedback_index names every rejected file and every field — and this prints
+# before anything else in a session. Three lines reach the first REJECT and its first
+# field, which is what tells branch skew apart from a real schema violation.
+_CADENCE_DETAIL_LINES = 3
+
+
 def _step_cadence_guard() -> list[str]:
     """Run feedback_triage.py --check; return lines to print if triage is due.
 
@@ -558,9 +565,29 @@ def _step_cadence_guard() -> list[str]:
         return [f"  feedback: warning — could not run feedback_triage.py: {exc}"]
 
     if result.returncode != 0:
+        # `capture_output=True` holds BOTH streams, and until 2026-09-15 this branch
+        # referenced neither (#266). Every diagnosis a failing run produces goes to
+        # stderr — feedback_index's `REJECT <path>: N validation error(s)` and
+        # `DROPPED N author-complete reviews`, and triage's own "Fix the errors shown
+        # above, then re-run" — so the banner was instructing the reader to act on
+        # lines it had just discarded. Measured 2026-09-14: five advisor session-inits
+        # printed this one line and nothing else; run by hand, the same command named
+        # six rejected files and the field each failed on.
+        #
+        # Echoed bounded rather than whole. This renders at the top of every session,
+        # and an unbounded stderr is exactly the noise that made the old warning
+        # invisible. The cut is deliberately shallow and the wording provisional —
+        # what a human-facing surface shows is kosmos-cxo's contract, not this
+        # function's; what is fixed here is only that the diagnosis stops being
+        # captured and dropped.
+        detail = [ln.rstrip() for ln in result.stderr.splitlines() if ln.strip()]
+        shown, hidden = detail[:_CADENCE_DETAIL_LINES], detail[_CADENCE_DETAIL_LINES:]
         return [
             f"  feedback: warning — feedback_triage.py --check exited {result.returncode}, "
-            f"skipping cadence check"
+            f"skipping cadence check",
+            *(f"    {ln}" for ln in shown),
+            *([f"    … and {len(hidden)} more line(s) — re-run the command to see them"]
+              if hidden else []),
         ]
 
     # Parse triage_due=<true|false>, open_items=<n>, new_reviews=<n> and

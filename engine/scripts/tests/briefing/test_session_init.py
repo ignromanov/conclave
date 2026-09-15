@@ -708,7 +708,43 @@ _FAKE_ONLY_UNREACHABLE = 4242
 
 
 class TestCadenceGuard:
-    """Tests for _step_cadence_guard — prints feedback: line when triage is due."""
+    """Tests for _step_cadence_guard — prints feedback: line when triage is due.
+
+    Every test here scaffolds a fake `feedback_triage.py` and asserts on what the guard
+    renders from its output. That shape has one failure mode, and on 2026-09-15 eight of
+    this class's fourteen tests had it: when the seam that points the guard at the fake
+    breaks, the guard runs the REAL feedback_triage.py instead, that run fails, and the
+    guard emits one warning line — a line generic enough to satisfy every loose assertion
+    here at once (GH#215). Measured by replacing `_pin_engine_root`'s body with `return`:
+    6 of 14 went red and 8 stayed green.
+
+    The proof is therefore taken in an autouse fixture rather than in each test, because
+    the defect is precisely that a test can forget to take it. The scaffolded script
+    touches a marker when it executes; the fixture asserts the marker exists after the
+    test. A test that deliberately scaffolds no script opts out with
+    `@pytest.mark.no_fake_triage`, and that opt-out is visible in the test's own source
+    instead of being the silent default it used to be.
+    """
+
+    _RAN_MARKER = ".the-fake-triage-ran"
+
+    @pytest.fixture(autouse=True)
+    def _the_fake_must_have_run(self, request, tmp_path):
+        """Fail any test whose scaffolded feedback_triage.py never executed.
+
+        Autouse and post-hoc on purpose: an assertion a test has to remember to make is
+        the assertion these eight tests did not make. Checked after the test body so it
+        cannot mask the test's own failure — a genuine assertion error surfaces first.
+        """
+        yield
+        if request.node.get_closest_marker("no_fake_triage") is not None:
+            return
+        marker = tmp_path / "engine" / "scripts" / "feedback" / self._RAN_MARKER
+        assert marker.exists(), (
+            "the scaffolded feedback_triage.py never ran, so every assertion above was "
+            "made about some OTHER engine's output — most likely the real one, whose "
+            "failure warning is generic enough to satisfy them (GH#215)"
+        )
 
     @staticmethod
     def _pin_engine_root(monkeypatch, root: Path) -> None:
@@ -763,6 +799,9 @@ class TestCadenceGuard:
         script = feedback_dir / "feedback_triage.py"
         script.write_text(
             f"import sys\n"
+            f"from pathlib import Path\n"
+            # Touched before anything else, so the proof survives a non-zero exit path.
+            f"Path(__file__).with_name({self._RAN_MARKER!r}).touch()\n"
             f"if '--check' in sys.argv:\n"
             f"    print('triage_due={due_str}')\n"
             f"    print('open_items={open_items}')\n"
@@ -791,7 +830,10 @@ class TestCadenceGuard:
         self._make_triage_marker(root, age_days=1)  # fresh marker, not stale by time
         self._make_feedback_script(root, triage_due=True, open_items=15)
         lines = session_init._step_cadence_guard()
-        assert any("feedback:" in ln for ln in lines)
+        # The rendered clause, not merely "feedback:" — the guard's own failure warning
+        # carries that prefix too, which is how this assertion used to hold with the
+        # fake never running (GH#215).
+        assert any("triage due — 15 open items" in ln for ln in lines), lines
 
     def test_no_cadence_line_when_not_due(self, tmp_path, monkeypatch):
         """Fresh marker + few reviews → no feedback: line."""
@@ -808,7 +850,7 @@ class TestCadenceGuard:
         self._pin_engine_root(monkeypatch, root)
         self._make_feedback_script(root, triage_due=True, open_items=0)
         lines = session_init._step_cadence_guard()
-        assert any("feedback:" in ln for ln in lines)
+        assert any("triage due — 0 open items" in ln for ln in lines), lines
 
     def test_skipped_invalid_reviews_gets_its_own_line(self, tmp_path, monkeypatch):
         """A corpus the run could not fully read must say so, even on a quiet session.
@@ -878,13 +920,78 @@ class TestCadenceGuard:
         )
         assert not any("skipped" in ln for ln in lines), lines
 
+    def test_the_captured_diagnosis_reaches_the_banner(self, tmp_path, monkeypatch):
+        """GH#266: `capture_output=True` held both streams and the failure branch read
+        neither, so the banner told the reader to act on lines it had just discarded.
+
+        The assertion is the one the issue asked for — a token planted in stderr must
+        reach the rendered lines — and not "a warning line exists", which was already
+        true of the broken code. Measured 2026-09-14: five session-inits printed
+        `exited 1, skipping cadence check` and nothing else, while the same command run
+        by hand named six rejected files and the field each failed on.
+        """
+        root = _make_root(tmp_path)
+        self._pin_engine_root(monkeypatch, root)
+        feedback_dir = root / "engine" / "scripts" / "feedback"
+        feedback_dir.mkdir(parents=True, exist_ok=True)
+        (feedback_dir / "feedback_triage.py").write_text(
+            f"import sys\nfrom pathlib import Path\n"
+            f"Path(__file__).with_name({self._RAN_MARKER!r}).touch()\n"
+            f"print('REJECT ops/feedback/x.md: 1 validation error', file=sys.stderr)\n"
+            f"sys.exit(1)\n",
+            encoding="utf-8")
+
+        lines = session_init._step_cadence_guard()
+
+        assert any("REJECT ops/feedback/x.md" in ln for ln in lines), (
+            f"the diagnosis was captured and discarded again: {lines}")
+
+    def test_a_long_diagnosis_is_bounded_and_says_so(self, tmp_path, monkeypatch):
+        """The control for the test above: the cure must not become the disease.
+
+        This renders at the top of every session, so echoing an unbounded stderr — one
+        REJECT block per malformed review, on a corpus that currently has twelve — is the
+        noise that made the previous warning invisible in the first place. The overflow
+        is reported as a count rather than dropped, because a silently truncated
+        diagnosis is the defect this pair exists to close.
+        """
+        root = _make_root(tmp_path)
+        self._pin_engine_root(monkeypatch, root)
+        feedback_dir = root / "engine" / "scripts" / "feedback"
+        feedback_dir.mkdir(parents=True, exist_ok=True)
+        (feedback_dir / "feedback_triage.py").write_text(
+            f"import sys\nfrom pathlib import Path\n"
+            f"Path(__file__).with_name({self._RAN_MARKER!r}).touch()\n"
+            f"for i in range(20):\n"
+            f"    print(f'REJECT line {{i}}', file=sys.stderr)\n"
+            f"sys.exit(1)\n",
+            encoding="utf-8")
+
+        lines = session_init._step_cadence_guard()
+
+        assert len(lines) <= session_init._CADENCE_DETAIL_LINES + 2, (
+            f"the banner grew without bound: {lines}")
+        assert any("REJECT line 0" in ln for ln in lines), lines
+        assert not any("REJECT line 19" in ln for ln in lines), lines
+        assert any("17 more line(s)" in ln for ln in lines), (
+            f"what was withheld must be counted, not silently dropped: {lines}")
+
+    @pytest.mark.no_fake_triage
     def test_missing_triage_script_returns_warning(self, tmp_path, monkeypatch):
-        """If feedback_triage.py doesn't exist → returns a warning line, does not crash."""
+        """If feedback_triage.py doesn't exist → returns a warning line, does not crash.
+
+        The only test here that scaffolds no script, hence the opt-out marker. Its former
+        assertion was `isinstance(lines, list)`, which the function's signature already
+        guarantees and which therefore held for every possible output including the one
+        this test exists to forbid.
+        """
         root = _make_root(tmp_path)
         self._pin_engine_root(monkeypatch, root)
         lines = session_init._step_cadence_guard()
-        # Either no feedback: line (silently skipped) OR a warning — must not raise
-        assert isinstance(lines, list)
+        assert any("not found" in ln for ln in lines), lines
+        # "not found" and "exited N" are different diagnoses; rendering the second here
+        # would mean the guard reached some other engine's script.
+        assert not any("exited" in ln for ln in lines), lines
 
     def test_nonzero_exit_empty_stdout_emits_warning_not_silence(self, tmp_path, monkeypatch):
         """Non-zero exit + empty stdout must surface a warning, not collapse to "nothing due".
@@ -900,10 +1007,17 @@ class TestCadenceGuard:
         feedback_dir = scripts / "feedback"
         feedback_dir.mkdir(parents=True, exist_ok=True)
         script = feedback_dir / "feedback_triage.py"
-        script.write_text("import sys\nsys.exit(1)\n", encoding="utf-8")
+        # Exit 42, not 1: the real feedback_triage.py also exits 1, so "exited 1" is a
+        # string a run of the WRONG script produces just as readily (GH#215). A code no
+        # other engine returns makes the assertion name this script and no other.
+        script.write_text(
+            f"import sys\nfrom pathlib import Path\n"
+            f"Path(__file__).with_name({self._RAN_MARKER!r}).touch()\n"
+            f"sys.exit(42)\n",
+            encoding="utf-8")
         lines = session_init._step_cadence_guard()
         assert lines, "a failed check must be reported, never silently equal to []"
-        assert any("warning" in ln.lower() for ln in lines)
+        assert any("exited 42" in ln for ln in lines), lines
 
     def test_nonzero_exit_with_parseable_line_still_warns(self, tmp_path, monkeypatch):
         """Non-zero exit invalidates a parsed triage_due= line, even if one is present.
@@ -914,9 +1028,9 @@ class TestCadenceGuard:
         """
         root = _make_root(tmp_path)
         self._pin_engine_root(monkeypatch, root)
-        self._make_feedback_script(root, triage_due=True, open_items=7, exit_code=1)
+        self._make_feedback_script(root, triage_due=True, open_items=7, exit_code=42)
         lines = session_init._step_cadence_guard()
-        assert any("warning" in ln.lower() for ln in lines)
+        assert any("exited 42" in ln for ln in lines), lines
         assert not any(ln.startswith("  feedback: triage due") for ln in lines)
 
     def _make_feedback_script_with_unreachable(
@@ -932,16 +1046,26 @@ class TestCadenceGuard:
         feedback_dir = scripts / "feedback"
         feedback_dir.mkdir(parents=True, exist_ok=True)
         due_str = "true" if triage_due else "false"
+        # The indent belongs to the line, not to the f-string that embeds it. Written the
+        # other way round — `f"    {unreachable_line}"` with an unindented value — the
+        # `unreachable=None` case left a bare four-space indent glued to the next line and
+        # the scaffolded script raised IndentationError at compile time. It had done so
+        # since the helper was written: the guard saw a non-zero exit, rendered its generic
+        # warning, and both `not any(...)` assertions in that test held over it. Verified
+        # against origin/master on 2026-09-15 by compiling the generated source.
         unreachable_line = (
-            f"print('unreachable_accepted={unreachable}')\n" if unreachable is not None else ""
+            f"    print('unreachable_accepted={unreachable}')\n"
+            if unreachable is not None else ""
         )
         script = feedback_dir / "feedback_triage.py"
         script.write_text(
             f"import sys\n"
+            f"from pathlib import Path\n"
+            f"Path(__file__).with_name({self._RAN_MARKER!r}).touch()\n"
             f"if '--check' in sys.argv:\n"
             f"    print('triage_due={due_str}')\n"
             f"    print('open_items={open_items}')\n"
-            f"    {unreachable_line}"
+            f"{unreachable_line}"
             f"    sys.exit(0)\n"
             f"sys.exit(0)\n",
             encoding="utf-8",
@@ -973,7 +1097,10 @@ class TestCadenceGuard:
         )
         lines = session_init._step_cadence_guard()
         assert not any("reachable by nothing" in ln for ln in lines)
-        assert not any("0" in ln for ln in lines)
+        # Was `not any("0" in ln ...)`: a bare-character search that would also fire on
+        # "10 open items". The claim is about this clause rendering a zero, not about the
+        # digit appearing anywhere in the banner.
+        assert not any("accepted items" in ln for ln in lines), lines
 
     def test_session_init_drops_the_line_when_zero(self, tmp_path, monkeypatch):
         root = _make_root(tmp_path)
@@ -1001,6 +1128,10 @@ class TestCadenceGuard:
         monkeypatch.setattr(session_init.subprocess, "run", fake_run)
         session_init._step_cadence_guard()
         assert captured["cmd"][0] == sys.executable
+        # cmd[0] alone is sys.executable whichever script the guard found; naming cmd[1]
+        # is what makes this test about the guard's dispatch rather than about Python.
+        assert captured["cmd"][1] == str(
+            root / "engine" / "scripts" / "feedback" / "feedback_triage.py"), captured
 
 
 # ---------------------------------------------------------------------------
