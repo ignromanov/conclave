@@ -306,7 +306,19 @@ _AUDITS: dict[str, Callable[[argparse.Namespace], int]] = {
 
 def register(subparsers: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
     p = subparsers.add_parser("audit", help="Run a named audit check.")
-    p.add_argument("name", choices=list(_AUDITS), help="Audit to run.")
+    # `nargs="?"` so `--list` can be asked without naming an audit. The cost is that a
+    # bare `engine audit` no longer fails in argparse, so _run has to refuse it by hand
+    # — argparse offers no "required unless" and faking one with a subcommand would
+    # change the invocation every protocol doc already spells.
+    p.add_argument("name", nargs="?", choices=list(_AUDITS), help="Audit to run.")
+    p.add_argument(
+        "--list",
+        action="store_true",
+        dest="list_audits",
+        default=False,
+        help="Print every audit name, one per line, and exit. The audit protocol's "
+             "Run loop iterates this rather than a hand-kept list (#302).",
+    )
     p.add_argument(
         "--agents-dir",
         dest="agents_dir",
@@ -367,4 +379,14 @@ def register(subparsers: argparse._SubParsersAction) -> None:  # type: ignore[ty
 
 
 def _run(args: argparse.Namespace) -> int:
+    if args.list_audits:
+        # Sorted, because the consumer is a shell loop in a protocol doc and dict
+        # insertion order would make the audit sequence depend on where the last
+        # contributor happened to add their line.
+        for name in sorted(_AUDITS):
+            print(name)
+        return 0
+    if not args.name:
+        print("audit: name is required (or --list to see them all)", file=sys.stderr)
+        return 2
     return _AUDITS[args.name](args)
