@@ -18,6 +18,7 @@ I/O-free core: reads and writes files; no print, no argparse, no sys.exit.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 from enginelib import advisors, frontmatter, paths, roster, router, snapshot
@@ -122,12 +123,36 @@ def create(opts: AdvisorOpts) -> dict:
     personality = (
         paths.templates_dir() / "personality-template.md"
     ).read_text(encoding="utf-8")
+    # The chain below was lowercase-only, and the template's identity card is written
+    # in title case — so every row of it shipped verbatim and the first briefing a new
+    # consumer opened read `| **Name** | {{Name}} |` (#118). The template claimed a
+    # post-scaffold lint caught this; none existed, for as long as the claim did.
+    #
+    # The card is the SCAFFOLD's half: create() is handed every value in it. The prose
+    # prompts are the operator's and must survive — a blanket
+    # `re.sub(r"\{\{[^}]*\}\}", ...)` (what create_executor does, legitimately, for a
+    # template with no well) would green the card and erase the 4-axis voice well that
+    # hire.md §3a.5 greps to validate a hire. Both directions are gated by
+    # tests/test_minted_persona_identity_is_filled.py.
+    #
+    # `Tier` was a three-way menu — this template is `applies-to: advisors` and
+    # executors take executor-identity-card.md, so it was a choice with one option
+    # left for a reader to make in a file nobody edits.
     personality = (
         personality
         .replace("{{advisor}}", name)
         .replace("{{name}}", name)
         .replace("{{emoji}}", emoji)
         .replace("{{role}}", opts.role)
+        .replace("{{Name}}", name)
+        .replace("{{Emoji}}", emoji)
+        .replace("{{Role}}", opts.role)
+        .replace("{{Color from palette}}", opts.color)
+        .replace("{{Tier}}", "Advisor")
+        # Same fact, same call as the `hired-at:` stamp router.scaffold_router writes
+        # for the SKILL.md a few lines above — kept identical so the two surfaces of
+        # one hire cannot read as two dates.
+        .replace("{{YYYY-MM-DD}}", date.today().isoformat())
         .replace("${PROJECT_NAME}", project_name)
     )
     snapshot.snapshot_write(skill_file.parent / "memory" / "personality.md", personality)
