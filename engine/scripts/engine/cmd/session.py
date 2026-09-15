@@ -38,6 +38,7 @@ def _close(args) -> int:
         handoff_no_issue=args.handoff_no_issue or "",
         duration_estimate=args.duration_estimate or "",
         reflexion=args.reflexion or "",
+        session_id=os.environ.get("CLAUDE_CODE_SESSION_ID", ""),
     )
     try:
         close_session(opts)
