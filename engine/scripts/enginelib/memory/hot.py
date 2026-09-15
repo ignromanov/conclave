@@ -86,6 +86,20 @@ _TEMPLATE = """\
 """
 
 
+#: How much of `CLAUDE_CODE_SESSION_ID` names a session. Git's short-sha convention: the line
+#: is read by humans in hot.md, and 8 hex characters do not collide within an instance's
+#: history. Named because spec 117 gave the same token a second consumer — the checkpoint
+#: record's filename — and a truncation spelled twice is a truncation that will eventually be
+#: spelled two ways, which is the defect `_RECENT_DECISIONS_CAP` above already records.
+SESSION_TOKEN_CHARS = 8
+
+
+def session_token(raw: str | None) -> str:
+    """The fencing token, from whatever the harness exported. Empty stays empty: with nothing
+    to fence on, two sessions are indistinguishable and neither may be called stale."""
+    return (raw or "").strip()[:SESSION_TOKEN_CHARS]
+
+
 def session_open_line(token: str) -> str:
     """The `Now` entry content for an open session, fenced by its session token.
 
@@ -100,7 +114,7 @@ def session_open_line(token: str) -> str:
     An empty token yields the bare key, which is the pre-token behaviour: with nothing
     to fence on, two sessions are indistinguishable and none may be called stale.
     """
-    token = (token or "").strip()[:8]
+    token = session_token(token)
     return f"{SESSION_OPEN} ({token})" if token else SESSION_OPEN
 
 

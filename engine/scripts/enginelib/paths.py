@@ -316,6 +316,10 @@ def advisors_memory_dir() -> Path: return agent_memory_dir() / "advisors"
 def executors_memory_dir() -> Path: return agent_memory_dir() / "executors"
 def briefings_dir() -> Path: return advisors_memory_dir() / "briefings"
 def sessions_dir() -> Path: return advisors_memory_dir() / "sessions"
+# A SIBLING of sessions/, never a child of it (spec 117, design §1): seven consumers
+# glob `sessions/*.md` and treat every hit as a closed session record, so an in-flight
+# checkpoint nested there would be counted as a session that already ended.
+def checkpoints_dir() -> Path: return advisors_memory_dir() / "checkpoints"
 def decisions_dir() -> Path: return advisors_memory_dir() / "decisions"
 def mentions_dir() -> Path: return advisors_memory_dir() / "mentions"
 def hot_md_path() -> Path: return agent_memory_dir() / "hot.md"

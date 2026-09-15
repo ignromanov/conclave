@@ -40,7 +40,12 @@ _EMITTED = re.compile(r'(?:^|[^\w])f?"  ([a-z][\w-]*):')
 CONSUMED_BY_PROTOCOL = frozenset({
     "first-launch",
     "resume",
-    "spec-resume",
+    # `spec-resume` retired with the `ops/specs/*/resume-prompt.md` glob it reported on:
+    # that glob had no producer — zero files in DATA's working tree and zero ever added in
+    # its whole history — and spec 117 R8 requires such a consumer to gain a producer or go
+    # in the same change. Its replacement reports unclosed checkpoint records, which the
+    # close empties, so the set is accurate by construction rather than by hope.
+    "checkpoint",
     "handoff",
     "reflexion",
     "overlays",

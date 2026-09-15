@@ -65,7 +65,7 @@ session start.
    continues and prints a `degraded: gh-data-unavailable` line — board-derived
    sections come from the stale cache, the rest of the briefing is current.
    The script handles: first-launch detection (Step 1a below), gh-fetch (TTL=900s),
-   briefing build-and-compare (always rebuilds; writes only if content differs), resume-scan (ops/specs/*/resume-prompt.md + handoffs addressed to the advisor),
+   briefing build-and-compare (always rebuilds; writes only if content differs), resume-scan (unclosed checkpoint records + handoffs addressed to the advisor),
    reflexion extract (last-3 sessions), overlay scan, and feedback cadence check.
    If a line starting with `  feedback:` appears in the output, triage is due — include it in
    the session-start summary and suggest running `/conclave:triage` this session.
@@ -102,15 +102,18 @@ hire between #75 and the fix skipped First Launch without anything reporting a f
 
 The session-init script (Step 1) prints resume findings prefixed `resume:`. Read its output:
 
-- Lines starting `  spec-resume:` — interrupted spec worktree; path + age in hours shown.
+- Lines starting `  checkpoint:` — a previous session of this advisor that never closed;
+  filename + age + its own tally (`requested N · shipped M · lost K`) shown. The close
+  removes the record, so one surviving here IS an unfinished session, not a leftover.
 - Lines starting `  handoff:` — filed handoff for this advisor; filename + age shown.
 
 If found → apply **Question shape** (above):
 
-1. **Prose first** — describe each found item: title, path, last-update mtime, what was in progress (one-line from resume-prompt header), and what "resume" vs "start new" means (resume = load original skill chain + reuse session id; start new = current request takes over, old resume-prompt stays unconsumed on disk for later).
+1. **Prose first** — describe each found item: title, path, last-update mtime, what was in progress (a checkpoint's tally line; a handoff's header), and what "resume" vs "start new" means (resume = load original skill chain + reuse session id; start new = current request takes over, old resume-prompt stays unconsumed on disk for later).
 2. **`AskUserQuestion`** — `label`s: "Resume" / "Start new" / "Skip" (≤ 5 words each); `description`s ≤ 1 sentence each.
 
-If user picks Resume → read resume-prompt, load required skills from it, skip to Step 5.
+If user picks Resume → read the handoff or checkpoint named, load required skills from it,
+skip to Step 5.
 If Start new → leave the file in place; mention in `/conclave:done` Lifecycle Retrospective if it's been stale > 3 days.
 
 ### 1c. Reflexion Context
