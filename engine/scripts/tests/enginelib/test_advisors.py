@@ -1,5 +1,7 @@
 """test_advisors.py — port of tests/lib-advisors-lifecycle.bats (4 cases) + enumeration test."""
 
+from pathlib import Path
+
 from enginelib.advisors import canonical_advisors, is_canonical_advisor
 
 # ---------------------------------------------------------------------------
@@ -245,10 +247,21 @@ def test_create_also_scaffolds_router(tmp_path, monkeypatch):
     # the REAL agent-frontmatter.md + advisor-router.md templates via templates_dir().
     monkeypatch.delenv("CONCLAVE_ENGINE_ROOT", raising=False)
     result = advisor.create(advisor.AdvisorOpts(id="iris-cpo", role="Design Advisor", color="violet"))
-    router_skill = tmp_path / "project" / ".claude" / "skills" / "conclave-iris-cpo" / "SKILL.md"
-    assert router_skill.is_file()
-    assert "conclave-iris-cpo" in router_skill.read_text()
-    assert result["router"] == str(router_skill)
+    # _seed sets CLAUDE_PROJECT_DIR, which makes repo_root() fall back to
+    # <project>/.conclave — so this is a SPLIT layout, and since #134 the real file
+    # lives in DATA while the project side holds a symlink. Both halves are asserted:
+    # the project-side path a harness loads must still reach a readable SKILL.md, and
+    # the returned path must name where the bytes actually are. Pinning only the
+    # project-side string, as this did, was satisfied by the pre-#134 behaviour of
+    # writing a real file into a directory CODE gitignores and DATA never saw.
+    project_side = tmp_path / "project" / ".claude" / "skills" / "conclave-iris-cpo" / "SKILL.md"
+    assert project_side.is_file()
+    assert "conclave-iris-cpo" in project_side.read_text()
+    assert result["router"] == str(
+        tmp_path / "project" / ".conclave" / ".claude" / "skills"
+        / "conclave-iris-cpo" / "SKILL.md"
+    )
+    assert project_side.resolve() == Path(result["router"]).resolve()
 
 
 # ---------------------------------------------------------------------------

@@ -3,8 +3,13 @@
 DECISION 1 — Flat-only: legacy skill-dir mode dropped entirely. Always produces
 a single agent-def at agents/<id>.md with internal `name: <id>` (no team. prefix).
 
-DECISION 2 — agents_dir: CLAUDE_PROJECT_DIR/.claude/agents if env set (098 D-6
-plugin target); else repo_root()/.claude/agents (data-root / dev mode).
+DECISION 2 — agents_dir: the DATA root's .claude/agents, always. The project side
+(CLAUDE_PROJECT_DIR/.claude, 098 D-6) gets a relative symlink per item instead.
+REVISED by #134: this used to resolve to the project side and write a real file
+there, which is a place CODE gitignores *because* the file is meant to be in DATA —
+so a hired advisor was committed to neither repository. On a colocated instance the
+two roots are the same directory, there is nothing to point at, and the real file
+stays put.
 
 DECISION 3 — version/language/context reads dropped (YAGNI): flat template has no
 ${MODEL_VERSION}, ${HIRE_VERSION}, ${FORGE_VERSION}, ${TEAM_LANGUAGE}, or
@@ -17,6 +22,7 @@ I/O-free core: reads and writes files; no print, no argparse, no sys.exit.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -69,13 +75,28 @@ def create(opts: AdvisorOpts) -> dict:
     # 3. Project name from roster
     project_name = roster.roster_get("project.name") or "the project"
 
-    # 4. agents_dir resolution (shared helper — DRY with canonical_advisors discovery)
-    agents_dir = paths.project_agents_dir()
+    # 4. agents_dir resolution. The REAL file goes to DATA (spec 103 §4) and the
+    #    project side gets a symlink in step 8.6 — see _link_into_project. Writing it
+    #    project-side, as this did until #134, put a hired advisor in NEITHER repo:
+    #    CODE gitignores `.claude/agents/` precisely because the file is supposed to be
+    #    in DATA, and it was not.
+    agents_dir = paths.data_agents_dir()
     agent_file = agents_dir / f"{id_}.md"
 
-    # 5. Collision guard
+    # 5. Collision guards — DATA first, then the project-side link paths. Both run
+    #    BEFORE anything is written. A refusal that fires at link time (step 8.6) has
+    #    already scaffolded DATA, so "move the CODE file into DATA and re-run" sends
+    #    the operator at an occupied path and the re-run they were asked for dies on
+    #    this very guard.
     if agent_file.exists():
         raise FileExistsError(f"already exists: {agent_file}")
+    project_links = [
+        paths.project_agents_dir() / f"{id_}.md",
+        paths.advisor_skill_dir(id_, paths.project_skills_dir()),
+    ]
+    if paths.is_split_layout():
+        for link in project_links:
+            _refuse_if_occupied(link)
 
     # 6. Ensure directory
     agents_dir.mkdir(parents=True, exist_ok=True)
@@ -89,16 +110,23 @@ def create(opts: AdvisorOpts) -> dict:
         .replace("${ROLE}", opts.role)
         .replace("${PROJECT_NAME}", project_name)
         .replace("${COLOR}", opts.color)
+        # `emoji:` is a real key in the template since #134. It was substituted here
+        # for as long as the template had nowhere to put it — a no-op `.replace()`
+        # reads exactly like one that works, so the value reached the file only as
+        # prose inside the generated description while seven shipped EXECUTOR defs
+        # carried the key and no advisor def did.
         .replace("${EMOJI}", emoji)
-        .replace("${TONE_HINT}", tone)
-        .replace("${TONE}", tone)
+        # ${TONE} / ${TONE_HINT} were dead the same way and stay removed: `tone` is
+        # live — stub_description() spends it — but no reader anywhere asks an
+        # agent-def for a `tone:` key, and a template key nothing reads is a second
+        # place for this pair to drift.
         .replace("${DESCRIPTION}", frontmatter.as_block(description))
     )
     snapshot.snapshot_write(agent_file, rendered)
 
     # 8. Scaffold the /conclave-<id> invocation router alongside the agent-def
-    # (project-side; agents_dir.parent == .claude, so .claude/skills stays
-    # consistent with the resolved base without re-resolving env).
+    # (agents_dir.parent == the DATA .claude/, so .claude/skills stays consistent
+    # with the resolved base without re-resolving env — the two move together).
     # The router and the agent-def project the SAME identity string: two surfaces,
     # one source. Passing it here (rather than letting the router re-read the file
     # it was just handed) keeps them equal by construction, which is what the
@@ -148,7 +176,64 @@ def create(opts: AdvisorOpts) -> dict:
     ).read_text(encoding="utf-8").replace("${ID}", id_)
     snapshot.snapshot_write(paths.briefings_dir() / f"{id_}.md", briefing_stub)
 
+    # 8.6. Publish the advisor to the CODE checkout as symlinks (#134). Both surfaces
+    # are loaded by the harness from the project side, so without this step a hire is
+    # invisible to the tool that has to dispatch it — and with a real file instead of a
+    # link it is invisible to both repositories.
+    #
+    # Per-FILE for agents and per-DIR for skills, deliberately: a whole-directory
+    # `.claude/agents` symlink is undocumented and reported broken in Claude Code,
+    # while a skills entry pointing at a directory elsewhere on disk is the documented
+    # pattern (#30's layout table).
+    for real, link in (
+        (agent_file, project_links[0]),
+        (skill_file.parent, project_links[1]),
+    ):
+        _link_into_project(real, link)
+
     # 9. Return JSON-serialisable result
     return {"id": id_, "agent": str(agent_file), "router": str(skill_file)}
+
+
+def _refuse_if_occupied(link: Path) -> None:
+    """Refuse when something that is not ours already sits at a project-side link path.
+
+    Called from the collision-guard step, before a single byte is written, because the
+    thing this protects is a REAL FILE in the CODE tree — the pre-#134 shape. It is
+    gitignored there and absent from DATA, so it is the only copy of whatever a hire or
+    a hand-edit put in it. The rule against quiet removal binds hardest exactly where
+    the file looks like leftover junk.
+
+    A symlink is left to _link_into_project: pointing at the right place is a no-op,
+    pointing elsewhere is its own error with its own message.
+    """
+    if link.is_symlink() or not link.exists():
+        return
+    raise FileExistsError(
+        f"{link} is a real file where a symlink into the DATA repo belongs. CODE "
+        "gitignores this path and DATA does not have it, so it is the only copy — "
+        "move it into the DATA root and re-run rather than letting this overwrite it."
+    )
+
+
+def _link_into_project(real: Path, link: Path) -> None:
+    """Point *link* at *real* with a RELATIVE target. No-op on a colocated instance.
+
+    Relative because an absolute target embeds the operator's home directory (#83) and
+    dies the moment the checkout is cloned, moved, or opened as a worktree.
+    """
+    if not paths.is_split_layout():
+        return
+    if link.is_symlink():
+        if link.resolve() == real.resolve():
+            return
+        raise FileExistsError(
+            f"{link} already links elsewhere: {os.readlink(link)} (expected {real})"
+        )
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(
+        os.path.relpath(real, link.parent),
+        target_is_directory=real.is_dir(),
+    )
 
 
