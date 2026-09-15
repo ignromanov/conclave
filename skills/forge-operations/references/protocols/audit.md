@@ -34,14 +34,21 @@ last_reviewed: "2026-08-12"
 | 11 | Scope collision (spec 089) | `engine audit scope-collision` | CRIT (overlapping `owns:` across agents) |
 | 12 | Phantom-skill pre-gate (spec 089) | `engine audit phantom-skills` (BLOCKING — mirrors hire.md G1) | CRIT (blocks register/promote) |
 | 13 | Judge incentive + calibration floor (spec 089) | inline grep + `current.yaml` read | WARN (D19 phrase missing) / **CRIT** (calibration absent/stale/below-floor, D32) |
+| 14 | Identity parity | `engine audit identity-parity` | CRIT (the two `description` copies disagree, or one is empty) |
 
 ## Run
 
 ```
-for name in versions phantom-skills bloat registry-consistency overlays agent-configs skills; do
+for name in versions phantom-skills bloat registry-consistency overlays agent-configs skills \
+            identity-parity; do
   engine audit "$name"
 done
 ```
+
+> This loop is a hand-maintained list and it is already short: `engine audit --help` lists the
+> names the CLI actually accepts, and this line names fewer of them. An audit absent here is an
+> audit nothing invokes — the same shape as a CLI no protocol calls. Tracked as a defect; read
+> the `--help` output, not this line, when you want the full set.
 
 Aggregate findings by (category, severity, target).
 
