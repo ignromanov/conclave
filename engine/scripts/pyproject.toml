@@ -52,3 +52,14 @@ ignore = ["E501"]
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
+# A return-type change is a silent-semantics change at every `!= 0` that reads it. When
+# `_rebuild_index` in feedback_verify.py widened from `int` to a tuple, `if
+# _rebuild_index(root) != 0:` kept compiling and kept running -- a tuple is never equal to
+# 0, so `--apply` took its failure branch unconditionally and exited 1 with an EMPTY
+# stderr, the least legible thing a run can do. Six sibling tests caught it; nothing else
+# in the repo would have. This flag reports the comparison itself.
+#
+# Measured before enabling: 190 source files, zero findings -- the flag costs no migration.
+# It covers the `!= 0` / `== 0` family only. `if rc:` stays invisible, because a tuple is
+# truthy and that is a legal truth test rather than a non-overlapping comparison.
+strict_equality = true
