@@ -124,7 +124,7 @@ def _merge_rows(rows: list[dict], idx_path: Path, *, rebuild: bool) -> list[dict
     return kept + rows
 
 
-def _process_reviews(dirs: list[Path], existing: dict[str, str], check: bool) -> tuple[list[dict], list[str], list[str], int]:
+def _process_reviews(dirs: list[Path], existing: dict[str, str], check: bool) -> tuple[list[dict], list[str], list[str], list[str], int]:
     """Walk dirs, validate, produce index rows + rejection messages.
 
     Returns (rows, parse_errors, author_complete_drops, review_count).
@@ -133,6 +133,10 @@ def _process_reviews(dirs: list[Path], existing: dict[str, str], check: bool) ->
     rows: list[dict] = []
     parse_errors: list[str] = []
     author_complete_drops: list[str] = []
+    # Files that could not be READ, as distinct from files that were read and failed
+    # validation. Both land in parse_errors, so parse_errors cannot tell a caller which
+    # it is holding — and the two are not equally survivable.
+    unreadable: list[str] = []
     review_count = 0
 
     for d in dirs:
@@ -141,6 +145,7 @@ def _process_reviews(dirs: list[Path], existing: dict[str, str], check: bool) ->
                 meta, _body = fm_read(md_file)
             except Exception as e:
                 parse_errors.append(f"SKIP {md_file}: parse error: {e}")
+                unreadable.append(str(md_file))
                 continue
 
             # Draft reviews skipped silently
@@ -214,10 +219,17 @@ def _process_reviews(dirs: list[Path], existing: dict[str, str], check: bool) ->
                 }
                 rows.append(row)
 
-    return rows, parse_errors, author_complete_drops, review_count
+    return rows, parse_errors, author_complete_drops, unreadable, review_count
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, report: dict | None = None) -> int:
+    """Build the index; `report`, when given, receives what the exit code cannot carry.
+
+    The exit code says only "something was wrong". A caller that must decide whether to
+    continue needs to know *which* thing: a dropped author-complete review is one
+    author's defect and is survivable, an unreadable file is not. Passing a dict here
+    is how feedback_triage tells them apart; the CLI passes nothing and is unchanged.
+    """
     parser = argparse.ArgumentParser(description="Validate + build feedback JSONL index")
     parser.add_argument("--check", action="store_true", default=False,
                         help="print stats without writing index")
@@ -236,7 +248,15 @@ def main(argv: list[str] | None = None) -> int:
     # every live review is re-processed and the write path emits rows-only (#9).
     existing = {} if args.rebuild else _load_existing_index(idx_path)
 
-    rows, parse_errors, author_complete_drops, review_count = _process_reviews(dirs, existing, args.check)
+    rows, parse_errors, author_complete_drops, unreadable, review_count = _process_reviews(dirs, existing, args.check)
+
+    # Populated before either exit path below, so a caller's view never depends on
+    # which branch the run took.
+    if report is not None:
+        report["author_complete_drops"] = list(author_complete_drops)
+        report["parse_errors"] = list(parse_errors)
+        report["unreadable"] = list(unreadable)
+        report["review_count"] = review_count
 
     if args.check:
         pending = sum(1 for r in rows if r.get("status") == "open")

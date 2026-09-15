@@ -717,19 +717,30 @@ class TestCadenceGuard:
         return marker
 
     def _make_feedback_script(
-        self, root: Path, *, triage_due: bool, open_items: int = 5, exit_code: int = 0
+        self, root: Path, *, triage_due: bool, open_items: int = 5, exit_code: int = 0,
+        skipped_invalid: int | None = None,
     ) -> Path:
-        """Scaffold a fake feedback_triage.py that prints the expected --check output."""
+        """Scaffold a fake feedback_triage.py that prints the expected --check output.
+
+        `skipped_invalid=None` omits the key entirely, which is what an engine older
+        than 2026-09-15 prints — the guard must render nothing rather than 0 there,
+        for the same reason it already drops the new_reviews clause.
+        """
         scripts = root / "engine" / "scripts"
         feedback_dir = scripts / "feedback"
         feedback_dir.mkdir(parents=True, exist_ok=True)
         due_str = "true" if triage_due else "false"
+        skipped_line = (
+            "" if skipped_invalid is None
+            else f"    print('skipped_invalid_reviews={skipped_invalid}')\n"
+        )
         script = feedback_dir / "feedback_triage.py"
         script.write_text(
             f"import sys\n"
             f"if '--check' in sys.argv:\n"
             f"    print('triage_due={due_str}')\n"
             f"    print('open_items={open_items}')\n"
+            f"{skipped_line}"
             f"    sys.exit({exit_code})\n"
             f"sys.exit({exit_code})\n",
             encoding="utf-8",
@@ -771,6 +782,57 @@ class TestCadenceGuard:
         self._make_feedback_script(root, triage_due=True, open_items=0)
         lines = session_init._step_cadence_guard()
         assert any("feedback:" in ln for ln in lines)
+
+    def test_skipped_invalid_reviews_gets_its_own_line(self, tmp_path, monkeypatch):
+        """A corpus the run could not fully read must say so, even on a quiet session.
+
+        Before 2026-09-15 triage aborted on a schema-invalid author-complete review and
+        this guard rendered "exited 1, skipping cadence check". Triage now continues, so
+        without this line the banner would report open_items and new_reviews computed
+        from a corpus missing those reviews and claim nothing about the gap — the same
+        silence the abort produced, behind a green exit code.
+        """
+        root = _make_root(tmp_path)
+        self._pin_engine_root(monkeypatch, root)
+        self._make_triage_marker(root, age_days=1)
+        self._make_feedback_script(root, triage_due=False, open_items=2,
+                                   skipped_invalid=2)
+
+        lines = session_init._step_cadence_guard()
+
+        assert any("2 author-complete review(s) skipped" in ln for ln in lines), lines
+        # Independent of triage_due, exactly like the unreachable_accepted clause.
+        assert not any("triage due" in ln.lower() for ln in lines), lines
+        assert any("--finalize" in ln for ln in lines), lines
+
+    def test_no_skipped_line_when_nothing_was_skipped(self, tmp_path, monkeypatch):
+        """The control: a clean run must not print the count.
+
+        `--check` prints `skipped_invalid_reviews=0` unconditionally because it is
+        machine-read and an absent key cannot be told from a zero. The banner is the
+        opposite consumer: a line reading "0 skipped" at every session start is the
+        noise that made the previous warning invisible.
+        """
+        root = _make_root(tmp_path)
+        self._pin_engine_root(monkeypatch, root)
+        self._make_triage_marker(root, age_days=1)
+        self._make_feedback_script(root, triage_due=False, open_items=2,
+                                   skipped_invalid=0)
+
+        lines = session_init._step_cadence_guard()
+
+        assert not any("skipped" in ln for ln in lines), lines
+
+    def test_older_engine_without_the_key_renders_nothing(self, tmp_path, monkeypatch):
+        """An absent key is not a measured zero — drop the clause, do not assert 0."""
+        root = _make_root(tmp_path)
+        self._pin_engine_root(monkeypatch, root)
+        self._make_triage_marker(root, age_days=1)
+        self._make_feedback_script(root, triage_due=False, open_items=2)
+
+        lines = session_init._step_cadence_guard()
+
+        assert not any("skipped" in ln for ln in lines), lines
 
     def test_missing_triage_script_returns_warning(self, tmp_path, monkeypatch):
         """If feedback_triage.py doesn't exist → returns a warning line, does not crash."""

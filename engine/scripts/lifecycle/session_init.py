@@ -572,6 +572,7 @@ def _step_cadence_guard() -> list[str]:
     open_items = 0
     new_reviews: int | None = None
     unreachable: int | None = None
+    skipped_invalid: int | None = None
     for line in result.stdout.splitlines():
         if line.startswith("triage_due="):
             triage_due = line.split("=", 1)[1].strip().lower() == "true"
@@ -590,6 +591,11 @@ def _step_cadence_guard() -> list[str]:
                 unreachable = int(line.split("=", 1)[1].strip())
             except ValueError:
                 pass
+        elif line.startswith("skipped_invalid_reviews="):
+            try:
+                skipped_invalid = int(line.split("=", 1)[1].strip())
+            except ValueError:
+                pass
 
     lines: list[str] = []
     if triage_due:
@@ -605,6 +611,24 @@ def _step_cadence_guard() -> list[str]:
     if unreachable:
         lines.append(f"  feedback: {unreachable} accepted items reachable by nothing "
                       f"(no predicate, waiver or issue) — run /conclave:triage")
+    # Same rule as the clause above, for the opposite reason: every figure on the two
+    # lines above was computed WITHOUT these reviews, so without this line the banner
+    # reports a corpus it could not fully read and says nothing about the gap.
+    #
+    # Until 2026-09-15 triage aborted on such a review and this function rendered
+    # "exited 1, skipping cadence check" — which is where one hand-flipped `_draft:
+    # false` review hid for ~34 hours while the cadence was down for three advisors.
+    # Continuing past it is only an improvement if the skip is stated here; printing
+    # nothing would be the same silence with a green exit code in front of it.
+    #
+    # Conditional on non-zero, unlike the `--check` key that feeds it: that key is
+    # machine-read and prints 0 unconditionally because an absent key cannot be told
+    # from a zero, while a banner that says "0 skipped" every session manufactures the
+    # noise that made the old warning invisible.
+    if skipped_invalid:
+        lines.append(f"  feedback: {skipped_invalid} author-complete review(s) skipped as "
+                      f"schema-invalid and absent from the figures above — re-run "
+                      f"`feedback_emit.py --finalize <path>` on each")
     return lines
 
 

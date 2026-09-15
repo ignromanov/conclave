@@ -119,17 +119,37 @@ _VALID_STATUSES = set(_typing.get_args(_Status))
 _NON_DEFECT_CATEGORIES = frozenset({"positive", "near-miss"})
 
 
+def _rebuild_index_reporting(root: Path) -> tuple[int, list[str], list[str]]:
+    """Rebuild the index and say *why* it failed, not only that it did.
+
+    Returns (exit code, dropped author-complete reviews, unreadable files). The two
+    lists exist because the exit code cannot distinguish them and the caller's
+    decision turns on exactly that: a dropped review is one author's file failing
+    validation, which the rest of the corpus survives; an unreadable file is not.
+
+    Deliberately a second function rather than a wider return type on the one below.
+    Changing `_rebuild_index` to return a tuple left `feedback_verify.py:391`'s
+    `if _rebuild_index(root) != 0:` comparing a tuple to an integer — always true, so
+    --apply took its failure branch unconditionally and exited 1 with an empty stderr.
+    Python will not catch that, and neither will any gate here; six sibling tests did.
+    A caller that only wants the verdict keeps getting an int.
+    """
+    from feedback import feedback_index  # noqa: PLC0415
+    report: dict = {}
+    # --rebuild: triage must see a clean index — stale rows from archived/deleted
+    # reviews would otherwise resurface as phantom clusters in the digest (#9).
+    rc = feedback_index.main(["--rebuild"], report=report)
+    return rc, list(report.get("author_complete_drops") or []), list(report.get("unreadable") or [])
+
+
 def _rebuild_index(root: Path) -> int:
     """Defensively rebuild index via feedback_index.main().
 
     Returns the exit code from feedback_index.main().
-    Non-zero means one or more _draft:false reviews are schema-invalid.
-    Callers must abort triage when this returns non-zero.
+    Non-zero means one or more _draft:false reviews are schema-invalid, or a review
+    could not be read. Callers that must tell those apart use the function above.
     """
-    from feedback import feedback_index  # noqa: PLC0415
-    # --rebuild: triage must see a clean index — stale rows from archived/deleted
-    # reviews would otherwise resurface as phantom clusters in the digest (#9).
-    return feedback_index.main(["--rebuild"])
+    return _rebuild_index_reporting(root)[0]
 
 
 def _load_index(idx_path: Path) -> list[dict]:
@@ -327,8 +347,14 @@ def _new_review_count(rows: list[dict], since_ts: float | None) -> int:
     return len(seen)
 
 
-def cmd_check(rows: list[dict], triage_marker: Path) -> None:
-    """Print the cadence verdict and, beside it, both quantities it was computed from."""
+def cmd_check(rows: list[dict], triage_marker: Path, skipped_invalid: int = 0) -> None:
+    """Print the cadence verdict and, beside it, every quantity it was computed from.
+
+    `skipped_invalid` is printed unconditionally, including as 0. A field that appears
+    only when it is non-zero cannot be told from a field a consumer forgot to emit, so
+    a run that could not see part of the corpus would render identically to a clean one
+    — which is the failure this whole line exists to report.
+    """
     open_count = sum(1 for r in rows if r.get("status") == "open")
 
     last_triage = _last_triage_ts(triage_marker)
@@ -350,6 +376,7 @@ def cmd_check(rows: list[dict], triage_marker: Path) -> None:
     print(f"new_reviews={new_reviews}")
     print(f"days_since={days_since_str}")
     print(f"unreachable_accepted={len(unreachable_accepted(rows))}")
+    print(f"skipped_invalid_reviews={skipped_invalid}")
 
 
 def cmd_monthly(rows: list[dict]) -> None:
@@ -633,14 +660,32 @@ def main(argv: list[str] | None = None) -> int:
         # Step 1: Always rebuild index defensively.
         # Non-zero exit means _draft:false reviews are schema-invalid — abort triage
         # so corrupted reviews never silently bypass the queue.
-        index_rc = _rebuild_index(root)
-        if index_rc != 0:
+        index_rc, skipped_reviews, unreadable = _rebuild_index_reporting(root)
+        if index_rc != 0 and (unreadable or not skipped_reviews):
+            # Still fatal: a file the run could not read, a lock it could not take, or a
+            # non-zero it cannot account for. Continuing past an unexplained failure would
+            # be the silence this whole path exists to prevent.
             print(
-                "ERROR: triage aborted — one or more author-complete (_draft:false) reviews "
-                "failed schema validation. Fix the DROPPED files shown above, then re-run.",
+                "ERROR: triage aborted — the index rebuild failed for a reason other than "
+                "a schema-invalid review. Fix the errors shown above, then re-run.",
                 file=sys.stderr,
             )
             return index_rc
+        if skipped_reviews:
+            # Ruled 2026-09-15 (Helm, engine scope) after one hand-flipped `_draft: false`
+            # review took the cadence check down for all three advisors of an instance for
+            # ~34 hours: aborting converts one author's defect into an instance-wide outage,
+            # and a check that reports nothing is read as "nothing is wrong".
+            #
+            # Spec 086 AC2's invariant is kept and read literally — the review never enters
+            # the index, and the DROPPED line above names it. What it forbids is a *silent*
+            # bypass, and the count below is what makes this one not silent.
+            print(
+                f"NOTE: {len(skipped_reviews)} author-complete review(s) were skipped as "
+                f"schema-invalid and are absent from every figure below. Re-run "
+                f"`feedback_emit.py --finalize <path>` on each to see what it rejects.",
+                file=sys.stderr,
+            )
 
         idx_path = index_path()
         rows = _load_index(idx_path)
@@ -666,7 +711,7 @@ def main(argv: list[str] | None = None) -> int:
             cmd_digest(digest_rows, as_json=args.json)
 
         if args.check:
-            cmd_check(rows, triage_marker)
+            cmd_check(rows, triage_marker, skipped_invalid=len(skipped_reviews))
 
         if args.monthly:
             cmd_monthly(rows)
