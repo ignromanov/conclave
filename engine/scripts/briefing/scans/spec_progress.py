@@ -13,6 +13,13 @@ Scan logic:
   4. Emit one line per spec: "### N/M — <id>: <title>" with done-count.
 
 Empty-state: _(no advisor-owned spec acceptance criteria found)_
+
+Two layers since plan 057 T10: ``collect`` reads and CLASSIFIES, ``build`` filters and
+renders. Until then this module computed four numbers per spec and handed back a
+formatted row, so no second consumer could reach them — `render_terminal.quantity`
+names that as the defect the whole projection exists to retire. The classification
+itself is pure and lives in `enginelib.status.specs`, on the sanctioned edge
+(briefing -> enginelib, never back).
 """
 from __future__ import annotations
 
@@ -20,6 +27,7 @@ import re
 from pathlib import Path
 
 from briefing.scans import ScanCtx, _specfm
+from enginelib.status.specs import SpecAcceptance, classify
 
 _PLACEHOLDER = "_(no advisor-owned spec acceptance criteria found)_"
 
@@ -36,54 +44,108 @@ _H2_RE = re.compile(r"^##\s+")
 _CHECKED_RE = re.compile(r"^- \[x\]", re.IGNORECASE)
 _OPEN_RE = re.compile(r"^- \[ \]")
 
+#: Where the count came from, for `Count.proof`. One hop, per state-report rule 5.
+PROOF = "ops/specs/*/spec.md — блок приёмки"
 
-def build(ctx: ScanCtx) -> str:
-    """Return spec-progress markdown for advisor-owned specs."""
+
+def collect(ctx: ScanCtx) -> list[SpecAcceptance]:
+    """Every spec in scope, each carrying the class of what could be read from it.
+
+    In scope means: this advisor's specs under advisor scope, and **every** spec under
+    instance scope — including the ones carrying no ownership field at all, which are
+    returned as `unowned` rather than dropped. That asymmetry is the whole point.
+    `owns(fm, advisor)` answers None for "someone else's" and for "nobody's" alike, so
+    an advisor-scoped render must drop both, and an instance-scoped one must drop
+    neither: an instance total that silently excludes the specs nobody claimed is a
+    total over an unstated subset. Measured 2026-09-15 here, that is three specs —
+    among them 086, which the whole feedback notebook rests on.
+    """
     specs_root = ctx.repo_root / "ops" / "specs"
     if not specs_root.is_dir():
-        return _PLACEHOLDER
+        return []
 
-    lines: list[str] = []
+    rows: list[SpecAcceptance] = []
     for spec_path in sorted(specs_root.glob("*/spec.md")):
-        result = _process_spec(spec_path, ctx.advisor_filter)
-        if result is not None:
-            lines.append(result)
+        row = _read_spec(spec_path, ctx.advisor_filter)
+        if row is not None:
+            rows.append(row)
+    return rows
 
+
+def build(ctx: ScanCtx) -> str:
+    """Return spec-progress markdown for advisor-owned specs.
+
+    Renders only the classes this section can speak a sentence about. The ones it
+    drops are not lost — `collect` returns them, and `engine status` counts them —
+    but widening this render is a display change and belongs to that contract's owner,
+    not to the extraction that made the numbers reachable.
+    """
+    lines = [
+        rendered
+        for row in collect(ctx)
+        if (rendered := _render(row, ctx.advisor_filter)) is not None
+    ]
     if not lines:
         return _PLACEHOLDER
     return "\n".join(lines)
 
 
-def _process_spec(spec_path: Path, advisor: str | None) -> str | None:
-    """Return a summary line for this spec if it belongs to the advisor, else None."""
+def _read_spec(spec_path: Path, advisor: str | None) -> SpecAcceptance | None:
+    """Classify one spec, or None when it is out of scope for *advisor*.
+
+    Unreadable is not a class: a spec.md that cannot be opened is a fault of this run,
+    not a state of the corpus, and counting it would put a transient I/O error into a
+    partition that reports on the work.
+    """
     try:
         text = spec_path.read_text(encoding="utf-8")
     except OSError:
         return None
 
     fm = _specfm.parse_frontmatter(text)
-    if _specfm.owns(fm, advisor) is None:
+    owner_field = _specfm.owns(fm, advisor)
+    if owner_field is None and advisor is not None:
+        # Someone else's spec, or nobody's. An advisor-scoped section drops both; only
+        # instance scope can tell them apart, and only it claims to cover everything.
         return None
-    prov = _specfm.provenance(fm)
 
-    spec_id = fm.get("id") or fm.get("spec_id") or spec_path.parent.name
-    title = fm.get("title") or str(spec_id)
-
+    spec_id = str(fm.get("id") or fm.get("spec_id") or spec_path.parent.name)
+    title = str(fm.get("title") or spec_id)
     total, done, advisor_open, has_block = _count_checkboxes(text, advisor)
-    if not has_block:
-        # No acceptance heading at all: the spec makes no verifiable claim to report on.
+    klass = classify(owner_field=owner_field, has_acceptance_block=has_block, total=total)
+
+    return SpecAcceptance(
+        spec_id=spec_id,
+        title=title,
+        klass=klass,
+        owner_field=owner_field,
+        provenance=_specfm.provenance(fm),
+        done=done if klass == "measured" else None,
+        total=total if klass == "measured" else None,
+        advisor_open=advisor_open,
+    )
+
+
+def _render(row: SpecAcceptance, advisor: str | None) -> str | None:
+    """One briefing line, or None for a class this section does not render.
+
+    `no_acceptance` and `unowned` return None, which is what this section did before
+    the split and is left unchanged on purpose — the golden briefing net is the only
+    instrument covering the extraction, and an extraction that also changes the output
+    cannot be checked by it.
+    """
+    if row.klass == "unowned" or row.klass == "no_acceptance":
         return None
-    if total == 0:
+    if row.klass == "no_checkboxes":
         # Zero and absent are different states. Twelve specs declare acceptance and
         # list no checkbox under it; dropping them renders identically to owning no
         # specs at all, which is the conclusion the advisor then draws (#227).
         return (
-            f"- unverifiable — **{spec_id}**: {title}{prov}"
+            f"- unverifiable — **{row.spec_id}**: {row.title}{row.provenance}"
             " — acceptance block lists no checkboxes"
         )
-
-    flag = " ★" if advisor_open > 0 else ""
-    return f"- {done}/{total} ✓ — **{spec_id}**: {title}{prov}{flag}"
+    flag = " ★" if row.advisor_open > 0 else ""
+    return f"- {row.done}/{row.total} ✓ — **{row.spec_id}**: {row.title}{row.provenance}{flag}"
 
 
 def _count_checkboxes(text: str, advisor: str | None) -> tuple[int, int, int, bool]:

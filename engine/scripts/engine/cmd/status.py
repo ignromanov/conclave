@@ -508,11 +508,85 @@ def _branches_section(root):
     )
 
 
+# ---------------------------------------------------------------------------
+# Spec acceptance (plan 057 T10)
+# ---------------------------------------------------------------------------
+
+
+def _specs_section(repo_root):
+    """The specs slot: how much of the corpus the acceptance instrument can read at all.
+
+    The number this row carries is deliberately NOT "specs done". Measured here
+    2026-09-15: of 31 specs, 8 carry a countable acceptance block, 11 declare
+    acceptance and list nothing under it, 9 declare no acceptance heading, and 3 carry
+    no ownership field — so 23 of 31 have no computable state, and twelve of those
+    appear in no spec projection at all. A row reading "3 of 8 done" would be a true
+    sentence about a quarter of the corpus rendered as a sentence about the corpus.
+
+    That is spec 109's failure at instance scale: its plan declared no predicate, the
+    scan could say only `unverifiable`, and two advisors read `unverifiable` as
+    not-done for 37 days while the work was finished. So the fraction on the glance
+    line is *reach* — how much the instrument can speak about — and the classes are
+    one hop away in the proof, per rule 5.
+
+    **The denominator is measured independently of the scan it reports on.** Counting
+    `spec.md` on disk and comparing against the partition is what makes the acceptance
+    criterion reachable: delete the scan's call site and this renders `—` with a
+    reason naming the gap, never a `0` that reads like an empty corpus.
+    """
+    from briefing.scans import spec_progress
+    from enginelib.status.model import Absent, Count, SectionResult
+    from enginelib.status.specs import tally
+
+    name = "спеки"
+    specs_root = repo_root / "ops" / "specs"
+    if not specs_root.is_dir():
+        return SectionResult(
+            name=name,
+            measurement=Absent(reason=f"каталога нет: ops/{specs_root.name}/"),
+            verdict="unknown",
+        )
+
+    on_disk = len(list(specs_root.glob("*/spec.md")))
+    rows = spec_progress.collect(_stub_ctx(repo_root))
+    counted = tally(rows)
+
+    if counted.total != on_disk:
+        # Not a smaller number — a different question answered. The scan reached fewer
+        # specs than the directory holds, so every ratio built on it is over an
+        # unstated subset, and rule 2 ranks that uncertainty above any known-bad count.
+        return SectionResult(
+            name=name,
+            measurement=Absent(
+                reason=(
+                    f"сканер вернул {counted.total} из {on_disk} спек на диске — "
+                    "доля считалась бы по необъявленному подмножеству"
+                )
+            ),
+            verdict="unknown",
+        )
+
+    return SectionResult(
+        name=name,
+        measurement=Count(
+            value=counted.measured,
+            of=counted.total,
+            noun="спек с вычислимой приёмкой",
+            proof=f"{spec_progress.PROOF}: {counted.proof_breakdown()}",
+        ),
+        # No staleness axis, on purpose. Rule 7's thresholds are for a QUEUE, and a
+        # spec that has not moved in a month is usually one that is finished; a
+        # movement threshold here would warn on every run, which is the trigger
+        # `_feedback_section` above already records having had to retire.
+        verdict="unknown" if counted.uncomputable else "fresh",
+        rows=tuple(rows),
+    )
+
+
 # Slots the projection owes and does not yet gather. Named, with the reason a human
 # can act on — an unwired slot that renders `0` is the lie rule 6 forbids, and one
 # that renders nothing at all is worse.
 _NOT_YET_WIRED = {
-    "спеки": "не подключено (plan 057 T10)",
     "CI": "не подключено — statusCheckRollup, ничего его не проецирует (plan 057 T11)",
 }
 
@@ -536,6 +610,7 @@ def _status(args) -> int:
     sections = [
         _handoffs_section(root),
         _feedback_section(root),
+        _specs_section(root),
         *_gh_sections(root),
         _branches_section(Path(consumer_git_cwd() or project_root())),
     ]
