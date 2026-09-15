@@ -57,8 +57,8 @@ if _SCRIPTS_DIR not in sys.path:
 # enginelib.advisors — the shared roster|META seam other call sites route through
 # too (doctor.py, briefing/__main__.py) — rather than redeclared here.
 from enginelib.advisors import (  # noqa: E402 (follows the sys.path bootstrap above)
-    META_ADVISORS,
     handoffs_for_advisor,
+    known_advisors,
     with_meta,
 )
 from enginelib.frontmatter import fm_get_block  # noqa: E402
@@ -81,27 +81,13 @@ def _project_dir(root: Path) -> Path:
     return root
 
 
-def _agents_dir(root: Path) -> Path:
-    """Minted-advisor directory. Under the plugin, advisors are CC-discoverable agents at
-    ${CLAUDE_PROJECT_DIR}/.claude/agents/ (sibling of the .conclave/ DATA root)."""
-    return _project_dir(root) / ".claude" / "agents"
-
-
-def _known_advisors(root: Path) -> set[str]:
-    """Advisor slugs discovered from the plugin agent registry — never hardcoded.
-
-    Globs `_agents_dir(root)/*.md`; slug = file stem. Excludes META_ADVISORS
-    and exec-* stems (plugin meta/executor agents). Forge invariant #7: inventory
-    is always discovered, so a roster hired in any instance is valid without editing
-    this file.
-    """
-    advisors: set[str] = set()
-    for agent_file in _agents_dir(root).glob("*.md"):
-        stem = agent_file.stem
-        if stem in META_ADVISORS or stem.startswith("exec-"):
-            continue
-        advisors.add(stem)
-    return advisors
+#: `enginelib.advisors.known_advisors` under its local name. The function that used to
+#: stand here was line-for-line identical to it, down to the exec-/META exclusions, and
+#: `known_advisors`'s own docstring says it follows "the pattern session_init already
+#: uses" — the promotion happened in #47 and the original was never removed, so the
+#: duplicate outlived its replacement by two months (#69). Executed across all three
+#: root layouts before deletion, the two resolvers behind them agreed on every one.
+_known_advisors = known_advisors
 
 
 def _repo_root() -> Path:

@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from enginelib.paths import ADVISOR_SKILL_PREFIXES
+
 
 @dataclass
 class OverlayReport:
@@ -28,7 +30,7 @@ def _field2(text: str, prefix: str) -> str:
     return ""
 
 
-_ADVISOR_PREFIXES = ("conclave-", "team.")
+_ADVISOR_PREFIXES = ADVISOR_SKILL_PREFIXES   # one rule, one place (#69)
 
 
 def _bare_dir(dirname: str) -> str:

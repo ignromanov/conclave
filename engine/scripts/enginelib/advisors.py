@@ -20,10 +20,19 @@ from enginelib.paths import (
 )
 
 # Keep in sync with lib/advisors.sh and team.forge/SKILL.md.
-_LIFECYCLE_SKILLS = frozenset({
+#: Skill dirs under the advisor prefixes that are NOT advisors — the lifecycle verbs
+#: and the forge router. Four modules held a copy of this set; executed side by side on
+#: 2026-09-15 all four were identical, so the copies bought nothing and each one was a
+#: place the next verb could fail to be added (#69).
+#:
+#: Not every caller wants this exact set — `bloat` exempts quorum, `phantom`/`versions`
+#: skip only lifecycle — which is why `iter_advisor_skills` filters nothing and hands
+#: the choice to the reader. This is the set for "who is a hired advisor".
+LIFECYCLE_SKILLS = frozenset({
     "start", "processing", "done", "handoff", "forge",
     "hire", "retro", "feedback", "feedback-triage",
 })
+_LIFECYCLE_SKILLS = LIFECYCLE_SKILLS   # pre-#69 name, in-module use
 
 
 def _is_lifecycle(name: str) -> bool:
@@ -265,6 +274,27 @@ def _frontmatter_value(path: Path, key: str) -> str | None:
         if in_fm and line.startswith(f"{key}:"):
             return line[len(key) + 1:].strip().strip('"').strip("'")
     return None
+
+
+def registry_advisors(skills_base: Path | None = None) -> set[str]:
+    """Advisor ids according to the SKILL-dir registry under *skills_base*.
+
+    One of the three sources, named once. `register.discover_advisors` and
+    `gh_board_query` each had their own implementation of it; both tolerated the two
+    skill-dir layouts by hand and both excluded lifecycle verbs from their own copy of
+    the set. This is not the same question as `known_advisors` (agent-defs) or
+    `canonical_advisors` (the union) — the three genuinely differ, which is why they
+    stay three functions rather than collapsing into a flag.
+
+    The difference is observable, not theoretical: a router skill minted without an
+    agent-def appears here and in neither of the others. `engine audit
+    registry-consistency` reports exactly that as CRIT.
+    """
+    return {
+        bare
+        for bare, _skill_md in iter_advisor_skills(skills_base)
+        if bare not in LIFECYCLE_SKILLS
+    }
 
 
 def canonical_advisors() -> list[str]:

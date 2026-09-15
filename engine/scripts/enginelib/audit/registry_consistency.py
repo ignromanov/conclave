@@ -15,7 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from enginelib.audit import Findings
-from enginelib.paths import iter_advisor_skills
+from enginelib.paths import ADVISOR_SKILL_PREFIXES, iter_advisor_skills
 
 # Bare advisor ids (prefix-agnostic). Both sides of the symmetry check are keyed on
 # bare ids (#54): skill dirs are conclave-<id>/team.<id>, agent-defs are bare <id>.md
@@ -32,7 +32,7 @@ _LIFECYCLE: frozenset[str] = frozenset({
     "feedback-triage",
 })
 
-_AGENT_PREFIXES = ("conclave-", "team.")
+_AGENT_PREFIXES = ADVISOR_SKILL_PREFIXES   # one rule, one place (#69)
 
 
 def _bare_agent_id(stem: str) -> str:

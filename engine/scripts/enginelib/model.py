@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from enginelib.paths import advisor_skill_dir
+from enginelib.paths import ADVISOR_SKILL_PREFIXES, advisor_skill_dir
 from enginelib.snapshot import snapshot_write
 
 # BARE lifecycle skill ids (prefix-agnostic; #48). The .sh used exactly these 7 (NOT
@@ -24,7 +24,7 @@ _LIFECYCLE_SKILLS: frozenset[str] = frozenset({
 })
 
 # Advisor SKILL-dir prefixes tolerated during the #48 migration (conclave- canonical).
-_ADVISOR_PREFIXES = ("conclave-", "team.")
+_ADVISOR_PREFIXES = ADVISOR_SKILL_PREFIXES   # one rule, one place (#69)
 
 
 def current_standard(forge_ref: Path) -> str:
