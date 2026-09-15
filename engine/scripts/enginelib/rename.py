@@ -100,12 +100,53 @@ _WORD_CHAR = re.compile(r"[a-z0-9]")
 
 
 # Config names the advisor mid-token by design, so it is rewritten token-wise —
-# with two exceptions, both cases of a word that only LOOKS like an id.
+# with three exceptions. The first two are words that only LOOK like an id; the
+# third is a real id inside a path this very plan refuses to move (#167).
 _YAML_KEY_LEAD = re.compile(r"^[ \t-]*$")
 _COMMAND_PREFIX = "/conclave:"
+_PATH_CHAR = re.compile(r"[A-Za-z0-9._/-]")
 
 
-def _rewrite_config(text: str, old: str, new: str) -> tuple[str, int]:
+def _frozen_pointer(text: str, start: int, end: int, frozen: frozenset[str]) -> bool:
+    """Does the match at ``[start, end)`` sit inside a path the plan leaves in place?
+
+    The planner deliberately freezes records it must not rewrite — another
+    advisor's history, protected evidence, prose-only mentions — and then the
+    token pass, which is path-agnostic, rewrites the *citations* of those
+    records anyway. Frozen target, moved pointer: `hot.md` ends up naming a file
+    that does not exist, produced by the one command whose whole contract is
+    that nothing is silently lost.
+
+    The guard widens the match to the surrounding run of path characters and
+    asks whether that run is a path-suffix of a file the plan is leaving alone.
+    Two deliberate narrowings:
+
+    - A run identical to the match itself is NOT a pointer. A bare `forge-chro`
+      in prose is the id, not a citation, and must still be rewritten.
+    - The comparison is anchored at a path separator, so `decisions/x.md` can
+      match `…/advisors/decisions/x.md` while `isions/x.md` cannot.
+
+    Where it is wrong it is wrong conservatively: two frozen and moved files
+    sharing a trailing path leave a pointer un-rewritten, which a reader can see
+    and repair. The opposite error deletes the reader's only route back to the
+    record.
+    """
+    if not frozen:
+        return False
+    i, j = start, end
+    while i > 0 and _PATH_CHAR.match(text[i - 1]):
+        i -= 1
+    while j < len(text) and _PATH_CHAR.match(text[j]):
+        j += 1
+    run = text[i:j]
+    if run == text[start:end]:
+        return False
+    run = run.lstrip("./")
+    return any(fp == run or fp.endswith("/" + run) for fp in frozen)
+
+
+def _rewrite_config(text: str, old: str, new: str,
+                    frozen: frozenset[str] = frozenset()) -> tuple[str, int]:
     """Whole-token rewrite of *text*, skipping words that are not identities.
 
     A **YAML key** is a schema word: every router carries a `forge:` provenance
@@ -117,6 +158,9 @@ def _rewrite_config(text: str, old: str, new: str) -> tuple[str, int]:
     reference points the reader at a command that does not exist. (The router
     skill `/conclave-<id>` is a different surface — it IS named for the advisor
     and does move, which is why the separator is what tells them apart.)
+
+    A **pointer into a frozen record** is an id that is real but whose target
+    does not move — see `_frozen_pointer`.
     """
     count = 0
 
@@ -127,6 +171,8 @@ def _rewrite_config(text: str, old: str, new: str) -> tuple[str, int]:
         if text[end:end + 1] == ":" and _YAML_KEY_LEAD.fullmatch(text[line_start:start]):
             return m.group(0)
         if text[max(0, start - len(_COMMAND_PREFIX)):start] == _COMMAND_PREFIX:
+            return m.group(0)
+        if _frozen_pointer(text, start, end, frozen):
             return m.group(0)
         count += 1
         return new
@@ -141,7 +187,8 @@ _CONFIG_IDENTITY_KEY = re.compile(r"^[ \t-]*([a-z][a-z0-9_-]*):[ \t]*$")
 _CONFIG_FLAG_VALUE = re.compile(r"--[a-z][a-z0-9-]*[ \t]+$")
 
 
-def _rewrite_config_narrow(text: str, old: str, new: str) -> tuple[str, int]:
+def _rewrite_config_narrow(text: str, old: str, new: str,
+                           frozen: frozenset[str] = frozenset()) -> tuple[str, int]:
     """Rewrite only the occurrences of *old* that provably name this advisor.
 
     Used when the id is also the engine's own vocabulary (`_COMMON_NOUN_IDS`),
@@ -168,20 +215,34 @@ def _rewrite_config_narrow(text: str, old: str, new: str) -> tuple[str, int]:
         )
         if not provable:
             return m.group(0)
+        if _frozen_pointer(text, start, end, frozen):
+            return m.group(0)
         count += 1
         return new
 
     return token_re(old).sub(repl, text), count
 
 
-def _config_rewriter(old: str):
-    """The config rewrite appropriate to *old* — narrow for a common-noun id."""
-    return _rewrite_config_narrow if old in _COMMON_NOUN_IDS else _rewrite_config
+def _config_rewriter(old: str, frozen: frozenset[str] = frozenset()):
+    """The config rewrite appropriate to *old* — narrow for a common-noun id.
+
+    *frozen* travels with the rewriter rather than being read from a module
+    global: `plan` and `apply` are separate calls over the same tree, and a
+    rewrite whose exemptions differed between them would make the applied result
+    disagree with the plan the operator approved.
+    """
+    base = _rewrite_config_narrow if old in _COMMON_NOUN_IDS else _rewrite_config
+
+    def rewrite(text: str, o: str, n: str) -> tuple[str, int]:
+        return base(text, o, n, frozen)
+
+    return rewrite
 
 
-def _config_review_lines(text: str, old: str, new: str) -> list[str]:
+def _config_review_lines(text: str, old: str, new: str,
+                         frozen: frozenset[str] = frozenset()) -> list[str]:
     """`line-number: text` for every config occurrence the narrow rewrite left alone."""
-    kept, _ = _config_rewriter(old)(text, old, new)
+    kept, _ = _config_rewriter(old, frozen)(text, old, new)
     rx = token_re(old)
     return [
         f"L{i}: {line.strip()[:100]}"
@@ -265,6 +326,10 @@ class RenamePlan:
     inert: list[Path] = field(default_factory=list)   # matched, no action earned
     notes: list[Note] = field(default_factory=list)
     reviews: list[Note] = field(default_factory=list)  # common-noun config, by hand
+    # Absolute posix paths of every matched file whose LOCATION this plan does not
+    # change — frozen history, protected evidence, prose-only records. Carried on
+    # the plan so `apply` exempts exactly what `plan` exempted (#167).
+    frozen: frozenset[str] = frozenset()
 
     def counts(self) -> dict[str, int]:
         return {
@@ -564,6 +629,12 @@ def plan(old: str, new: str) -> RenamePlan:
     })
 
     seen: set[Path] = set()
+    # CONFIG is settled in a second pass. Its token rewrite has to know which
+    # records the plan is freezing, and that set is only complete once the walk
+    # is: a file classified late can freeze a pointer read early. Everything
+    # else is decided per-file and stays inline.
+    config_pending: list[tuple[Path, Path, str, bool]] = []
+    frozen: set[str] = set()
     for root in roots:
         for f in _iter_files(root, exclude):
             if f in seen:
@@ -576,26 +647,25 @@ def plan(old: str, new: str) -> RenamePlan:
             cls = _classify(f, data_root, claude_dirs)
             if cls in (PROTECTED, UNCLASSIFIED):
                 p.skipped.append((cls, f))
+                frozen.add(f.as_posix())
                 continue
             owner = _owner_field(text) if (cls == HISTORY and text is not None) else None
             dst = _renamed_path(f, root, rx, new, cls, old, owner=owner)
             if cls == REGEN:
+                # Not frozen: a regenerated artifact is deleted here and rebuilt
+                # under the new id, so a pointer to it SHOULD follow the rename.
                 p.drops.append(Drop(f, "auto-generated — regenerated on next session"))
                 continue
             if dst != f:
                 p.moves.append(Move(f, dst, cls))
+            else:
+                frozen.add(f.as_posix())
             if text is None:
                 continue
             acted = dst != f
             if cls == CONFIG:
-                _, n = _config_rewriter(old)(text, old, new)
-                if n:
-                    p.edits.append(Edit(dst, cls, "token", f"{old} → {new} ×{n}"))
-                    acted = True
-                if old in _COMMON_NOUN_IDS:
-                    for detail in _config_review_lines(text, old, new):
-                        p.reviews.append(Note(dst, detail))
-                        acted = True
+                config_pending.append((f, dst, text, acted))
+                continue
             elif f.name.endswith(".jsonl"):
                 _, details = _rewrite_jsonl(text, old, new)
                 for d in details:
@@ -614,6 +684,22 @@ def plan(old: str, new: str) -> RenamePlan:
                 # policy, and SAID so: a file that vanishes from the report is
                 # indistinguishable from one the planner never saw.
                 p.inert.append(f)
+
+    # ---- pass 2: CONFIG, now that the frozen set is closed -------------------
+    p.frozen = frozenset(frozen)
+    rewrite = _config_rewriter(old, p.frozen)
+    for f, dst, text, moved in config_pending:
+        acted = moved
+        _, n = rewrite(text, old, new)
+        if n:
+            p.edits.append(Edit(dst, CONFIG, "token", f"{old} → {new} ×{n}"))
+            acted = True
+        if old in _COMMON_NOUN_IDS:
+            for detail in _config_review_lines(text, old, new, p.frozen):
+                p.reviews.append(Note(dst, detail))
+                acted = True
+        if not acted:
+            p.inert.append(f)
 
     if old not in roster and not (p.moves or p.edits or p.drops or p.skipped or p.inert):
         raise ValueError(
@@ -749,7 +835,7 @@ def apply(p: RenamePlan) -> dict[str, int]:
         if path.name.endswith(".jsonl"):
             new_text, _ = _rewrite_jsonl(text, p.old, p.new)
         elif any(e.kind == "token" for e in p.edits if e.path == path):
-            new_text, _ = _config_rewriter(p.old)(text, p.old, p.new)
+            new_text, _ = _config_rewriter(p.old, p.frozen)(text, p.old, p.new)
         else:
             new_text, _ = _rewrite_fields(text, p.old, p.new)
         if new_text != text:
