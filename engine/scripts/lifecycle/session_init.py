@@ -368,20 +368,53 @@ def _handoff_stale_hours() -> int:
 
 def _step1b_resume_scan(advisor: str, root: Path) -> tuple[list[str], list[str]]:
     """Return (live, stale) lines describing interrupted work; both empty if none found."""
+    from enginelib import frontmatter
+    from enginelib.advisors import files_for_advisor
+    from enginelib.checkpoint import record
+    from enginelib.memory.hot import session_token
+
     found: list[str] = []
     stale: list[str] = []
 
-    # ops/specs/*/resume-prompt.md
-    specs_dir = root / "ops" / "specs"
-    if specs_dir.is_dir():
-        for prompt in sorted(specs_dir.glob("*/resume-prompt.md")):
-            spec_name = prompt.parent.name
-            try:
-                mtime_s = int(prompt.stat().st_mtime)
-                age_h = (int(time.time()) - mtime_s) // 3600
-            except OSError:
-                age_h = -1
-            found.append(f"  spec-resume: {spec_name} ({prompt}) age={age_h}h")
+    # The in-flight checkpoint records left by this advisor's EARLIER sessions (spec 117
+    # R8/L4). This replaces a glob of `ops/specs/*/resume-prompt.md` that had no producer:
+    # zero such files in the working tree and zero ever added across DATA's entire history
+    # (measured 2026-09-15, `git log --all --diff-filter=A`), while 108's loop-map graded
+    # the consumer as working. R8 says such a glob gets a producer or is deleted in the same
+    # change; this one gets a replacement that is accurate by construction, because the
+    # close empties `checkpoints/` (T6) and an entry therefore survives only when a session
+    # ended without one.
+    #
+    # **Fenced by the session token, and not optionally.** main() creates THIS session's own
+    # record before `_advisor_summary` reaches this scan, so an unfenced scan would hand
+    # every session its own empty record back as interrupted work, on every single start.
+    # Same fence, same reason, as `hot.supersede_stale_session`.
+    #
+    # Ownership comes from the record's `owner:` frontmatter, not from its filename —
+    # `_detect_first_launch` took that lesson already: a renamed advisor whose files still
+    # carry the old name in the filename must not read as having no history.
+    #
+    # The directory is derived from `root`, this function's own parameter, as everything
+    # else here is. The writer resolves through `paths.checkpoints_dir()`, and the two
+    # agreeing is a real precondition rather than an obvious one — pinned by a test that
+    # runs main() end to end and asserts this scan sees the record `store.record_path()`
+    # produced, because no hermetic fixture can make the two roots differ.
+    checkpoints_dir = root / "agent-memory" / "advisors" / "checkpoints"
+    own_token = session_token(os.environ.get("CLAUDE_CODE_SESSION_ID", ""))
+    for path in files_for_advisor(checkpoints_dir, advisor, field="owner"):
+        if frontmatter.fm_get(path, "session") == own_token:
+            continue
+        try:
+            age_h = (int(time.time()) - int(path.stat().st_mtime)) // 3600
+        except OSError:
+            age_h = -1
+        reading = record.read(path.read_bytes().decode("utf-8", errors="replace"))
+        counts = record.tally(reading.entries)
+        found.append(
+            f"  checkpoint: {path.name} age={age_h}h — "
+            f"requested {counts.requested} · shipped {counts.shipped} "
+            f"· lost {len(counts.lost)}"
+        )
 
     # Handoffs addressed to this advisor. The recipient is read from the document's own
     # `**To**:` header, not from the filename — the filename carries the AUTHOR, so a
@@ -888,7 +921,11 @@ def main(argv: list[str] | None = None) -> int:
         from enginelib.checkpoint import store
         store.ensure(advisor, os.environ.get("CLAUDE_CODE_SESSION_ID", ""))
     except OSError as exc:
-        print(f"  checkpoint: record not created ({exc})", file=sys.stderr)
+        # `degraded:`, not `checkpoint:`. T7 makes `  checkpoint:` a protocol key meaning
+        # "a previous session never closed", and an agent told to act on that line would
+        # read this failure as an unclosed session. `degraded:` is already the established
+        # key for an advisory step that could not run (gh-fetch uses it).
+        print(f"  degraded: checkpoint-record-not-created ({exc})", file=sys.stderr)
 
     step1_code, lines = _advisor_summary(advisor, root)
     for line in lines:

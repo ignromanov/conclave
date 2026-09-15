@@ -68,12 +68,77 @@ class TestResumeScan:
         assert items == []
         assert stale == []
 
-    def test_finds_spec_resume(self, tmp_path):
+    def _checkpoint(self, root: Path, advisor: str, token: str, *entries: tuple[str, str]):
+        """Write a checkpoint record the way store.ensure/append would, under `root`."""
+        from enginelib.checkpoint import record as _record
+
+        path = root / "agent-memory" / "advisors" / "checkpoints" / f"2026-09-14-{advisor}-{token}.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        body = (
+            f"---\ntype: checkpoint\nowner: {advisor}\n"
+            f"created: 2026-09-14T10:00:00-03:00\nsession: {token}\nschema_version: 1\n---\n\n"
+        )
+        for kind, text in entries:
+            ev = ("commit:3e2f42f",) if kind == _record.KIND_DONE else ()
+            body += _record.render(kind, text, evidence=ev) + "\n"
+        path.write_text(body, encoding="utf-8")
+        return path
+
+    def test_an_earlier_sessions_checkpoint_is_reported_with_its_tally(self, tmp_path, monkeypatch):
+        """R8's replacement consumer. The tally is the point: an operator resuming needs to
+        know the abandoned session declared three units and finished one, which is exactly
+        what no narrative handoff has ever reliably said."""
+        from enginelib.checkpoint import record as _record
+
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "current1-aaaa")
         root = _make_root(tmp_path)
-        prompt = root / "ops" / "specs" / "085-test" / "resume-prompt.md"
-        _write(prompt, "# resume\n")
+        self._checkpoint(
+            root, "kai-cto", "earlier1",
+            (_record.KIND_INTENT, "A"), (_record.KIND_DONE, "A"),
+            (_record.KIND_INTENT, "B"), (_record.KIND_INTENT, "C"),
+        )
         items, _ = session_init._step1b_resume_scan("kai-cto", root)
-        assert any("spec-resume" in i and "085-test" in i for i in items)
+        assert any(
+            "checkpoint:" in i and "requested 3 · shipped 1 · lost 2" in i for i in items
+        ), items
+
+    def test_this_sessions_own_record_is_not_interrupted_work(self, tmp_path, monkeypatch):
+        """Mutation: drop the token fence.
+
+        main() creates this session's record BEFORE the scan runs, so without the fence
+        every start reports its own empty record back to itself — a resume prompt that
+        fires on every session is a resume prompt nobody reads.
+        """
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "current1-aaaa")
+        root = _make_root(tmp_path)
+        self._checkpoint(root, "kai-cto", "current1")
+        items, _ = session_init._step1b_resume_scan("kai-cto", root)
+        assert not any("checkpoint:" in i for i in items), items
+
+    def test_a_resume_prompt_file_is_no_longer_read(self, tmp_path, monkeypatch):
+        """**A6's instrument.** Restore the `ops/specs/*/resume-prompt.md` glob from git and
+        this goes red.
+
+        The glob had no producer — zero such files in DATA's working tree and zero ever
+        added in its whole history, while 108's loop-map graded the consumer as working. R8
+        gives such a consumer a producer or removes it in the same change. Asserting the
+        absence is what stops it coming back the next time someone reads the loop-map.
+        """
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "current1-aaaa")
+        root = _make_root(tmp_path)
+        _write(root / "ops" / "specs" / "085-test" / "resume-prompt.md", "# resume\n")
+        items, stale = session_init._step1b_resume_scan("kai-cto", root)
+        assert not any("spec-resume" in i for i in items + stale), items + stale
+
+    def test_another_advisors_checkpoint_is_not_reported(self, tmp_path, monkeypatch):
+        """Ownership is the `owner:` frontmatter, never the filename — the lesson
+        `_detect_first_launch` already carries, so a renamed advisor keeps its history."""
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "current1-aaaa")
+        root = _make_root(tmp_path)
+        from enginelib.checkpoint import record as _record
+        self._checkpoint(root, "nexus-ceo", "earlier1", (_record.KIND_INTENT, "theirs"))
+        items, _ = session_init._step1b_resume_scan("kai-cto", root)
+        assert not any("checkpoint:" in i for i in items), items
 
     def test_finds_handoff_for_advisor(self, tmp_path):
         root = _make_root(tmp_path)
@@ -1697,6 +1762,50 @@ class TestCheckpointRecordExistsFromTheStart:
             f"the second session-init did not leave the record alone: {path.read_text()!r}"
         )
 
+    def test_the_resume_scan_reads_the_directory_the_writer_wrote_to(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """The reader/writer agreement, asserted end to end because it cannot be asserted
+        any other way.
+
+        `store.ensure` resolves through `paths.checkpoints_dir()`; `_step1b_resume_scan`
+        derives its directory from the `root` it is handed, as everything else in that
+        function does. The two agreeing is a precondition, not an obvious fact — and no
+        hermetic fixture can make them differ, because both read CONCLAVE_AI_ROOT first.
+        So the agreement is pinned behaviourally: a record placed by the WRITER's resolver
+        must show up in what the READER prints, through a real main().
+        """
+        from enginelib.checkpoint import record, store
+
+        root = self._root(tmp_path)
+        monkeypatch.setenv("CONCLAVE_AI_ROOT", str(root))
+        abandoned = store.record_path("privacy-trust", "earlier2-bbbb")
+        abandoned.parent.mkdir(parents=True, exist_ok=True)
+        abandoned.write_text(
+            "---\ntype: checkpoint\nowner: privacy-trust\n"
+            "created: 2026-09-14T10:00:00-03:00\nsession: earlier2\nschema_version: 1\n---\n\n"
+            + record.render(record.KIND_INTENT, "the abandoned unit") + "\n",
+            encoding="utf-8",
+        )
+
+        # NOT self._run: that helper stubs out `_step1b_resume_scan`, which is the very
+        # thing under test here. The first version of this test used it and asserted an
+        # absence-shaped claim against a stubbed scan — it would have passed whatever the
+        # reader read.
+        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root))
+        monkeypatch.setenv("LOCK_DIR", str(root / "locks"))
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "cccccccc-3333")
+        monkeypatch.setattr(session_init, "_step1_load_briefing", lambda a, r: (0, []))
+        monkeypatch.setattr(session_init, "_step1c_reflexion", lambda a, r: [])
+        monkeypatch.setattr(session_init, "_scan_overlays", lambda a, r: [])
+        monkeypatch.setattr(session_init, "_step_cadence_guard", lambda: [])
+        session_init.main(["--advisor", "privacy-trust"])
+
+        out = capsys.readouterr().out
+        assert "checkpoint:" in out and "requested 1 · shipped 0 · lost 1" in out, (
+            "the scan did not see the record the writer's own resolver placed:\n" + out
+        )
+
     @pytest.mark.skipif(
         os.geteuid() == 0, reason="root ignores the mode bits this test relies on"
     )
@@ -1717,5 +1826,5 @@ class TestCheckpointRecordExistsFromTheStart:
             advisors_dir.chmod(0o755)
 
         assert rc == 0, f"an unwritable checkpoints dir failed the session start (rc={rc})"
-        assert "checkpoint: record not created" in capsys.readouterr().err
+        assert "degraded: checkpoint-record-not-created" in capsys.readouterr().err
         assert not (advisors_dir / "checkpoints").exists()
