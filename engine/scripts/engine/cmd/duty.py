@@ -124,14 +124,14 @@ def _validate(args: argparse.Namespace) -> int:
 
 
 def _project(args: argparse.Namespace) -> int:
-    from enginelib.duties.project import project_agent, render_projection
+    from enginelib.duties.project import PROJECTION_NAME, project_agent, render_projection
     from enginelib.paths import ensure_dir
 
     agent_id, duties_dir, out_dir = _agent_paths(args.advisor, args.executor)
     agent_manifest = _load_manifest(Path(args.manifest) if args.manifest else None)
     projection = project_agent(_merged_base(), agent_manifest, agent_id, duties_dir, _kind(args))
 
-    out = ensure_dir(out_dir) / "COMPUTED-DUTIES.md"
+    out = ensure_dir(out_dir) / PROJECTION_NAME
     out.write_text(render_projection(agent_id, projection), encoding="utf-8")
     print(f"wrote {out} ({len(projection.duties)} duties, {len(projection.norms)} norms)")
     return _emit(projection.findings)

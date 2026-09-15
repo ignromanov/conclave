@@ -20,6 +20,12 @@ from enginelib.duties.duty import Duty
 from enginelib.duties.model import AgentKind, Manifest, Norm
 from enginelib.duties.validate import Finding, compose
 
+#: Filename of the rendered projection, inside the agent's memory dir. Named here rather
+#: than at the one call site that writes it because it is also an INPUT to the advisor
+#: rename, which has to know that this file rides along with the ledger beside it
+#: (conclave#99). A literal in two modules is a fact nobody can check.
+PROJECTION_NAME = "COMPUTED-DUTIES.md"
+
 
 @dataclass
 class Projection:
