@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 from briefing.frontmatter_io import read as fm_read
 from briefing.frontmatter_io import write
+from enginelib.lock import lock_path_for, with_lock
+from feedback.paths import triage_lock_target
 
 SCRIPTS_DIR = Path(__file__).parent.parent.parent  # .../scripts/
 FEEDBACK_PKG = Path(__file__).parent.parent        # .../scripts/feedback/
@@ -29,6 +33,11 @@ def _triage_env(root: Path, env_extra: dict | None = None) -> dict:
     env = {
         "PYTHONPATH": str(SCRIPTS_DIR),
         "CONCLAVE_AI_ROOT": str(root),
+        # Per-test LOCK_DIR, a SIBLING of the DATA root rather than a child: inside it,
+        # the lock files are exactly the tracked-tree pollution C1.1 removed, and
+        # test_monthly_writes_nothing sees them. A test must also not contend with the
+        # operator's own sessions on the shared default.
+        "LOCK_DIR": str(root) + ".locks",
         "PATH": "/usr/bin:/bin",
     }
     if env_extra:
@@ -564,23 +573,47 @@ def test_set_preserves_data_classification_header(tmp_path):
 
 # --- #51: advisory lock around cmd_set (concurrent-triage safety) ---
 
-_LOCK_DIRNAME = ".triage-lock"
+def _triage_lock_file(root: Path) -> Path:
+    """Where the triage lock actually lives now: keyed, under this test's LOCK_DIR."""
+    os.environ["LOCK_DIR"] = str(root) + ".locks"
+    return lock_path_for(triage_lock_target(root))
 
 
 def test_set_refuses_when_datateam_lock_held(tmp_path):
     """A held DATA-root lock blocks --set: it refuses (no torn write) instead of
-    racing a concurrent triage session."""
+    racing a concurrent triage session.
+
+    118 C1.1: contention is now simulated by HOLDING the lock, not by creating the
+    artifact a mkdir-poll looked for. That is the point of the migration — the old
+    lock was a bare directory anyone could fabricate and a crash could leave behind,
+    with no owner to distinguish the two."""
     review_path = _write_review(tmp_path, "2026-05-22", "atlas-lockheld.md",
                                 _valid_review_meta(feedback_id="fb-lock-111111"))
     before = fm_read(review_path)[0]["items"][0].get("status")
-    (tmp_path / _LOCK_DIRNAME).mkdir()  # simulate another session holding the lock
 
-    result = run_triage(
-        tmp_path, ["--set", "fb-lock-111111", "it-1", "accepted", "--waiver", "not mechanically checkable"],
-        env_extra={"CONCLAVE_TRIAGE_LOCK_TIMEOUT": "0"},
-    )
+    held = threading.Event()
+    release = threading.Event()
+
+    def holder():
+        with with_lock(_triage_lock_file(tmp_path), timeout=5):
+            held.set()
+            release.wait(timeout=20)
+
+    t = threading.Thread(target=holder, daemon=True)
+    t.start()
+    assert held.wait(timeout=5), "holder never took the triage lock"
+    try:
+        result = run_triage(
+            tmp_path,
+            ["--set", "fb-lock-111111", "it-1", "accepted", "--waiver", "not mechanically checkable"],
+            env_extra={"CONCLAVE_TRIAGE_LOCK_TIMEOUT": "0"},
+        )
+    finally:
+        release.set()
+        t.join(timeout=20)
+
     assert result.returncode != 0
-    assert "lock" in (result.stderr or "").lower()
+    assert "could not acquire" in (result.stderr or "").lower(), result.stderr
     after = fm_read(review_path)[0]["items"][0].get("status")
     assert after == before, "review file must be untouched when the lock is held"
 
@@ -593,7 +626,11 @@ def test_set_releases_lock_on_item_not_found(tmp_path):
 
     r1 = run_triage(tmp_path, ["--set", "fb-nf-222222", "no-such-item", "accepted"])
     assert r1.returncode == 1
-    assert not (tmp_path / _LOCK_DIRNAME).exists(), "lock leaked on not-found path"
+    # The behavioural claim, not the artifact: a released flock is one another holder
+    # can take at once. (The lock FILE legitimately survives; being held is the state
+    # that matters, and only an acquisition can observe it.)
+    with with_lock(_triage_lock_file(tmp_path), timeout=0):
+        pass
 
     # Lock was released → a valid set now succeeds.
     r2 = run_triage(tmp_path, ["--set", "fb-nf-222222", "it-1", "accepted", "--waiver", "not mechanically checkable"])

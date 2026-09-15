@@ -159,7 +159,7 @@ flowchart TD
     hit --> log0[run_log_append\nexit_code=0]
     log0 --> consume_cached[Consume cached\nsnapshot file]
 
-    fresh -->|no| lock[snapshot_acquire_lock\nmkdir-based, 5–10s timeout]
+    fresh -->|no| lock[with_lock\nflock, bounded 5–10s timeout]
     lock -->|lock failed| err1[exit 1\nlock timeout]
     err1 --> log1a[run_log_append\nexit_code=1]
     log1a --> abort[Caller aborts\nor escalates]
@@ -171,7 +171,7 @@ flowchart TD
 
     recheck -->|still stale| fetch[Fetch from\nexternal dep\ne.g. gh issue list]
     fetch -->|fetch ok| write[snapshot_write\natomic mv -f]
-    write --> release[snapshot_release_lock]
+    write --> release[lock released on scope exit]
     release --> exit2[exit 2\nrefreshed]
     exit2 --> log2[run_log_append\nexit_code=2]
     log2 --> consume_fresh[Consume fresh\nsnapshot file]
@@ -204,7 +204,8 @@ Use this checklist to confirm a producer/consumer pair honors the loop contract.
 - [ ] Double-check after lock acquisition before fetching (prevents double-fetch)
 - [ ] Uses `snapshot_write` (atomic `mv -f`) — never writes directly to the
       final path
-- [ ] Releases lock via `snapshot_release_lock` before exiting on all paths
+- [ ] Takes the lock via `with_lock(lock_path_for(target), timeout=N)` — release is
+      the context manager's job, on every path including exceptions
 
 **Consumer (e.g. briefing-build.sh):**
 

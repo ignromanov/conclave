@@ -6,6 +6,7 @@ Resolves the path against the tree the predicate declares — `root` (the projec
 """
 from __future__ import annotations
 
+import contextlib
 import re
 import sys
 
@@ -25,6 +26,8 @@ from dataclasses import dataclass, field  # noqa: E402 — must follow the floor
 from datetime import UTC  # noqa: E402
 from pathlib import Path  # noqa: E402
 
+from enginelib.lock import LockTimeout, lock_path_for, with_lock  # noqa: E402
+from feedback.paths import triage_lock_target  # noqa: E402
 from feedback.schema import Predicate  # noqa: E402
 
 NOMINATE_MIN_HITS = 3
@@ -308,7 +311,6 @@ def main(argv=None) -> int:
     from feedback_triage import _load_index, _rebuild_index, cmd_set
     from shipped import is_shipped
 
-    import enginelib.snapshot as snapshot
     from briefing.paths import repo_root
     from enginelib.paths import engine_root, project_root
     from feedback.paths import index_path
@@ -365,23 +367,24 @@ def main(argv=None) -> int:
                   f"       Point it at the marker the fix will leave, or re-run with --force "
                   f"if the item really is already resolved.", file=sys.stderr)
             return 1
-        lock_dir = root / ".triage-lock"
-        if not snapshot.acquire_lock(lock_dir, 5):
+        try:
+            with with_lock(lock_path_for(triage_lock_target(root)), timeout=5):
+                return cmd_set_verify(root, fid, iid, pred, force=args.force,
+                                      project_root_path=project_root(), code_root=code_root)
+        except LockTimeout:
             print("ERROR: could not acquire triage lock (concurrent session?)", file=sys.stderr)
             return 1
-        try:
-            return cmd_set_verify(root, fid, iid, pred, force=args.force,
-                                  project_root_path=project_root(), code_root=code_root)
-        finally:
-            snapshot.release_lock(lock_dir)
 
     # Serialize the whole sweep+apply on the SAME DATA-root advisory lock that
     # feedback_triage.py uses, so verify --apply can't race a concurrent triage or
     # verify session (the mkdir-poll lock is not reentrant — cmd_set relies on the
     # caller holding it, exactly as triage main() does). Reuse over a new primitive.
-    lock_dir = root / ".triage-lock"
     lock_timeout = int(os.environ.get("CONCLAVE_TRIAGE_LOCK_TIMEOUT", "5"))
-    if not snapshot.acquire_lock(lock_dir, lock_timeout):
+    lock = contextlib.ExitStack()
+    try:
+        lock.enter_context(
+            with_lock(lock_path_for(triage_lock_target(root)), timeout=lock_timeout))
+    except LockTimeout:
         print("ERROR: could not acquire triage lock (concurrent session?)", file=sys.stderr)
         return 1
     try:
@@ -472,7 +475,7 @@ def main(argv=None) -> int:
             # 'accepted' rows linger (phantom rows — critic Missing-item).
             _rebuild_index(root)
     finally:
-        snapshot.release_lock(lock_dir)
+        lock.close()
     return 0
 
 

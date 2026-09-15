@@ -7,12 +7,9 @@ Bats → Python mapping:
 Age is simulated deterministically via os.utime; no sleeps for timing.
 """
 import os
-import threading
 import time
 
 from enginelib.snapshot import (
-    acquire_lock,
-    release_lock,
     snapshot_is_stale,
     snapshot_write,
     validate_schema,
@@ -102,33 +99,9 @@ def test_snapshot_is_stale_clock_skew(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# 5. mkdir-lock concurrency
+# 5. (mkdir-lock concurrency retired with 118 C1.1 — the bounded-acquisition
+#     and mutual-exclusion cases live in tests/enginelib/test_lock.py)
 # ---------------------------------------------------------------------------
-
-def test_acquire_lock_race(tmp_path):
-    """Bats case 7: exactly one of two racing acquirers wins (the other times out).
-    Uses threading to mirror the two background subshells in the bats test."""
-    lock_dir = tmp_path / "race.lock.d"
-    results: list[bool | None] = [None, None]
-
-    def try_acquire(idx: int) -> None:
-        results[idx] = acquire_lock(lock_dir, timeout=1)
-
-    t1 = threading.Thread(target=try_acquire, args=(0,))
-    t2 = threading.Thread(target=try_acquire, args=(1,))
-    t1.start()
-    t2.start()
-    t1.join()
-    t2.join()
-
-    # Exactly one winner (True), one loser (False).
-    assert (results[0] is True and results[1] is False) or (
-        results[0] is False and results[1] is True
-    ), f"Expected one True and one False, got {results}"
-
-    # Release whichever lock was held.
-    release_lock(lock_dir)
-
 
 # ---------------------------------------------------------------------------
 # 6. schema_version validation

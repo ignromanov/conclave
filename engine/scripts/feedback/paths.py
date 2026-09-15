@@ -43,3 +43,26 @@ def review_dir(date_str: str) -> Path:
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_str):
         raise ValueError(f"review_dir: unsafe date_str {date_str!r}")
     return feedback_root() / date_str
+
+
+def triage_lock_target(root: Path) -> Path:
+    """Nominal target the triage lock guards — never created, only keyed on.
+
+    Triage and `verify --apply` serialize on the DATA root, not on one file: they
+    rebuild the index, rewrite review files and move the marker as one mutation.
+    The lock itself lives under LOCK_DIR (see `enginelib.lock.lock_path_for`); the
+    old `.triage-lock` DIRECTORY sat in the tracked DATA tree, is not gitignored,
+    and after a crash left a wedge no later session could prove was abandoned.
+    """
+    return Path(root) / ".triage-lock"
+
+
+def index_lock_target() -> Path:
+    """The index file itself — locked by whoever writes it.
+
+    Deliberately NOT the triage lock. `flock` is not reentrant across file
+    descriptors, and triage rebuilds the index while holding its own lock; one
+    shared lock would self-deadlock. One lock per resource, always taken
+    triage -> index, so there is no cycle to order.
+    """
+    return index_path()
