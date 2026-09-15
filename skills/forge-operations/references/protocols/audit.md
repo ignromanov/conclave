@@ -35,6 +35,7 @@ last_reviewed: "2026-08-12"
 | 12 | Phantom-skill pre-gate (spec 089) | `engine audit phantom-skills` (BLOCKING — mirrors hire.md G1) | CRIT (blocks register/promote) |
 | 13 | Judge incentive + calibration floor (spec 089) | inline grep + `current.yaml` read | WARN (D19 phrase missing) / **CRIT** (calibration absent/stale/below-floor, D32) |
 | 14 | Identity parity | `engine audit identity-parity` | CRIT (the two `description` copies disagree, or one is empty) |
+| 15 | Advisor labels | `engine audit advisor-labels` | WARN (a roster advisor with no `advisor:<id>` label, or a label naming nobody in the roster) |
 
 ## Run
 
