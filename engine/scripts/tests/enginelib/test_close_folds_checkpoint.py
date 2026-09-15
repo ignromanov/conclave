@@ -22,6 +22,22 @@ from enginelib import filing, paths
 from enginelib.checkpoint import record, store
 from enginelib.filing import CloseSessionOpts, close_session
 
+# `ai_root` points CONCLAVE_ENGINE_ROOT at its tmp tree on purpose — that is how the copied
+# templates and advisor stubs get read instead of this checkout's — and `enginelib.paths`
+# warns about exactly that disagreement. This file is the first to run `close_session`
+# IN-PROCESS under that fixture, so it is the first to surface the warning at all; the
+# subprocess-driven close tests never could.
+#
+# `EngineRootMismatchWarning`'s own docstring says the deliberate population "can silence
+# exactly this and nothing else. See the repo-root conftest.py." No such filter exists there,
+# or anywhere else in the tree (measured 2026-09-15: the category name appears in paths.py and
+# in one unrelated comment). The mechanism is documented and unbuilt, so this declares it for
+# the one file that needs it rather than inventing a repo-wide policy that would change how 33
+# other test files report.
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::enginelib.paths.EngineRootMismatchWarning"
+)
+
 _DATE = "2026-04-22"
 _ADVISOR = "nexus-ceo"
 _TOKEN = "dddddddd-4444"
