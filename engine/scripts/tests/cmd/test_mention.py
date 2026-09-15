@@ -228,6 +228,42 @@ def test_resolve_sets_resolved_by_and_note(seed_advisors, tmp_path):
     assert fm_get(f, "resolved_note") == "Shipped in v1.2"
 
 
+def test_a_resolved_mention_is_still_YAML_when_the_note_is_prose(seed_advisors, tmp_path):
+    """The note is free prose and `fm_set` writes its value verbatim, so an ordinary
+    verdict — "Ruled: C0 killed as written" — closed the mapping and made the whole
+    record a ScannerError. Measured 2026-09-15: 5 of 28 mention records on this instance
+    do not parse, the newest written 2026-09-14, five days after the identical defect was
+    fixed in the session writer (#254/#255). The fix never reached this writer (#249).
+
+    Reddens under: dropping the `as_block` at `mention.py:204`.
+    """
+    import yaml
+
+    note = "Ruled: C0 killed as written; T5 recorded not met; C0b are yours."
+    seed_advisors("nexus-ceo", "spark-cmo")
+    mid = _seed_open(tmp_path)
+    run_engine("mention", "resolve", "--id", mid, "--by", "spark-cmo",
+               "--note", note, "--now", _RESOLVE_NOW)
+
+    f = mentions_dir() / "spark-cmo" / "archive" / f"{mid}.md"
+    meta = yaml.safe_load(f.read_text(encoding="utf-8").split("---", 2)[1])
+    assert meta["resolved_note"] == note, "the note must survive serialization intact"
+    assert meta["status"] == "resolved", "the keys after the note must still be reachable"
+
+
+def test_a_note_that_needs_no_quoting_is_written_unchanged(seed_advisors, tmp_path):
+    """The three sibling fields are tokens and timestamps, and 23 of 28 live notes are
+    already plain. Serializing those too would rewrite the corpus for nothing, so
+    `as_block` must stay a no-op wherever the plain form is already valid YAML.
+    """
+    seed_advisors("nexus-ceo", "spark-cmo")
+    mid = _seed_open(tmp_path)
+    run_engine("mention", "resolve", "--id", mid, "--by", "spark-cmo",
+               "--note", "Shipped in v1.2", "--now", _RESOLVE_NOW)
+    f = mentions_dir() / "spark-cmo" / "archive" / f"{mid}.md"
+    assert "resolved_note: Shipped in v1.2" in f.read_text(encoding="utf-8")
+
+
 # R4. --by required
 def test_resolve_by_required(seed_advisors, tmp_path):
     seed_advisors("nexus-ceo", "spark-cmo")
