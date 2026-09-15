@@ -201,7 +201,12 @@ def resolve(mention_id: str, by: str, note: str = "", now: str = "") -> str:
     frontmatter.fm_set(open_file, "status", "resolved")
     frontmatter.fm_set(open_file, "resolved", now)
     frontmatter.fm_set(open_file, "resolved_by", by)
-    frontmatter.fm_set(open_file, "resolved_note", note)
+    # `fm_set` writes its value verbatim, which is right for the three tokens above and
+    # wrong for this one: the note is free prose, and a note that says
+    # "Ruled: C0 killed as written" is a ScannerError, not a note. Same defect as the
+    # session reflexion (#254), in the writer that fix did not reach — 5 of 28 mention
+    # records on this instance do not parse, the newest written 2026-09-14 (#249).
+    frontmatter.fm_set(open_file, "resolved_note", frontmatter.as_block(note, chomp=True))
 
     # 7. Move open_file → archive_file (faithful to mv -f; body preserved)
     open_file.replace(archive_file)

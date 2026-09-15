@@ -117,6 +117,13 @@ def as_flow_list(csv: str) -> str:
 
 
 def fm_set(file: Path, key: str, value: str) -> None:
+    """Replace (or append) `key:` in *file*'s frontmatter, writing *value* VERBATIM.
+
+    Verbatim is the contract: callers pass tokens and timestamps, and quoting those
+    would churn every record. It also means this function cannot make prose safe — a
+    caller with free text must serialize it first with `as_block`, or it writes a
+    document its own readers cannot parse (#249).
+    """
     p = Path(file)
     if not p.is_file():
         raise FileNotFoundError(f"fm_set: {file} not found")
