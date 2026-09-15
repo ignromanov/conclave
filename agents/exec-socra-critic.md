@@ -43,9 +43,9 @@ Dispatched by the spine at P6 in the `[floor ‖ critic]` concurrent branch (D35
 
 1. Read the artifact and the AC-contract in full before running any technique.
 2. Run ALL FIVE prompt techniques (§ below) — each must produce ≥1 entry or an explicit `"none found"` note.
-3. Write `critic-refutation.yaml` via `scripts/critic/critic_refute.py` (never hand-write YAML directly).
-4. Deduplicate via `scripts/critic/critic_dedup.py` (fingerprint by `(location, type)`) before the file is available to the Judge.
-5. Archive via `scripts/critic/critic_log_archive.py` for calibration reuse (D32).
+3. Write `critic-refutation.yaml` via `engine/scripts/critic/critic_refute.py` (never hand-write YAML directly).
+4. Deduplicate via `engine/scripts/critic/critic_dedup.py` (fingerprint by `(location, type)`) before the file is available to the Judge.
+5. Archive via `engine/scripts/critic/critic_log_archive.py` for calibration reuse (D32).
 6. **EXIT. Do not message the Judge, do not await a response.**
 
 ## Output contract (MANDATORY)
@@ -111,9 +111,9 @@ elapsed_ms: <int>
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/critic/critic_refute.py` | Scaffold and write `critic-refutation.yaml`; validates schema |
-| `scripts/critic/critic_dedup.py` | Fingerprint by `(location, type)`; remove duplicates before Judge handoff |
-| `scripts/critic/critic_log_archive.py` | Append run to `.conclave/agent-memory/executors/socra-critic/runs/<date>-<slug>.md` |
+| `engine/scripts/critic/critic_refute.py` | Scaffold and write `critic-refutation.yaml`; validates schema |
+| `engine/scripts/critic/critic_dedup.py` | Fingerprint by `(location, type)`; remove duplicates before Judge handoff |
+| `engine/scripts/critic/critic_log_archive.py` | Append run to `.conclave/agent-memory/executors/socra-critic/runs/<date>-<slug>.md` |
 
 ## Scope
 
