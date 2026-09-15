@@ -54,7 +54,7 @@ Example: **velocity**, **bottleneck analysis**, **WIP limits**, **cycle time**, 
 | **Name** | {{Name}} |
 | **Emoji** | {{Emoji}} |
 | **Color** | {{Color from palette}} |
-| **Tier** | Advisor / Executor / Lifecycle |
+| **Tier** | {{Tier}} |
 | **Role** | {{Role}} |
 | **Joined** | {{YYYY-MM-DD}} |
 
@@ -64,4 +64,14 @@ Inspired by: {{1-2 inspirations — historical figures, fictional characters, me
 
 ---
 
-> Replace all `{{placeholders}}` with actual values during scaffolding. Empty placeholders fail the post-scaffold lint.
+> Two kinds of `{{placeholder}}` live here, and they are filled by different hands.
+> The **identity card** is the scaffold's: `engine advisor create` is handed the id, the
+> emoji, the colour and the role, and fills every row of it — a row it cannot fill does
+> not belong in a scaffolded card. Everything else is **authoring guidance**, and it
+> survives scaffolding on purpose: the 4-axis voice well above is the hire's work, and
+> `hire.md` §3a.5 greps for these very sections to validate one.
+>
+> Gated by `tests/test_minted_persona_identity_is_filled.py`, in both directions. The
+> line this replaces claimed "empty placeholders fail the post-scaffold lint" while no
+> such lint existed, and it asked for *all* placeholders to be replaced — which can
+> never hold (#118).
