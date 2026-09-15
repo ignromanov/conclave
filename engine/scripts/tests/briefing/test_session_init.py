@@ -1684,7 +1684,8 @@ class TestCheckpointRecordExistsFromTheStart:
         monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: ([], []))
         monkeypatch.setattr(session_init, "_step1c_reflexion", lambda a, r: [])
         monkeypatch.setattr(session_init, "_scan_overlays", lambda a, r: [])
-        monkeypatch.setattr(session_init, "_step_cadence_guard", lambda: [])
+        monkeypatch.setattr(session_init, "_step_cadence_guard",
+                            lambda: session_init.CadenceGuard([]))
         return session_init.main(["--advisor", "privacy-trust"])
 
     def test_the_record_is_on_disk_before_any_work_is_done(self, tmp_path, monkeypatch):
@@ -1798,7 +1799,8 @@ class TestCheckpointRecordExistsFromTheStart:
         monkeypatch.setattr(session_init, "_step1_load_briefing", lambda a, r: (0, []))
         monkeypatch.setattr(session_init, "_step1c_reflexion", lambda a, r: [])
         monkeypatch.setattr(session_init, "_scan_overlays", lambda a, r: [])
-        monkeypatch.setattr(session_init, "_step_cadence_guard", lambda: [])
+        monkeypatch.setattr(session_init, "_step_cadence_guard",
+                            lambda: session_init.CadenceGuard([]))
         session_init.main(["--advisor", "privacy-trust"])
 
         out = capsys.readouterr().out
