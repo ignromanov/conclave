@@ -63,9 +63,17 @@ class Intake:
             )
 
 
-def _read_archive(archive_dir: Path) -> tuple[dict[tuple[str, str], str], int]:
-    """Return ({(feedback_id, item_id): status}, count of items whose status is lost)."""
-    closed: dict[tuple[str, str], str] = {}
+def read_closed_items(archive_dir: Path) -> tuple[dict[tuple[str, str], dict], int]:
+    """Return ({(feedback_id, item_id): item}, count of items whose record is lost).
+
+    The one reader of the ledger's three row shapes. It hands back the item bodies, not a
+    derived field, because its two callers need different things from them: `read_intake`
+    below reads only `status`, while `feedback_emit._reopen_matches` recomputes each
+    item's fingerprint from `location` + `category` (GH#297). A reader that returned
+    statuses alone would force the second caller to re-parse the shapes itself, which is
+    how the shapes came to be parsed in three places to begin with.
+    """
+    closed: dict[tuple[str, str], dict] = {}
     unrecoverable = 0
     if not archive_dir.is_dir():
         return closed, unrecoverable
@@ -88,17 +96,14 @@ def _read_archive(archive_dir: Path) -> tuple[dict[tuple[str, str], str], int]:
             if isinstance(item, dict):
                 # Shape 1 wins over shape 2 on the 13 keys both carry: it is written by
                 # the per-item path at the moment that item closed.
-                closed[(feedback_id, str(item.get("id", "")))] = str(item.get("status", ""))
+                closed[(feedback_id, str(item.get("id", "")))] = item
                 continue
 
             items = row.get("items")
             if isinstance(items, list) and items:
                 for entry in items:
                     if isinstance(entry, dict):
-                        closed.setdefault(
-                            (feedback_id, str(entry.get("id", ""))),
-                            str(entry.get("status", "")),
-                        )
+                        closed.setdefault((feedback_id, str(entry.get("id", ""))), entry)
                 continue
 
             unrecoverable += int(row.get("item_count") or 0)
@@ -108,7 +113,7 @@ def _read_archive(archive_dir: Path) -> tuple[dict[tuple[str, str], str], int]:
 
 def read_intake(feedback_root: Path) -> Intake:
     """Census over `ops/feedback/`. The caller has already established the index exists."""
-    closed, unrecoverable = _read_archive(feedback_root / "_archive")
+    closed, unrecoverable = read_closed_items(feedback_root / "_archive")
 
     live = 0
     live_resolved = 0
@@ -135,5 +140,5 @@ def read_intake(feedback_root: Path) -> Intake:
         live=live,
         closed=len(closed),
         unrecoverable=unrecoverable,
-        resolved=live_resolved + sum(1 for st in closed.values() if st == "resolved"),
+        resolved=live_resolved + sum(1 for it in closed.values() if it.get("status") == "resolved"),
     )

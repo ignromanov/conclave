@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from briefing.frontmatter_io import read
 
 SCRIPTS_DIR = Path(__file__).parent.parent.parent  # .../scripts/
@@ -297,28 +299,41 @@ def _draft_review(tmp_path: Path, feedback_id: str,
     return p
 
 
+# The ledger has two shapes that carry item bodies, and `feedback_archive` writes the
+# per-item one far more often: 149 rows against 5 on this instance. Every reopen test
+# below runs on BOTH through this helper, because the detector once read only `items[]`
+# and all three tests passed anyway — they were built exclusively from the rare shape,
+# so the blind spot was invisible to a green suite (GH#297).
+ARCHIVE_SHAPES = ("review", "item")
+
+
 def _seed_archive_resolved(tmp_path: Path, fid: str = "fb-old-xxxxxx",
-                           section: str | None = None) -> None:
+                           section: str | None = None, *, shape: str = "review") -> None:
     arch = tmp_path / "ops" / "feedback" / "_archive"
     arch.mkdir(parents=True, exist_ok=True)
     location: dict[str, str] = {"file": "foo.py"}
     if section:
         location["section"] = section
-    (arch / "2026-06.jsonl").write_text(_json.dumps({
-        "feedback_id": fid,
-        "items": [{"id": "i1", "location": location,
-                   "category": "script-defect", "status": "resolved"}]}) + "\n")
+    item = {"id": "i1", "location": location,
+            "category": "script-defect", "status": "resolved"}
+    row = ({"feedback_id": fid, "items": [item]} if shape == "review"
+           else {"kind": "item", "feedback_id": fid, "item": item})
+    (arch / "2026-06.jsonl").write_text(_json.dumps(row) + "\n")
 
 
-def test_finalize_reopens_on_archived_resolved_match(tmp_path):
+@pytest.mark.parametrize("shape", ARCHIVE_SHAPES)
+def test_finalize_reopens_on_archived_resolved_match(tmp_path, shape):
     """A new item whose fingerprint matches an archived RESOLVED item is stamped
     re-occurred + reopened_from at finalize (093 P1 T5, closes #89).
 
     Both sides carry a section, so the fingerprint identifies one defect rather than a
     whole file. Fingerprints are section-inclusive, so a match here proves both sides
     named the SAME section — which is what makes 'the fix regressed' a defensible claim.
+
+    Reddens under: restoring the `for item in review.get("items", [])` archive walk,
+    which sees the `review` shape and nothing else (GH#297).
     """
-    _seed_archive_resolved(tmp_path, section="parse_args")
+    _seed_archive_resolved(tmp_path, section="parse_args", shape=shape)
     new = _draft_review(tmp_path, "fb-new-bbbbbb", section="parse_args")
     res = _run_finalize(tmp_path, new)
     assert res.returncode == 0, res.stderr
@@ -327,7 +342,8 @@ def test_finalize_reopens_on_archived_resolved_match(tmp_path):
     assert item["reopened_from"] == "fb-old-xxxxxx:i1"
 
 
-def test_finalize_abstains_when_the_match_is_file_level_only(tmp_path):
+@pytest.mark.parametrize("shape", ARCHIVE_SHAPES)
+def test_finalize_abstains_when_the_match_is_file_level_only(tmp_path, shape):
     """A bare file+category match is not evidence a fix regressed (#59).
 
     Without a section the fingerprint buckets an ENTIRE FILE: any two script-defects in
@@ -335,7 +351,7 @@ def test_finalize_abstains_when_the_match_is_file_level_only(tmp_path):
     and 093 Component E reads that field as proof an earlier fix failed. Abstain, and say
     why, so the author can add the section that would make the claim checkable.
     """
-    _seed_archive_resolved(tmp_path)
+    _seed_archive_resolved(tmp_path, shape=shape)
     new = _draft_review(tmp_path, "fb-new-eeeeee")
     res = _run_finalize(tmp_path, new)
     assert res.returncode == 0, res.stderr
@@ -345,12 +361,13 @@ def test_finalize_abstains_when_the_match_is_file_level_only(tmp_path):
     assert "section" in res.stderr.lower(), res.stderr
 
 
-def test_finalize_no_reopen_when_live_nonterminal_dup(tmp_path):
+@pytest.mark.parametrize("shape", ARCHIVE_SHAPES)
+def test_finalize_no_reopen_when_live_nonterminal_dup(tmp_path, shape):
     """Guard: an ordinary still-open duplicate at the same fingerprint must NOT be
     misclassified as a regression even when an archived resolved match exists."""
     from feedback.schema import fingerprint
     fp = fingerprint({"file": "foo.py", "section": "parse_args"}, "script-defect")
-    _seed_archive_resolved(tmp_path, section="parse_args")
+    _seed_archive_resolved(tmp_path, section="parse_args", shape=shape)
     idx = tmp_path / "ops" / "feedback" / "_index"
     idx.mkdir(parents=True, exist_ok=True)
     (idx / "index.jsonl").write_text(_json.dumps({
@@ -361,3 +378,50 @@ def test_finalize_no_reopen_when_live_nonterminal_dup(tmp_path):
     assert res.returncode == 0, res.stderr
     item = read(new)[0]["items"][0]
     assert item["status"] != "re-occurred"
+
+
+def test_finalize_survives_a_corrupt_index_line(tmp_path):
+    """A bad row in someone else's register must not strand this author with a draft.
+
+    `feedback_index` reports `index.malformed_line` because corruption was observed on
+    this instance, not imagined. The parse here used to be bare, so one such line raised
+    JSONDecodeError out of `_reopen_matches` — which runs BEFORE schema validation, so
+    the failure was neither a REJECT nor a finalize, just a traceback (GH#297).
+
+    Reddens under: dropping the try/except around the index `json.loads`.
+    """
+    _seed_archive_resolved(tmp_path, section="parse_args", shape="item")
+    idx = tmp_path / "ops" / "feedback" / "_index"
+    idx.mkdir(parents=True, exist_ok=True)
+    (idx / "index.jsonl").write_text("{not json at all\n")
+
+    new = _draft_review(tmp_path, "fb-new-ffffff", section="parse_args")
+    res = _run_finalize(tmp_path, new)
+    assert res.returncode == 0, res.stderr
+    assert "Traceback" not in res.stderr, res.stderr
+    item = read(new)[0]["items"][0]
+    assert item["status"] == "re-occurred", "the corrupt line also cost the real match"
+
+
+def test_the_per_item_row_decides_when_both_shapes_carry_the_item(tmp_path):
+    """Thirteen keys in the live ledger appear in both shapes. The per-item row is written
+    at the moment that item closed, so it is the later and more specific record — and here
+    it says `rejected`. A reader that let the whole-review row win would claim a
+    regression against a defect that was never fixed.
+    """
+    arch = tmp_path / "ops" / "feedback" / "_archive"
+    arch.mkdir(parents=True, exist_ok=True)
+    loc = {"file": "foo.py", "section": "parse_args"}
+    (arch / "2026-06.jsonl").write_text(
+        _json.dumps({"kind": "item", "feedback_id": "fb-old-xxxxxx",
+                     "item": {"id": "i1", "location": loc,
+                              "category": "script-defect", "status": "rejected"}}) + "\n"
+        + _json.dumps({"feedback_id": "fb-old-xxxxxx", "item_count": 1,
+                       "items": [{"id": "i1", "location": loc,
+                                  "category": "script-defect", "status": "resolved"}]}) + "\n")
+
+    new = _draft_review(tmp_path, "fb-new-999999", section="parse_args")
+    res = _run_finalize(tmp_path, new)
+    assert res.returncode == 0, res.stderr
+    item = read(new)[0]["items"][0]
+    assert item["status"] == "open", "a rejected item is not a fix that regressed"
