@@ -33,7 +33,10 @@ not *one completed when the file was touched*.
 
 ### Step 0 — Validation gate (automatic)
 
-`feedback_triage.py` rebuilds the index before any subcommand runs. If any
+`feedback_triage.py` reads every review before any subcommand runs — a write
+path (`--set`, `--complete-triage`) rebuilds the index with what it finds, a
+reporting path (`--check`, `--digest`, `--monthly`) reports over it and writes
+nothing (#102). Both see the same corpus and apply the same gate. If any
 `_draft:false` (author-complete) review fails schema validation, triage **aborts
 immediately** with a non-zero exit code and prints:
 
@@ -60,8 +63,8 @@ regardless of status, which on 2026-08-18 was 265 rows against the 66 that neede
 classifying. `--json` emits the same rows machine-readably, with the `feedback_id` /
 `item_id` pairs Step 3 needs.
 
-`feedback_triage.py` always rebuilds the index first (defensive), then deduplicates
-index rows on the emission-time `fingerprint`. Duplicate items increment `hit_count`
+`--digest` scans the reviews without writing the index, then deduplicates
+the rows it read on the emission-time `fingerprint`. Duplicate items increment `hit_count`
 instead of adding rows. The digest renders three columns:
 
 | Column | Content |

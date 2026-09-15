@@ -31,6 +31,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 # Interpreter floor, enforced before the first thing that can fail below it — here, the lazy
 # `enginelib` imports further down, whose module-level PEP 604 annotations are evaluated on
@@ -540,7 +541,26 @@ def _check_critical_feedback_pending(root: Path) -> int:
 _CADENCE_DETAIL_LINES = 3
 
 
-def _step_cadence_guard() -> list[str]:
+class CadenceGuard(NamedTuple):
+    """What one `--check` run tells the dashboard — both of the things it tells it.
+
+    `critical_open` is here rather than re-derived because until #102 the G6 row below
+    read it out of `_index/index.jsonl`, and that file was current only because this
+    guard's subprocess had rebuilt it moments earlier. Neither step named the other; the
+    coupling was the write. Now the guard runs once and hands the count over, and the
+    only command that rebuilds the index is one that was going to write anyway.
+
+    None means the run could not measure it — an older engine whose `--check` predates
+    the key, or a run that failed before printing. It is NOT zero: a count nobody took
+    and a count that came back empty are different facts, and the caller keeps them
+    apart rather than rendering the first as the second.
+    """
+
+    lines: list[str]
+    critical_open: int | None = None
+
+
+def _step_cadence_guard() -> CadenceGuard:
     """Run feedback_triage.py --check; return lines to print if triage is due.
 
     Returns a list with one 'feedback:' line when triage is due, empty list
@@ -553,7 +573,8 @@ def _step_cadence_guard() -> list[str]:
     """
     triage_script = _engine_root() / "scripts" / "feedback" / "feedback_triage.py"
     if not triage_script.is_file():
-        return ["  feedback: warning — feedback_triage.py not found, skipping cadence check"]
+        return CadenceGuard(["  feedback: warning — feedback_triage.py not found, "
+                             "skipping cadence check"])
 
     try:
         result = subprocess.run(
@@ -562,7 +583,7 @@ def _step_cadence_guard() -> list[str]:
             text=True,
         )
     except OSError as exc:
-        return [f"  feedback: warning — could not run feedback_triage.py: {exc}"]
+        return CadenceGuard([f"  feedback: warning — could not run feedback_triage.py: {exc}"])
 
     if result.returncode != 0:
         # `capture_output=True` holds BOTH streams, and until 2026-09-15 this branch
@@ -582,13 +603,13 @@ def _step_cadence_guard() -> list[str]:
         # captured and dropped.
         detail = [ln.rstrip() for ln in result.stderr.splitlines() if ln.strip()]
         shown, hidden = detail[:_CADENCE_DETAIL_LINES], detail[_CADENCE_DETAIL_LINES:]
-        return [
+        return CadenceGuard([
             f"  feedback: warning — feedback_triage.py --check exited {result.returncode}, "
             f"skipping cadence check",
             *(f"    {ln}" for ln in shown),
             *([f"    … and {len(hidden)} more line(s) — re-run the command to see them"]
               if hidden else []),
-        ]
+        ])
 
     # Parse triage_due=<true|false>, open_items=<n>, new_reviews=<n> and
     # unreachable_accepted=<n> from stdout. new_reviews and unreachable_accepted are
@@ -600,6 +621,7 @@ def _step_cadence_guard() -> list[str]:
     new_reviews: int | None = None
     unreachable: int | None = None
     skipped_invalid: int | None = None
+    critical_open: int | None = None
     for line in result.stdout.splitlines():
         if line.startswith("triage_due="):
             triage_due = line.split("=", 1)[1].strip().lower() == "true"
@@ -621,6 +643,11 @@ def _step_cadence_guard() -> list[str]:
         elif line.startswith("skipped_invalid_reviews="):
             try:
                 skipped_invalid = int(line.split("=", 1)[1].strip())
+            except ValueError:
+                pass
+        elif line.startswith("critical_open="):
+            try:
+                critical_open = int(line.split("=", 1)[1].strip())
             except ValueError:
                 pass
 
@@ -656,7 +683,7 @@ def _step_cadence_guard() -> list[str]:
         lines.append(f"  feedback: {skipped_invalid} author-complete review(s) skipped as "
                       f"schema-invalid and absent from the figures above — re-run "
                       f"`feedback_emit.py --finalize <path>` on each")
-    return lines
+    return CadenceGuard(lines, critical_open)
 
 
 # ---------------------------------------------------------------------------
@@ -713,7 +740,8 @@ def _advisor_summary(advisor: str, root: Path) -> tuple[int, list[str]]:
         lines.append("  overlays: none")
 
     # Cadence guard
-    lines.extend(_step_cadence_guard())
+    cadence = _step_cadence_guard()
+    lines.extend(cadence.lines)
 
     # Resolved findings (G2)
     resolved = _load_resolved_findings(advisor, root)
@@ -723,7 +751,15 @@ def _advisor_summary(advisor: str, root: Path) -> tuple[int, list[str]]:
             lines.append(f"    - [{line}]")
 
     # Critical feedback pending (G6)
-    crit_count = _check_critical_feedback_pending(root)
+    #
+    # Counted by the cadence guard above, from the reviews it already walked. Reading
+    # `_index/index.jsonl` here instead was correct only because that guard's subprocess
+    # rebuilt the file first — a dashboard row standing on a neighbouring row's side
+    # effect (#102). The fallback below is not dead: on an engine whose `--check`
+    # predates the `critical_open` key, that older triage still rebuilds the index, so
+    # the file IS current in exactly the case the key is missing.
+    crit_count = (cadence.critical_open if cadence.critical_open is not None
+                  else _check_critical_feedback_pending(root))
     if crit_count > 0:
         lines.append(f"  feedback_critical: {crit_count} items pending")
 

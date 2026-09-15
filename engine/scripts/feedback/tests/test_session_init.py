@@ -142,3 +142,51 @@ def test_session_init_surfaces_critical_pending_line_every_session(tmp_path):
     assert "2" in combined, (
         f"critical count (2) not shown in output:\n{combined}"
     )
+
+
+def test_the_critical_count_costs_no_write_and_still_reads_the_reviews(tmp_path):
+    """G6 reports the critical items without anything rebuilding the index (#102).
+
+    Two facts in one run, because either alone is satisfiable by the wrong code:
+
+    * the index file is byte- AND mtime-identical afterwards. Rendering a dashboard used
+      to rewrite it — the cadence guard's `--check` subprocess rebuilt it, and G6 then
+      read the file that subprocess had just refreshed. No call and no argument joined
+      the two steps; the write did.
+    * the count is still 2. A hand-written index is seeded here holding ONE critical row
+      that no review contains, so a G6 that fell back to reading the file would print 1.
+      That is the assertion that fails if `critical_open` stops being emitted by
+      `--check` or stops being read by `render_dashboard`.
+
+    The docstring of `_make_feedback_reviews` above describes the world before this: a
+    hand-written index was pointless there because the rebuild overwrote it first. Here
+    it is the instrument — it survives, and its wrongness is what proves the count came
+    from the reviews.
+    """
+    _stub_briefing(tmp_path, "kai-cto")
+    _make_feedback_reviews(tmp_path, [
+        {"id": "it-crit-1", "severity": "critical", "status": "open"},
+        {"id": "it-crit-2", "severity": "critical", "status": "open"},
+        {"id": "it-low-1", "severity": "low", "status": "open"},
+    ])
+    idx = tmp_path / "ops" / "feedback" / "_index" / "index.jsonl"
+    idx.parent.mkdir(parents=True, exist_ok=True)
+    idx.write_text(
+        '{"feedback_id": "fb-ghost-999999", "item_id": "it-ghost", '
+        '"severity": "critical", "status": "open"}\n',
+        encoding="utf-8",
+    )
+    before_bytes, before_ns = idx.read_bytes(), idx.stat().st_mtime_ns
+
+    result = _run_init(tmp_path, advisor="kai-cto")
+    combined = result.stdout + result.stderr
+
+    assert idx.read_bytes() == before_bytes, "rendering the dashboard rewrote the index"
+    assert idx.stat().st_mtime_ns == before_ns, (
+        "rendering the dashboard rewrote the index — identical bytes, new mtime, the "
+        "shape #102 was measured in"
+    )
+    assert "feedback_critical: 2 items pending" in combined, (
+        f"the count did not come from the reviews; a fallback to the seeded index would "
+        f"report 1:\n{combined}"
+    )

@@ -3,7 +3,9 @@
 CLI: python feedback_triage.py [--digest] [--check] [--monthly]
                                 [--set <feedback_id> <item_id> <status> [--owner <a>]]
 
-First step always: run feedback_index.py rebuild (defensive — resolves B2).
+First step always: read every review. A path that writes (--set, --complete-triage)
+rebuilds the index from what it read; a path that only reports (--check, --digest,
+--monthly) writes nothing at all (#102, resolves B2).
 
 --digest   Dedup index rows on fingerprint (duplicates → hit_count); print the
            3-column digest (what · why · urgency); critical-severity rows sorted top.
@@ -121,7 +123,11 @@ _NON_DEFECT_CATEGORIES = frozenset({"positive", "near-miss"})
 
 
 class IndexRebuild(NamedTuple):
-    """What a rebuild did, for a caller that must decide whether to continue.
+    """What one index run did, for a caller that must decide whether to continue.
+
+    Carried by the read-only scan as well as by the rebuild since #102. The three fields
+    mean the same thing either way — a scan that could not read a file leaves a caller
+    exactly as unable to report as a rebuild that could not write one.
 
     `fatal` is the decision, computed once here so the two callers cannot drift apart.
     It is NOT `rc != 0`: one author's schema-invalid review is survivable by the
@@ -160,18 +166,55 @@ def _rebuild_index_reporting() -> IndexRebuild:
     """
     from feedback import feedback_index  # noqa: PLC0415
 
-    # Read from the module rather than restated here, so the two vocabularies are one.
-    survivable = {feedback_index.REASON_AUTHOR_COMPLETE_INVALID}
     report: dict = {}
     # --rebuild: triage must see a clean index — stale rows from archived/deleted
     # reviews would otherwise resurface as phantom clusters in the digest (#9).
     rc = feedback_index.main(["--rebuild"], report=report)
+    return _classify(rc, report)
+
+
+def _classify(rc: int, report: dict) -> IndexRebuild:
+    """Read one index run's outcome into the verdict its caller has to act on.
+
+    Shared by the rebuild above and the read-only scan below, because the 2026-09-15
+    ruling — one author's schema-invalid review is survivable, every other non-zero is
+    not — must not depend on whether the run that hit it wrote anything. A second copy
+    of this predicate is how a path acquires its own idea of what is survivable.
+    """
+    from feedback import feedback_index  # noqa: PLC0415
+
+    # Read from the module rather than restated here, so the two vocabularies are one.
+    survivable = {feedback_index.REASON_AUTHOR_COMPLETE_INVALID}
     reasons = set(report.get("exit_reasons") or ())
     return IndexRebuild(
         rc=rc,
         skipped_reviews=list(report.get("author_complete_drops") or []),
         fatal=rc != 0 and not (reasons and reasons <= survivable),
     )
+
+
+def _scan_index_reporting() -> tuple[list[dict], IndexRebuild]:
+    """The rows a rebuild WOULD publish, for a run that is not entitled to publish them.
+
+    Triage's read commands — `--check`, `--digest`, `--monthly` — report over the corpus;
+    they do not change it. Until #102 they all reached it through `feedback_index
+    --rebuild`, so rendering a report REWROTE the operator's index: `session_init` runs
+    `--check` on every session start to print one dashboard line, and measured on
+    2026-09-15 that line moved the live `index.jsonl` mtime while leaving its bytes
+    identical. A caller is entitled to assume a command called `check` is safe.
+
+    The rows come from a full scan rather than from the index file, so dropping the write
+    costs no freshness: they are computed from the reviews themselves and are, if
+    anything, fresher than the file a rebuild would have left behind. What is given up is
+    only the side effect — which is what spec 086 specified all along ("`/team.start`
+    only READS the pre-built index; it never rebuilds"), and what `commands/triage.md`
+    already claimed `--check` did ("without mutating anything").
+    """
+    from feedback import feedback_index  # noqa: PLC0415
+
+    report: dict = {}
+    rows, rc = feedback_index.scan(report)
+    return rows, _classify(rc, report)
 
 
 def skipped_reviews_note(skipped: list[str], absent_from: str) -> str:
@@ -451,6 +494,13 @@ def cmd_check(rows: list[dict], triage_marker: Path, skipped_invalid: int = 0) -
     print(f"days_since={days_since_str}")
     print(f"unreachable_accepted={len(unreachable_accepted(rows))}")
     print(f"skipped_invalid_reviews={skipped_invalid}")
+    # Not a cadence figure, and not rendered on this line at all: session_init's G6 row
+    # counts open critical items, and until #102 it got them by reading the index file
+    # that THIS command had just rebuilt ten lines earlier. Two dashboard steps joined by
+    # a side effect, with no call and no argument between them. Emitting the count here
+    # makes the dependency an argument; the predicate is `severity == critical and
+    # status == open`, the same one G6 applied to the file.
+    print(f"critical_open={sum(1 for r in rows if r.get('severity') == 'critical' and r.get('status') == 'open')}")
 
 
 def cmd_monthly(rows: list[dict]) -> None:
@@ -718,23 +768,45 @@ def main(argv: list[str] | None = None) -> int:
 
     root = repo_root()
 
+    # Whether this invocation WRITES is what decides how it reaches the corpus — not the
+    # name of the flag. `--set` rewrites a review file and `--complete-triage` moves the
+    # cadence clock; the other three only report. Until #102 the distinction did not
+    # exist: every path rebuilt the index first, so `--check` — the one session_init runs
+    # on EVERY session start to render a single dashboard line — mutated instance state
+    # in order to read it.
+    writes = bool(args.set or args.complete_triage)
+
     # Serialize the whole triage mutation — index rebuild + any write-back — on a
     # DATA-root advisory lock, so two concurrent triage sessions on the same root
     # can't corrupt index.jsonl or clobber each other's review write-back (#51).
-    lock_file = lock_path_for(triage_lock_target(root))
-    lock_timeout = int(os.environ.get("CONCLAVE_TRIAGE_LOCK_TIMEOUT", "5"))
+    #
+    # A reporting run takes no lock because it has nothing to serialize: it writes
+    # neither the index nor a review. Nor can it read a torn review — every writer on
+    # this path goes through snapshot_write (tmp sibling + os.replace), so a concurrent
+    # reader sees the whole old file or the whole new one, never half of either. The
+    # lock was costing what it could not buy: four advisors starting at once serialised
+    # on it, each for a full walk of the review tree, to print one line apiece.
     lock = contextlib.ExitStack()
+    if writes:
+        lock_file = lock_path_for(triage_lock_target(root))
+        lock_timeout = int(os.environ.get("CONCLAVE_TRIAGE_LOCK_TIMEOUT", "5"))
+        try:
+            lock.enter_context(with_lock(lock_file, timeout=lock_timeout))
+        except LockTimeout:
+            print(f"ERROR: could not acquire triage lock at {lock_file} "
+                  f"(concurrent triage session?)", file=sys.stderr)
+            return 1
     try:
-        lock.enter_context(with_lock(lock_file, timeout=lock_timeout))
-    except LockTimeout:
-        print(f"ERROR: could not acquire triage lock at {lock_file} "
-              f"(concurrent triage session?)", file=sys.stderr)
-        return 1
-    try:
-        # Step 1: Always rebuild index defensively.
+        # Step 1: see the corpus whole, before reporting over it or writing into it.
         # Non-zero exit means _draft:false reviews are schema-invalid — abort triage
-        # so corrupted reviews never silently bypass the queue.
-        rebuild = _rebuild_index_reporting()
+        # so corrupted reviews never silently bypass the queue. The two branches differ
+        # only in whether the result is published to disk; the verdict they read is
+        # derived by one function from one field, so neither can drift from the other.
+        rows: list[dict] | None = None
+        if writes:
+            rebuild = _rebuild_index_reporting()
+        else:
+            rows, rebuild = _scan_index_reporting()
         skipped_reviews = rebuild.skipped_reviews
         if rebuild.fatal:
             # Still fatal: a file the run could not read, a lock it could not take, or a
@@ -758,8 +830,11 @@ def main(argv: list[str] | None = None) -> int:
             print(skipped_reviews_note(skipped_reviews, "every figure below"),
                   file=sys.stderr)
 
-        idx_path = index_path()
-        rows = _load_index(idx_path)
+        if rows is None:
+            # The write path reads back the index it has just rebuilt. The reporting
+            # path already holds the same rows — computed from the reviews, never
+            # written — so it never touches this file at all.
+            rows = _load_index(index_path())
         triage_marker = last_triage_marker()
 
         if args.set:

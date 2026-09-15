@@ -246,7 +246,8 @@ class TestMainArgValidation:
         monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: ([], []))
         monkeypatch.setattr(session_init, "_step1c_reflexion", lambda a, r: [])
         monkeypatch.setattr(session_init, "_scan_overlays", lambda a, r: [])
-        monkeypatch.setattr(session_init, "_step_cadence_guard", lambda: [])
+        monkeypatch.setattr(session_init, "_step_cadence_guard",
+                        lambda: session_init.CadenceGuard([]))
         rc = session_init.main(["--advisor", "privacy-trust"])
         assert rc != 1
         assert "not in instance registry" not in capsys.readouterr().err
@@ -266,7 +267,8 @@ class TestMainArgValidation:
         monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: ([], []))
         monkeypatch.setattr(session_init, "_step1c_reflexion", lambda a, r: [])
         monkeypatch.setattr(session_init, "_scan_overlays", lambda a, r: [])
-        monkeypatch.setattr(session_init, "_step_cadence_guard", lambda: [])
+        monkeypatch.setattr(session_init, "_step_cadence_guard",
+                        lambda: session_init.CadenceGuard([]))
 
         hot = root / "agent-memory" / "hot.md"
         assert not hot.is_file()
@@ -296,7 +298,8 @@ class TestMainArgValidation:
         monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: ([], []))
         monkeypatch.setattr(session_init, "_step1c_reflexion", lambda a, r: [])
         monkeypatch.setattr(session_init, "_scan_overlays", lambda a, r: [])
-        monkeypatch.setattr(session_init, "_step_cadence_guard", lambda: [])
+        monkeypatch.setattr(session_init, "_step_cadence_guard",
+                        lambda: session_init.CadenceGuard([]))
         session_init.main(["--advisor", advisor])
 
     def test_registers_the_session_in_now(self, tmp_path, monkeypatch):
@@ -359,7 +362,8 @@ class TestUnclosedSessionIsSurfaced:
         monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: ([], []))
         monkeypatch.setattr(session_init, "_step1c_reflexion", lambda a, r: [])
         monkeypatch.setattr(session_init, "_scan_overlays", lambda a, r: [])
-        monkeypatch.setattr(session_init, "_step_cadence_guard", lambda: [])
+        monkeypatch.setattr(session_init, "_step_cadence_guard",
+                        lambda: session_init.CadenceGuard([]))
         session_init.main(["--advisor", "privacy-trust"])
 
     def _root(self, tmp_path: Path) -> Path:
@@ -819,7 +823,7 @@ class TestCadenceGuard:
         self._pin_engine_root(monkeypatch, root)
         self._make_triage_marker(root, age_days=8)
         self._make_feedback_script(root, triage_due=True, open_items=3)
-        lines = session_init._step_cadence_guard()
+        lines = session_init._step_cadence_guard().lines
         assert any("feedback:" in ln for ln in lines)
         assert any("triage due" in ln.lower() for ln in lines)
 
@@ -829,7 +833,7 @@ class TestCadenceGuard:
         self._pin_engine_root(monkeypatch, root)
         self._make_triage_marker(root, age_days=1)  # fresh marker, not stale by time
         self._make_feedback_script(root, triage_due=True, open_items=15)
-        lines = session_init._step_cadence_guard()
+        lines = session_init._step_cadence_guard().lines
         # The rendered clause, not merely "feedback:" — the guard's own failure warning
         # carries that prefix too, which is how this assertion used to hold with the
         # fake never running (GH#215).
@@ -841,7 +845,7 @@ class TestCadenceGuard:
         self._pin_engine_root(monkeypatch, root)
         self._make_triage_marker(root, age_days=1)
         self._make_feedback_script(root, triage_due=False, open_items=2)
-        lines = session_init._step_cadence_guard()
+        lines = session_init._step_cadence_guard().lines
         assert not any("feedback:" in ln for ln in lines)
 
     def test_no_marker_means_due(self, tmp_path, monkeypatch):
@@ -849,7 +853,7 @@ class TestCadenceGuard:
         root = _make_root(tmp_path)
         self._pin_engine_root(monkeypatch, root)
         self._make_feedback_script(root, triage_due=True, open_items=0)
-        lines = session_init._step_cadence_guard()
+        lines = session_init._step_cadence_guard().lines
         assert any("triage due — 0 open items" in ln for ln in lines), lines
 
     def test_skipped_invalid_reviews_gets_its_own_line(self, tmp_path, monkeypatch):
@@ -867,7 +871,7 @@ class TestCadenceGuard:
         self._make_feedback_script(root, triage_due=False, open_items=2,
                                    skipped_invalid=2)
 
-        lines = session_init._step_cadence_guard()
+        lines = session_init._step_cadence_guard().lines
 
         assert any("2 author-complete review(s) skipped" in ln for ln in lines), lines
         # Independent of triage_due, exactly like the unreachable_accepted clause.
@@ -893,7 +897,7 @@ class TestCadenceGuard:
                                    skipped_invalid=0,
                                    unreachable=_FAKE_ONLY_UNREACHABLE)
 
-        lines = session_init._step_cadence_guard()
+        lines = session_init._step_cadence_guard().lines
 
         assert any(str(_FAKE_ONLY_UNREACHABLE) in ln for ln in lines), (
             f"the scaffolded script is not what ran: {lines}"
@@ -913,7 +917,7 @@ class TestCadenceGuard:
         self._make_feedback_script(root, triage_due=False, open_items=2,
                                    unreachable=_FAKE_ONLY_UNREACHABLE)
 
-        lines = session_init._step_cadence_guard()
+        lines = session_init._step_cadence_guard().lines
 
         assert any(str(_FAKE_ONLY_UNREACHABLE) in ln for ln in lines), (
             f"the scaffolded script is not what ran: {lines}"
@@ -941,7 +945,7 @@ class TestCadenceGuard:
             f"sys.exit(1)\n",
             encoding="utf-8")
 
-        lines = session_init._step_cadence_guard()
+        lines = session_init._step_cadence_guard().lines
 
         assert any("REJECT ops/feedback/x.md" in ln for ln in lines), (
             f"the diagnosis was captured and discarded again: {lines}")
@@ -967,7 +971,7 @@ class TestCadenceGuard:
             f"sys.exit(1)\n",
             encoding="utf-8")
 
-        lines = session_init._step_cadence_guard()
+        lines = session_init._step_cadence_guard().lines
 
         assert len(lines) <= session_init._CADENCE_DETAIL_LINES + 2, (
             f"the banner grew without bound: {lines}")
@@ -987,7 +991,7 @@ class TestCadenceGuard:
         """
         root = _make_root(tmp_path)
         self._pin_engine_root(monkeypatch, root)
-        lines = session_init._step_cadence_guard()
+        lines = session_init._step_cadence_guard().lines
         assert any("not found" in ln for ln in lines), lines
         # "not found" and "exited N" are different diagnoses; rendering the second here
         # would mean the guard reached some other engine's script.
@@ -1015,7 +1019,7 @@ class TestCadenceGuard:
             f"Path(__file__).with_name({self._RAN_MARKER!r}).touch()\n"
             f"sys.exit(42)\n",
             encoding="utf-8")
-        lines = session_init._step_cadence_guard()
+        lines = session_init._step_cadence_guard().lines
         assert lines, "a failed check must be reported, never silently equal to []"
         assert any("exited 42" in ln for ln in lines), lines
 
@@ -1029,7 +1033,7 @@ class TestCadenceGuard:
         root = _make_root(tmp_path)
         self._pin_engine_root(monkeypatch, root)
         self._make_feedback_script(root, triage_due=True, open_items=7, exit_code=42)
-        lines = session_init._step_cadence_guard()
+        lines = session_init._step_cadence_guard().lines
         assert any("exited 42" in ln for ln in lines), lines
         assert not any(ln.startswith("  feedback: triage due") for ln in lines)
 
@@ -1082,7 +1086,7 @@ class TestCadenceGuard:
         self._make_feedback_script_with_unreachable(
             root, triage_due=False, unreachable=30
         )
-        lines = session_init._step_cadence_guard()
+        lines = session_init._step_cadence_guard().lines
         assert any("reachable by nothing" in ln for ln in lines)
         assert any("30" in ln for ln in lines)
         assert not any(ln.startswith("  feedback: triage due") for ln in lines)
@@ -1095,7 +1099,7 @@ class TestCadenceGuard:
         self._make_feedback_script_with_unreachable(
             root, triage_due=False, unreachable=None
         )
-        lines = session_init._step_cadence_guard()
+        lines = session_init._step_cadence_guard().lines
         assert not any("reachable by nothing" in ln for ln in lines)
         # Was `not any("0" in ln ...)`: a bare-character search that would also fire on
         # "10 open items". The claim is about this clause rendering a zero, not about the
@@ -1108,7 +1112,7 @@ class TestCadenceGuard:
         self._make_feedback_script_with_unreachable(
             root, triage_due=False, unreachable=0
         )
-        lines = session_init._step_cadence_guard()
+        lines = session_init._step_cadence_guard().lines
         assert not any("reachable by nothing" in ln for ln in lines)
 
     def test_uses_sys_executable_not_bare_python3(self, tmp_path, monkeypatch):
@@ -1154,7 +1158,8 @@ class TestRenderDashboard:
         monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: ([], []))
         monkeypatch.setattr(session_init, "_step1c_reflexion", lambda a, r: [])
         monkeypatch.setattr(session_init, "_scan_overlays", lambda a, r: [])
-        monkeypatch.setattr(session_init, "_step_cadence_guard", lambda: [])
+        monkeypatch.setattr(session_init, "_step_cadence_guard",
+                        lambda: session_init.CadenceGuard([]))
         result = session_init.render_dashboard(root)
         assert "privacy-trust" in result
 
@@ -1166,7 +1171,8 @@ class TestRenderDashboard:
         monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: ([], []))
         monkeypatch.setattr(session_init, "_step1c_reflexion", lambda a, r: [])
         monkeypatch.setattr(session_init, "_scan_overlays", lambda a, r: [])
-        monkeypatch.setattr(session_init, "_step_cadence_guard", lambda: [])
+        monkeypatch.setattr(session_init, "_step_cadence_guard",
+                        lambda: session_init.CadenceGuard([]))
         monkeypatch.setattr(
             session_init, "_load_resolved_findings",
             lambda a, r, top_n=3: ["[RESOLVED 2026-01-01] team.privacy-trust: example fix"],

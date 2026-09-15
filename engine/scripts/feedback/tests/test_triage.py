@@ -210,15 +210,14 @@ def test_monthly_writes_nothing(tmp_path):
     assert "fb-777-ddddd" in result.stdout, "the zombie must be listed at all"
     after = {p: p.read_bytes() for p in sorted(tmp_path.rglob("*")) if p.is_file()}
 
-    # The index is a cache the command rebuilds defensively; every other file must be
-    # untouched, and nothing may appear or vanish outside it.
-    def _tracked(d):
-        return {k: v for k, v in d.items() if "_index" not in k.parts}
-
-    assert set(_tracked(after)) == set(_tracked(before)), (
-        f"files appeared/vanished: "
-        f"{set(_tracked(after)) ^ set(_tracked(before))}")
-    for path, blob in _tracked(before).items():
+    # No carve-out. This assertion used to exempt `_index/`, with the note "the index is
+    # a cache the command rebuilds defensively" — the defect of #102 written into the
+    # suite as a licence. Removing the exemption and watching this test stay green is
+    # what proves a reporting command now writes nothing at all, and the exemption is
+    # what kept the suite from ever saying otherwise.
+    assert set(after) == set(before), (
+        f"files appeared/vanished: {set(after) ^ set(before)}")
+    for path, blob in before.items():
         assert after[path] == blob, f"--monthly rewrote {path}"
     assert review.read_bytes() == before[review]
 
@@ -1091,7 +1090,15 @@ def _index_lock_path(root, monkeypatch):
     return lock_path_for(index_lock_target())
 
 
-def _check_with_the_index_lock_held(root, monkeypatch):
+def _with_the_index_lock_held(root, monkeypatch, args):
+    """Run triage with another process holding the index lock.
+
+    Parameterised by `args` since #102: the pre-write rebuild these tests are about is
+    reached only by a run that WRITES. A reporting run (`--check`, `--digest`,
+    `--monthly`) no longer touches the index at all, so holding this lock against one
+    contends nothing — see the read-only test at the end of this block, which pins that
+    as a property rather than leaving it as the reason these tests stopped failing.
+    """
     lock_file = _index_lock_path(root, monkeypatch)
     stop, held = threading.Event(), threading.Event()
 
@@ -1104,8 +1111,7 @@ def _check_with_the_index_lock_held(root, monkeypatch):
     t.start()
     assert held.wait(10), "the holder thread never took the index lock"
     try:
-        return run_triage(root, ["--check"],
-                          env_extra={"CONCLAVE_INDEX_LOCK_TIMEOUT": "1"})
+        return run_triage(root, args, env_extra={"CONCLAVE_INDEX_LOCK_TIMEOUT": "1"})
     finally:
         stop.set()
         t.join(5)
@@ -1120,7 +1126,8 @@ def test_a_lock_timeout_aborts_when_the_corpus_is_otherwise_clean(tmp_path, monk
     _write_review(tmp_path, "2026-05-22", "atlas-valid.md",
                   _valid_review_meta(feedback_id="fb-valid-aaaaaa"))
 
-    result = _check_with_the_index_lock_held(tmp_path, monkeypatch)
+    result = _with_the_index_lock_held(
+        tmp_path, monkeypatch, ["--set", "fb-valid-aaaaaa", "it-1", "resolved"])
 
     assert result.returncode != 0, (
         f"a lock timeout must abort; stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -1133,9 +1140,13 @@ def test_a_lock_timeout_still_aborts_when_a_review_was_also_skipped(tmp_path, mo
 
     That predicate is the one this test exists to forbid. With it, the presence of ONE
     unrelated schema-invalid review disarms the lock-timeout abort entirely: the index
-    was never rewritten, `_load_index` reads a stale or absent file, and `--check`
-    prints a cadence verdict computed over it — measured as `open_items=0` with a
-    fresh corpus on the branch before this commit.
+    was never rewritten, and the run goes on to WRITE over a cache it knows it could not
+    produce — measured as `open_items=0` over a fresh corpus when this was first caught.
+
+    Driven through `--set` since #102. It used to run `--check`, which reached the same
+    pre-write rebuild only because every path did; a reporting run now derives its
+    figures from the reviews and never opens the index, so it is no longer a witness to
+    this ruling. The ruling itself is unchanged and still binds every path that writes.
 
     Also reddens under: dropping `REASON_INDEX_LOCK_TIMEOUT` from feedback_index's
     LockTimeout handler, which is the same failure arriving as an unregistered reason.
@@ -1149,7 +1160,8 @@ def test_a_lock_timeout_still_aborts_when_a_review_was_also_skipped(tmp_path, mo
     bad_meta["_draft"] = False
     _write_review(tmp_path, "2026-05-22", "atlas-handflipped.md", bad_meta)
 
-    result = _check_with_the_index_lock_held(tmp_path, monkeypatch)
+    result = _with_the_index_lock_held(
+        tmp_path, monkeypatch, ["--set", "fb-valid-bbbbbb", "it-1", "resolved"])
 
     assert result.returncode != 0, (
         f"a lock timeout was survived because an unrelated review was skipped; "
@@ -1268,3 +1280,179 @@ def test_set_still_succeeds_when_the_post_write_rebuild_only_skipped_a_review(
                                "--waiver", "fixture: the accept-gate (#165) is not "
                                            "the subject of this test"])
     assert rc == 0, f"a skipped review is not a stale cache: {capsys.readouterr().err!r}"
+
+
+# --- #102: a command that reports does not write ---
+
+def _seed_index(root: Path) -> Path:
+    """Leave a real index on disk, built by a path that is entitled to write one."""
+    _write_review(root, "2026-05-22", "atlas-seed.md",
+                  _valid_review_meta(feedback_id="fb-seed-aaaaaa"))
+    result = run_triage(root, ["--complete-triage"])
+    assert result.returncode == 0, result.stderr
+    idx = root / "ops" / "feedback" / "_index" / "index.jsonl"
+    assert idx.is_file(), "the write path did not leave an index to compare against"
+    return idx
+
+
+def test_a_reporting_run_leaves_the_index_exactly_as_it_found_it(tmp_path):
+    """--check, --digest and --monthly write nothing — mtime included (#102).
+
+    The bytes alone would not catch this. Measured on the live instance on 2026-09-15,
+    `--check` rewrote `index.jsonl` with byte-identical content, so a content assertion
+    passes over the defect; what moved was the mtime, from 15:34:27 to 15:35:23. Any
+    staleness signal built on that timestamp is destroyed by the command asking for it.
+
+    The index is SEEDED first, so "unchanged" means unchanged rather than absent: a run
+    against an empty tree cannot tell a command that leaves the index alone from one
+    that has no index to leave alone.
+    """
+    idx = _seed_index(tmp_path)
+    before_bytes, before_ns = idx.read_bytes(), idx.stat().st_mtime_ns
+
+    for args in (["--check"], ["--digest"], ["--monthly"], ["--digest", "--status", "open"]):
+        result = run_triage(tmp_path, args)
+        assert result.returncode == 0, f"{args}: {result.stderr}"
+        assert idx.read_bytes() == before_bytes, f"{args} rewrote the index content"
+        assert idx.stat().st_mtime_ns == before_ns, (
+            f"{args} rewrote the index — identical bytes, new mtime, which is exactly "
+            f"the shape #102 was measured in"
+        )
+
+
+def test_a_reporting_run_still_reports_what_the_index_does_not_hold(tmp_path):
+    """The positive control: dropping the write must not cost freshness.
+
+    Without this, the test above is satisfied by a `--check` that reports nothing at
+    all. The review below is written AFTER the index was built, so it exists only in the
+    review tree — the figures can only come from a scan of the reviews themselves.
+    """
+    _seed_index(tmp_path)
+    _write_review(tmp_path, "2026-05-22", "atlas-later.md",
+                  _valid_review_meta(feedback_id="fb-later-cccccc"))
+
+    result = run_triage(tmp_path, ["--check"])
+
+    assert result.returncode == 0, result.stderr
+    assert "open_items=2" in result.stdout, (
+        f"the later review is absent from the figures, so they came from the stale "
+        f"index rather than from the reviews: {result.stdout!r}"
+    )
+
+
+def test_a_reporting_run_is_not_blocked_by_a_concurrent_index_rebuild(tmp_path, monkeypatch):
+    """A held index lock stops a write; it must not stop a report (#102).
+
+    This is the property that made the two lock-timeout tests above change paths, pinned
+    directly rather than inferred from their silence. Session start runs `--check` once
+    per advisor, and every one of them used to queue behind whatever held this lock.
+    """
+    _write_review(tmp_path, "2026-05-22", "atlas-valid.md",
+                  _valid_review_meta(feedback_id="fb-valid-dddddd"))
+
+    result = _with_the_index_lock_held(tmp_path, monkeypatch, ["--check"])
+
+    assert result.returncode == 0, (
+        f"a reporting run waited on a lock it has no use for; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "open_items=1" in result.stdout, result.stdout
+    assert "index lock" not in result.stderr, result.stderr
+
+
+def test_a_reporting_run_is_not_blocked_by_a_concurrent_triage_session(tmp_path):
+    """Same, for the triage lock — the one session start actually contended on.
+
+    Four advisors starting together each ran `--check`, each took this lock, and each
+    held it for a full walk of the review tree to print one line. A reporting run has
+    nothing to serialise: it writes neither the index nor a review, and every writer
+    here replaces files atomically, so it cannot read half of one either.
+    """
+    _write_review(tmp_path, "2026-05-22", "atlas-valid.md",
+                  _valid_review_meta(feedback_id="fb-valid-eeeeee"))
+    lock_file = _triage_lock_file(tmp_path)
+    stop, held = threading.Event(), threading.Event()
+
+    def _hold():
+        with with_lock(lock_file, timeout=10):
+            held.set()
+            stop.wait(30)
+
+    t = threading.Thread(target=_hold, daemon=True)
+    t.start()
+    assert held.wait(10), "the holder thread never took the triage lock"
+    try:
+        result = run_triage(tmp_path, ["--check"],
+                            env_extra={"CONCLAVE_TRIAGE_LOCK_TIMEOUT": "1"})
+    finally:
+        stop.set()
+        t.join(5)
+
+    assert result.returncode == 0, (
+        f"a reporting run refused because another session held the triage lock; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "open_items=1" in result.stdout, result.stdout
+
+
+def test_a_writing_run_still_refuses_while_another_holds_the_triage_lock(tmp_path):
+    """The control for the test above: the triage lock still guards what it guarded.
+
+    Without it, "a --check is not blocked" cannot be told from "the lock was never held
+    or is no longer taken by anything at all".
+    """
+    _write_review(tmp_path, "2026-05-22", "atlas-valid.md",
+                  _valid_review_meta(feedback_id="fb-valid-ffffff"))
+    lock_file = _triage_lock_file(tmp_path)
+    stop, held = threading.Event(), threading.Event()
+
+    def _hold():
+        with with_lock(lock_file, timeout=10):
+            held.set()
+            stop.wait(30)
+
+    t = threading.Thread(target=_hold, daemon=True)
+    t.start()
+    assert held.wait(10), "the holder thread never took the triage lock"
+    try:
+        result = run_triage(tmp_path, ["--set", "fb-valid-ffffff", "it-1", "resolved"],
+                            env_extra={"CONCLAVE_TRIAGE_LOCK_TIMEOUT": "1"})
+    finally:
+        stop.set()
+        t.join(5)
+
+    assert result.returncode != 0, f"a write ran while the triage lock was held: {result.stdout!r}"
+    assert "triage lock" in result.stderr, result.stderr
+
+
+def test_a_reporting_run_ignores_an_index_row_that_claims_to_be_newer(tmp_path):
+    """The scan is a CLEAN one, and stays clean if the incremental skip is ever repaired.
+
+    `feedback_index`'s incremental path drops any item the index already holds at a
+    strictly newer `updated_at`. It cannot fire today, because an index row's
+    `updated_at` is copied from its review and so is never strictly newer — measured over
+    the live corpus on 2026-09-15: 0 skips, 321 ties. That makes the skip inert, not
+    absent, and a reporting run that inherited it would start under-counting the day
+    somebody fixes it.
+
+    So the condition is constructed rather than waited for: the index below claims a
+    2099 timestamp for the one item in the corpus. A scan that consulted it would skip
+    that item and report `open_items=0` over a corpus that plainly has one.
+    """
+    _write_review(tmp_path, "2026-05-22", "atlas-valid.md",
+                  _valid_review_meta(feedback_id="fb-newer-aaaaaa"))
+    idx = tmp_path / "ops" / "feedback" / "_index" / "index.jsonl"
+    idx.parent.mkdir(parents=True, exist_ok=True)
+    idx.write_text(
+        '{"feedback_id": "fb-newer-aaaaaa", "item_id": "it-1", "status": "open", '
+        '"updated_at": "2099-01-01T00:00:00Z"}\n',
+        encoding="utf-8",
+    )
+
+    result = run_triage(tmp_path, ["--check"])
+
+    assert result.returncode == 0, result.stderr
+    assert "open_items=1" in result.stdout, (
+        f"the scan deferred to an index row claiming to be newer than the review it "
+        f"indexes: {result.stdout!r}"
+    )

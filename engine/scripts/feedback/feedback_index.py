@@ -236,6 +236,77 @@ REASON_UNREADABLE = "unreadable"
 REASON_INDEX_LOCK_TIMEOUT = "index_lock_timeout"
 
 
+def _reasons_for(author_complete_drops: list[str], unreadable: list[str]) -> list[str]:
+    """The exit reasons a scan's findings imply — one derivation for both entry points.
+
+    `scan()` and `main()` must classify the same findings the same way. A second copy of
+    this mapping is how two vocabularies drift, which is the failure the `exit_reasons`
+    channel exists to prevent.
+    """
+    reasons: list[str] = []
+    if author_complete_drops:
+        reasons.append(REASON_AUTHOR_COMPLETE_INVALID)
+    if unreadable:
+        reasons.append(REASON_UNREADABLE)
+    return reasons
+
+
+def _print_findings(parse_errors: list[str], author_complete_drops: list[str]) -> None:
+    """Put every rejection on stderr — the only place a caller's reader can see it.
+
+    Called by the read-only scan as well as by the write path, because triage's abort
+    tells the operator to "Fix the errors shown above, then re-run". A scan that
+    classified a run as fatal without printing what it saw would point that sentence at
+    an empty screen: a diagnosis produced and then discarded (#266), reintroduced one
+    function over.
+    """
+    for msg in parse_errors:
+        print(msg, file=sys.stderr)
+    if author_complete_drops:
+        paths = ", ".join(author_complete_drops)
+        print(
+            f"DROPPED {len(author_complete_drops)} author-complete reviews (schema-invalid): {paths}",
+            file=sys.stderr,
+        )
+
+
+def scan(report: dict | None = None) -> tuple[list[dict], int]:
+    """Every row a clean rebuild would write, computed without writing anything.
+
+    Read-only by construction: no index lock is taken, no writer is called, and the index
+    file's bytes AND its mtime are left alone. `main(["--rebuild"])` is this same
+    computation followed by a write; this is the half a caller that only REPORTS needs.
+    #102 is what happens when the two are not separable: `feedback_triage.py --check`,
+    run by session_init to render one dashboard line, rebuilt the operator's index on
+    every session start.
+
+    A CLEAN scan (`existing={}`, exactly what `--rebuild` passes), not the incremental
+    one `main()` uses by default. The incremental path skips any item the index already
+    holds at a strictly newer `updated_at`, and a reporting caller that silently counted
+    a partial set would be the defect this function exists to remove. That skip cannot
+    fire today — an index row's `updated_at` is COPIED from its review, so it is never
+    strictly newer; measured over the live corpus on 2026-09-15: 0 skips, 321 ties. That
+    is exactly why the guarantee must be structural rather than inherited: a later repair
+    of the skip must not quietly turn every report into a partial one.
+
+    `report` is filled exactly as `main()` fills it, so a caller classifies a failure from
+    the same field with the same vocabulary. The rc follows `--check`'s: non-zero if
+    anything was rejected, with WHICH thing left to `exit_reasons`.
+    """
+    dirs = _review_dirs(repo_root())
+    rows, parse_errors, author_complete_drops, unreadable, review_count = _process_reviews(
+        dirs, {}, True)
+    reasons = _reasons_for(author_complete_drops, unreadable)
+    if report is not None:
+        report["author_complete_drops"] = list(author_complete_drops)
+        report["parse_errors"] = list(parse_errors)
+        report["unreadable"] = list(unreadable)
+        report["review_count"] = review_count
+        report["exit_reasons"] = list(reasons)
+    _print_findings(parse_errors, author_complete_drops)
+    return rows, (1 if (parse_errors or author_complete_drops) else 0)
+
+
 def main(argv: list[str] | None = None, report: dict | None = None) -> int:
     """Build the index; `report`, when given, receives what the exit code cannot carry.
 
@@ -272,11 +343,7 @@ def main(argv: list[str] | None = None, report: dict | None = None) -> int:
     # Populated before either exit path below, so a caller's view never depends on
     # which branch the run took. `exit_reasons` is re-published by any later path that
     # adds one (see the LockTimeout handler); nothing below removes a reason.
-    reasons: list[str] = []
-    if author_complete_drops:
-        reasons.append(REASON_AUTHOR_COMPLETE_INVALID)
-    if unreadable:
-        reasons.append(REASON_UNREADABLE)
+    reasons: list[str] = _reasons_for(author_complete_drops, unreadable)
 
     def _publish() -> None:
         if report is not None:
@@ -291,15 +358,7 @@ def main(argv: list[str] | None = None, report: dict | None = None) -> int:
     if args.check:
         pending = sum(1 for r in rows if r.get("status") == "open")
         print(f"reviews={review_count} pending_triage={pending}")
-        if parse_errors:
-            for msg in parse_errors:
-                print(msg, file=sys.stderr)
-        if author_complete_drops:
-            paths = ", ".join(author_complete_drops)
-            print(
-                f"DROPPED {len(author_complete_drops)} author-complete reviews (schema-invalid): {paths}",
-                file=sys.stderr,
-            )
+        _print_findings(parse_errors, author_complete_drops)
         return 1 if (parse_errors or author_complete_drops) else 0
 
     # Write index — the read-modify-write below runs under the index's OWN lock.
@@ -335,15 +394,7 @@ def main(argv: list[str] | None = None, report: dict | None = None) -> int:
               f"(concurrent writer?)", file=sys.stderr)
         return 1
 
-    if parse_errors:
-        for msg in parse_errors:
-            print(msg, file=sys.stderr)
-    if author_complete_drops:
-        paths = ", ".join(author_complete_drops)
-        print(
-            f"DROPPED {len(author_complete_drops)} author-complete reviews (schema-invalid): {paths}",
-            file=sys.stderr,
-        )
+    _print_findings(parse_errors, author_complete_drops)
     if author_complete_drops or parse_errors:
         return 1
 
