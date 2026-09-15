@@ -22,7 +22,42 @@ def _index(args) -> int:
     except ValueError as e:
         print(f"memory-index: {e}", file=sys.stderr)
         return 1
+    _report_lost_values()
     return 0
+
+
+def _report_lost_values() -> None:
+    """Report records the rebuild just indexed whose written value did not survive.
+
+    #249 item 1 names two surfaces for a parse-check: the close, and "the post-commit
+    index rebuild". This is the second one, and it is the one that catches the case the
+    close cannot — a HAND edit to a record written days earlier, which is how
+    `2026-09-14-sage-cto-117-mechanism-decided.md` came to carry `issues: [#26]` five days
+    after the writer stopped producing that shape.
+
+    Three deliberate limits:
+
+    - **stderr**, because stdout here is a command's result and a diagnostic is not one.
+    - **exit code unchanged.** Refusing would be a gate, and a gate fires on an instance
+      that already holds 12 damaged records — locking the rebuild until a DATA migration
+      the operator has not chosen. `feedback_owners` set this precedent for exactly this
+      shape: report what was already inside when the door closed.
+    - **the `CRIT:` prefix `engine audit` already uses**, rather than a new spelling. The
+      display contract of a human-facing line is kosmos-cxo's; reusing one that exists
+      borrows a decision instead of inventing one.
+    """
+    from enginelib.audit import records
+    from enginelib.paths import decisions_dir, mentions_dir, sessions_dir
+
+    found = records.run([sessions_dir(), decisions_dir(), mentions_dir()])
+    for msg in found.crit:
+        print(f"CRIT: {msg}", file=sys.stderr)
+    if found.crit:
+        print(
+            f"memory-index: {len(found.crit)} record(s) lost a value — "
+            f"run `engine audit records` for the full report",
+            file=sys.stderr,
+        )
 
 
 def _hot_init(args) -> int:

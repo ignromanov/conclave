@@ -4,7 +4,7 @@ round-trip — preserves byte-for-byte layout of untouched lines (parity contrac
 import re
 from pathlib import Path
 
-from enginelib import template
+from enginelib import records, template
 from enginelib.snapshot import snapshot_write
 
 
@@ -202,8 +202,20 @@ def render_record(tpl: Path, values: dict[str, str]) -> str:
     serialized: dict[str, str] = {
         k: v if isinstance(v, Raw) else as_scalar(v) for k, v in values.items()
     }
-    return (template.substitute(fence.group(0), serialized)
-            + template.substitute(content[fence.end():], values))
+    head = template.substitute(fence.group(0), serialized)
+
+    # Serializing is the fix; this is the verification of it, and it is not redundant.
+    # `as_scalar` guards values it is given — it cannot guard a template edit, or a caller
+    # that built a `Raw` by hand and got it wrong. #249 item 1 asks for a parse-check on
+    # the written record, and the cheapest place to stand is before the write.
+    lost = records.find_lost_values(head.split("---\n", 2)[1])
+    if lost:
+        raise ValueError(
+            f"render_record: {tpl.name} would write a record that loses a value:\n  "
+            + "\n  ".join(lost)
+        )
+
+    return head + template.substitute(content[fence.end():], values)
 
 
 def fm_set(file: Path, key: str, value: str) -> None:

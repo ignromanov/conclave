@@ -273,6 +273,15 @@ def _skills(args: argparse.Namespace) -> int:
     return 0
 
 
+def _records(args: argparse.Namespace) -> int:
+    from enginelib.audit import records
+    from enginelib.paths import decisions_dir, mentions_dir, sessions_dir
+
+    # The three corpora written by `render_record`. Each is also hand-edited, which is the
+    # path this audit exists for — the writer now checks itself (#301).
+    return _emit(records.run([sessions_dir(), decisions_dir(), mentions_dir()]))
+
+
 # Maps CLI audit name → adapter callable `(args: Namespace) -> int`.
 # Findings audits: call `_emit(module.run(...))`. Non-Findings: own their format + exit code.
 _AUDITS: dict[str, Callable[[argparse.Namespace], int]] = {
@@ -291,6 +300,7 @@ _AUDITS: dict[str, Callable[[argparse.Namespace], int]] = {
     "versions": _versions,
     "routing-targets": _routing_targets,
     "output-discipline": _output_discipline,
+    "records": _records,
 }
 
 
