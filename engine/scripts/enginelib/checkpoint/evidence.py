@@ -10,9 +10,18 @@ So every class here resolves by **executing something against current state**, a
 refuses the line when the check fails. Four classes, per design §5:
 
     commit:<sha>        the object exists in the CODE or the DATA repository
-    file:<path>         the path exists AND is non-empty, inside the instance
+    file:<path>         the path exists AND is non-empty, inside the INSTANCE
     predicate:<fb>/<it> 093's predicate for that feedback item evaluates to `pass`
     issue:<n>           the gh-cache says that issue is closed, and the snapshot is current
+
+**`file:` is about artefacts, and an artefact is not a source file.** It searches DATA and the
+project root, deliberately not the engine checkout: what this class exists for is the output a
+dispatched agent wrote — a report, a research note, a returned analysis — and those land in the
+instance, never in the engine distribution. Source belongs to `commit:`, which is both stronger
+(a commit is work that happened, a file merely exists) and immune to *which checkout you are
+standing in* — measured: a commit made in a worktree resolves from the main checkout, because
+worktrees share one object database. `file:` has no such immunity, which is the second reason
+not to point it at a CODE tree whose identity depends on an environment variable.
 
 **Refusal is the default.** An unknown class, a malformed ref, a missing item, an unreadable
 cache — all refuse. This is the one module where "I could not tell" must never round up to
@@ -23,8 +32,8 @@ Three guards are load-bearing rather than hygiene, and each has a test named for
   * **`commit:` accepts hex object names only.** `git cat-file -e` takes a *revision
     expression*, so `commit:HEAD` — or `commit:master` — resolves in any repository, always.
     Without the guard the class degenerates into a constant `True` that looks like a check.
-  * **`file:` must stay inside a root.** `file:/etc/hosts` exists and is non-empty on every
-    machine. The same containment threat feedback_verify calls T6, arriving through a
+  * **`file:` must stay inside the instance.** `file:/etc/hosts` exists and is non-empty on
+    every machine. The same containment threat feedback_verify calls T6, arriving through a
     different door: not a read oracle here, but evidence laundering.
   * **`issue:` refuses a snapshot past its own TTL.** An issue closed at capture and reopened
     since would otherwise read as evidence forever. The TTL is what bounds that window, and a
@@ -75,6 +84,8 @@ class Roots:
     behind the caller's back.
     """
 
+    #: The CODE checkout — `commit:` runs `git -C` here, and a `root: code` predicate reads
+    #: from it. Never searched by `file:`; see the module docstring.
     code: Path
     data: Path
     project: Path
@@ -136,7 +147,10 @@ def _commit(ref: str, sha: str, roots: Roots) -> Check:
 def _file(ref: str, rel: str, roots: Roots) -> Check:
     if not rel:
         return Check(ref, False, "file: needs a path")
-    for name, root in (("CODE", roots.code), ("DATA", roots.data)):
+    # DATA first, then the project: on this instance DATA is a subdirectory of the project, so
+    # both orders find the same file and only the reported root differs — naming the narrower
+    # tree first makes the reason say where the artefact actually is.
+    for name, root in (("DATA", roots.data), ("the project", roots.project)):
         candidate = Path(rel) if Path(rel).is_absolute() else root / rel
         try:
             inside = candidate.resolve().is_relative_to(root.resolve())
@@ -152,7 +166,7 @@ def _file(ref: str, rel: str, roots: Roots) -> Check:
         if candidate.stat().st_size == 0:
             return Check(ref, False, f"{rel} exists in {name} but is empty")
         return Check(ref, True, f"{rel} exists in {name}, {candidate.stat().st_size} bytes")
-    return Check(ref, False, f"no non-empty {rel} inside CODE or DATA")
+    return Check(ref, False, f"no non-empty {rel} inside the instance — a source file is commit: evidence")
 
 
 def _predicate(ref: str, ident: str, roots: Roots) -> Check:

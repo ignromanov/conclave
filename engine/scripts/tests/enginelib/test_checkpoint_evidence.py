@@ -33,7 +33,14 @@ def _git(cwd, *args) -> str:
 
 @pytest.fixture()
 def roots(tmp_path) -> Roots:
-    code, data = tmp_path / "code", tmp_path / "data"
+    # Plugin-mode shape, on purpose: the engine checkout is somewhere else entirely and the
+    # instance is project/ with its DATA root inside it. On the dogfooding instance the two
+    # collapse — `project_root()` and the CODE checkout are measurably the SAME directory —
+    # so a fixture built in that shape cannot tell "searched CODE" from "searched the project",
+    # and every assertion below about which tree `file:` reads would be true either way.
+    code, project = tmp_path / "code", tmp_path / "project"
+    project.mkdir()
+    data = project / ".conclave"
     for repo in (code, data):
         repo.mkdir()
         _git(repo, "init", "-q", "-b", "master")
@@ -48,7 +55,7 @@ def roots(tmp_path) -> Roots:
     gh_cache = tmp_path / "gh-cache"
     gh_cache.mkdir()
     return Roots(
-        code=code, data=data, project=code, gh_cache=gh_cache, index=tmp_path / "index.jsonl"
+        code=code, data=data, project=project, gh_cache=gh_cache, index=tmp_path / "index.jsonl"
     )
 
 
@@ -107,7 +114,7 @@ def test_an_artefact_outside_the_instance_is_not_evidence(roots):
     about the operating system — the same threat feedback_verify calls T6, arriving as
     evidence laundering instead of as a read oracle.
     """
-    outside = roots.code.parent / "outside.txt"
+    outside = roots.project.parent / "outside.txt"
     outside.write_text("not mine\n", encoding="utf-8")
 
     assert not resolve(f"file:{outside}", roots).ok
@@ -123,14 +130,32 @@ def test_an_empty_artefact_is_refused_and_the_refusal_says_empty(roots):
     goes looking for a path that is right there, and the actual defect (the agent wrote
     nothing) stays invisible for another six runs.
     """
-    (roots.code / "report.md").write_text("", encoding="utf-8")
+    (roots.data / "report.md").write_text("", encoding="utf-8")
     empty = resolve("file:report.md", roots)
 
     assert not empty.ok
     assert "empty" in empty.reason
 
-    (roots.code / "report.md").write_text("findings\n", encoding="utf-8")
+    (roots.data / "report.md").write_text("findings\n", encoding="utf-8")
     assert resolve("file:report.md", roots).ok
+
+
+def test_a_source_file_in_the_engine_checkout_is_not_an_artefact(roots):
+    """Mutation: put `roots.code` back in `_file`'s search list.
+
+    `file:` exists for what a dispatched agent *wrote* — a report, a research note, a returned
+    analysis — and those land in the instance, never in the engine distribution. Letting it
+    reach the CODE tree would make "this source file exists" an evidence class, which is the
+    weakest check in the set and is already covered, better, by `commit:`: a commit is work that
+    happened rather than a path that exists, and it resolves the same from any checkout because
+    worktrees share one object database. A `file:` ref has no such immunity — the CODE root is
+    whatever `CONCLAVE_ENGINE_ROOT` says, which in a worktree is somebody else's tree.
+    """
+    (roots.code / "engine.py").write_text("real source, real content\n", encoding="utf-8")
+
+    check = resolve("file:engine.py", roots)
+    assert not check.ok
+    assert "commit:" in check.reason
 
 
 # --- issue: ------------------------------------------------------------------------------
@@ -196,7 +221,7 @@ def test_a_broken_predicate_is_refused_and_not_reported_as_merely_failing(roots)
     renamed away reports the same red as one that is honestly unmet, and the rotted check then
     hides behind an unfinished unit for as long as nobody reads the reason.
     """
-    (roots.code / "shipped.py").write_text("def checkpoint(): ...\n", encoding="utf-8")
+    (roots.project / "shipped.py").write_text("def checkpoint(): ...\n", encoding="utf-8")
     _index(
         roots,
         {"feedback_id": "fb-1", "item_id": "it-1",
