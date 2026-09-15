@@ -36,18 +36,31 @@ not *one completed when the file was touched*.
 `feedback_triage.py` reads every review before any subcommand runs — a write
 path (`--set`, `--complete-triage`) rebuilds the index with what it finds, a
 reporting path (`--check`, `--digest`, `--monthly`) reports over it and writes
-nothing (#102). Both see the same corpus and apply the same gate. If any
-`_draft:false` (author-complete) review fails schema validation, triage **aborts
-immediately** with a non-zero exit code and prints:
+nothing (#102). Both see the same corpus and apply the same gate.
+
+A `_draft:false` (author-complete) review that fails schema validation is **skipped, not
+fatal** (ruled 2026-09-15, after one hand-flipped review took the cadence check down for
+every advisor of an instance for ~34 hours). It never enters the index — spec 086 AC2 is
+kept literally — and the run says so twice, on stderr:
 
 ```
 DROPPED N author-complete reviews (schema-invalid): <paths>
-ERROR: triage aborted — one or more author-complete (_draft:false) reviews
-failed schema validation. Fix the DROPPED files shown above, then re-run.
+NOTE: N author-complete review(s) were skipped as schema-invalid and are absent from
+every figure below. Re-run `feedback_emit.py --finalize <path>` on each to see what it
+rejects.
 ```
 
-Fix the listed files (coerce types to match schema — see `schema.py`) and re-run.
-Do NOT skip this gate by editing the index directly.
+Every count printed after that line is short by N. Fix the listed files (coerce types to
+match schema — see `schema.py`) and re-run. Do NOT skip this gate by editing the index
+directly.
+
+Triage still aborts on anything it cannot account for — an unreadable file, a lock it
+could not take, a non-zero exit with no reason attached:
+
+```
+ERROR: triage aborted — the index rebuild failed for a reason other than a
+schema-invalid review. Fix the errors shown above, then re-run.
+```
 
 ### Step 1 — Run the dedup digest
 
