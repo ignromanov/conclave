@@ -1189,8 +1189,15 @@ class TestRenderDashboard:
 
 class TestForgeMetaAdvisor:
     def test_meta_advisors_is_forge(self):
-        """AC11 anchor: the meta set names the forge advisor explicitly."""
-        assert "forge-chro" in session_init.META_ADVISORS
+        """AC11 anchor: the meta set names the forge advisor explicitly.
+
+        Asserted at its home rather than through `session_init`, which merely
+        imported it. That re-export vanished the moment session_init stopped
+        needing the name itself (#69) — and a test reaching a constant through
+        whichever module happens to import it pins an accident, not the anchor.
+        """
+        from enginelib.advisors import META_ADVISORS
+        assert "forge-chro" in META_ADVISORS
 
     def test_forge_absent_from_dashboard(self, tmp_path):
         """AC10: forge is not auto-enumerated among hired advisors."""

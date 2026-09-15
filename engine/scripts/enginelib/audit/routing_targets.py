@@ -45,6 +45,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from enginelib.advisors import LIFECYCLE_SKILLS
 from enginelib.audit import Findings
 
 # A dotted routing token: `workflow.dev-lifecycle`, `team.quorum`. Backticked or bare.
@@ -58,10 +59,7 @@ _DOTTED_RE = re.compile(r"\b((?:workflow|team)\.[a-z][a-z0-9-]*)")
 _AI_ROOT_RE = re.compile(r"(?<![\w.-])(\.ai(?:/[A-Za-z0-9_./-]*)?)(?![\w-])")
 
 # Lifecycle skill ids, prefix-agnostic — mirrors phantom_skills.py:33-36.
-_LIFECYCLE = frozenset({
-    "start", "processing", "done", "handoff",
-    "forge", "hire", "retro", "feedback", "feedback-triage",
-})
+_LIFECYCLE = LIFECYCLE_SKILLS   # one set, one place (#69)
 
 
 def find_dotted(text: str) -> list[tuple[int, str]]:

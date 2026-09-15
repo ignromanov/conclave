@@ -26,14 +26,12 @@ import re
 from pathlib import Path
 
 from enginelib import skill
+from enginelib.advisors import LIFECYCLE_SKILLS
 from enginelib.audit import Findings
 from enginelib.paths import iter_advisor_authored_files
 
 # Bare advisor ids (prefix-agnostic) — the #54 helper yields bare ids.
-_LIFECYCLE = frozenset({
-    "start", "processing", "done", "handoff",
-    "forge", "hire", "retro", "feedback", "feedback-triage",
-})
+_LIFECYCLE = LIFECYCLE_SKILLS   # one set, one place (#69)
 
 # Backtick-wrapped token starting with a lowercase letter.
 _BACKTICK_RE = re.compile(r"`([a-z][a-z0-9:.\-]+)`")

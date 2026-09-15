@@ -51,14 +51,12 @@ import roster  # noqa: E402  (lib/ is not a package; path-inserted above)
 # module's import of enginelib does not rely on import order against `import
 # roster` above.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from enginelib.paths import check_legacy_data_root_env, iter_advisor_skills  # noqa: E402
+from enginelib.advisors import LIFECYCLE_SKILLS, registry_advisors
+from enginelib.paths import check_legacy_data_root_env  # noqa: E402
 
 # Engine lifecycle/forge skills are CODE, not advisors — exclude them when deriving
 # the advisor set from the DATA-root team.* registry.
-_LIFECYCLE_SKILLS = {
-    "start", "processing", "done", "handoff",
-    "forge", "hire", "retro", "feedback", "feedback-triage",
-}
+_LIFECYCLE_SKILLS = LIFECYCLE_SKILLS   # one set, one place (#69)
 
 
 def _data_root() -> str:
@@ -71,23 +69,6 @@ def _data_root() -> str:
     )
 
 
-def canonical_advisors() -> set[str]:
-    """Derive the advisor set from the on-disk registry (DATA-root .claude/skills/),
-    minus engine lifecycle/forge skills. Empty when the registry is absent — callers
-    treat empty as 'no enforcement' (degrade to permissive, not reject-all).
-
-    Reads through enginelib.paths.iter_advisor_skills, the shared #54 discovery
-    helper that dual-reads both the current `conclave-<id>` skill-dir layout and
-    the legacy `team.<id>` one. The direct `team.`-prefix os.listdir() scan this
-    replaced went blind the moment an advisor migrated to `conclave-<id>` (PRs
-    #95/#97) — which is every advisor on a modern instance.
-    """
-    skills_base = Path(_data_root()) / ".claude" / "skills"
-    return {
-        bare
-        for bare, _skill_md in iter_advisor_skills(skills_base)
-        if bare not in _LIFECYCLE_SKILLS
-    }
 
 # Board coordinates come from roster.yaml (per-instance config), not hardcoded.
 PROJECT_NUM = int(roster.get("github.board_number", "0") or 0)
@@ -215,7 +196,10 @@ def main(argv: list[str] | None = None) -> int:
         print("gh-board-query: --advisor required for advisor-open mode", file=sys.stderr)
         return 1
 
-    canonical = canonical_advisors()
+    # The SKILL-registry answer specifically, not the union: this gate exists to
+    # accept an advisor the instance has minted a router for. Asked where it is
+    # known, rather than re-derived here as it was until #69.
+    canonical = registry_advisors(Path(_data_root()) / ".claude" / "skills")
     if args.advisor and canonical and args.advisor not in canonical:
         known = ", ".join(sorted(canonical))
         print(
