@@ -136,6 +136,40 @@ def gh_global_p0(repo: str) -> list[str]:
     return _parse_rows(_run_gh(args))
 
 
+def list_labels(repo: str) -> list[str]:
+    """Every label name defined on *repo*.
+
+    `--limit` is explicit because gh's default page is 30 and a truncated label set
+    would make `audit advisor-labels` report live advisors as label-less — a false
+    CRIT dressed as a measurement.
+    """
+    raw = _run_gh(["label", "list", "-R", repo, "--json", "name", "--limit", str(SEARCH_LIMIT)])
+    return [row["name"] for row in json.loads(raw)]
+
+
+def open_issue_label_counts(repo: str) -> tuple[dict[str, int], bool]:
+    """(label → open-issue count, page-cap-reached) for *repo*, counted client-side.
+
+    Client-side on purpose: for ~60s after a `gh label edit`, `gh issue list --label X`
+    under-reports as GitHub's search index catches up — measured returning 0, then 30,
+    then the true 34 for the same label. Listing once and counting locally asks the
+    index one question instead of one per label.
+
+    The bool is the page cap, returned rather than swallowed: a count that silently
+    stops at the limit is a wrong answer, while a count known to be a floor is a fact.
+    """
+    raw = _run_gh([
+        "issue", "list", "-R", repo, "--state", "open",
+        "--json", "labels", "--limit", str(SEARCH_LIMIT),
+    ])
+    issues = json.loads(raw)
+    counts: dict[str, int] = {}
+    for issue in issues:
+        for label in issue["labels"]:
+            counts[label["name"]] = counts.get(label["name"], 0) + 1
+    return counts, len(issues) >= SEARCH_LIMIT
+
+
 def create_issue(title: str, body: str, labels: list[str]) -> None:
     """Create a GitHub issue via the gh CLI (routes through _run_gh seam)."""
     _run_gh([

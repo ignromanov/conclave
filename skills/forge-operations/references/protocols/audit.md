@@ -35,20 +35,25 @@ last_reviewed: "2026-08-12"
 | 12 | Phantom-skill pre-gate (spec 089) | `engine audit phantom-skills` (BLOCKING — mirrors hire.md G1) | CRIT (blocks register/promote) |
 | 13 | Judge incentive + calibration floor (spec 089) | inline grep + `current.yaml` read | WARN (D19 phrase missing) / **CRIT** (calibration absent/stale/below-floor, D32) |
 | 14 | Identity parity | `engine audit identity-parity` | CRIT (the two `description` copies disagree, or one is empty) |
+| 15 | Advisor labels | `engine audit advisor-labels` | WARN (a roster advisor with no `advisor:<id>` label, or a label naming nobody in the roster) |
 
 ## Run
 
 ```
-for name in versions phantom-skills bloat registry-consistency overlays agent-configs skills \
-            identity-parity; do
+for name in $(engine audit --list); do
   engine audit "$name"
 done
 ```
 
-> This loop is a hand-maintained list and it is already short: `engine audit --help` lists the
-> names the CLI actually accepts, and this line names fewer of them. An audit absent here is an
-> audit nothing invokes — the same shape as a CLI no protocol calls. Tracked as a defect; read
-> the `--help` output, not this line, when you want the full set.
+> The set is **derived, never listed** (#302). It used to be a shell literal, and it lost audits
+> the way any second copy does: when this line named 8, the CLI accepted 16, and four of the
+> eight it omitted were reporting CRIT that no audit run had ever surfaced. An audit outside the
+> loop is not undocumented — it is an audit nothing invokes, free to stay green while the thing
+> it guards rots. `tests/test_audit_protocol_invokes_every_audit.py` executes this very command
+> and fails the suite if its output and the CLI's registry disagree in either direction.
+>
+> The categories table above is a different claim — what each audit is *for* and how severe its
+> findings are — and is still written by hand. It may lag; this loop may not.
 
 Aggregate findings by (category, severity, target).
 
@@ -134,11 +139,8 @@ Before emitting findings, apply `contracts/quality-loop.md`. Report skipped item
 
 ## How to run
 
-```bash
-for name in versions phantom-skills bloat registry-consistency overlays agent-configs skills; do
-  engine audit "$name"
-done
-```
+See § Run above. The loop is written once, there, and derived from `engine audit --list` —
+a second copy here is how this doc came to carry two literals that named different sets (#302).
 
 (`--fix` is protocol-level, not a CLI flag: Audit delegates categorized findings to `evolve` per
 the Fix-mode delegation table above — `engine audit <name>` itself has no `--fix` option. This

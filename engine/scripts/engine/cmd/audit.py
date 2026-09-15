@@ -273,6 +273,55 @@ def _skills(args: argparse.Namespace) -> int:
     return 0
 
 
+def _advisor_labels(args: argparse.Namespace) -> int:
+    from enginelib import gh
+    from enginelib.advisors import canonical_advisors
+    from enginelib.audit import advisor_labels
+    from enginelib.lifecycle.gh_fetch import resolve_repos
+    from enginelib.roster import roster_get
+
+    # canonical_advisors(), not known_advisors(): Forge is defined under skills/ rather
+    # than agents/, and the id whose label went stale for twenty hours (#111) was Forge's.
+    roster = canonical_advisors()
+
+    # Same resolver the briefing's gh fetch uses, so the audit and the consumer it
+    # protects can never disagree about which board is being measured. Fail-closed on
+    # privacy: an empty scope is refused, never widened to account-wide (#50).
+    repos = args.repo and [args.repo] or resolve_repos(roster_get("github.owner"))
+    if not repos:
+        print(
+            "SKIP: no repo scope — declare github.ai_repo/github.main_repo in roster.yaml "
+            "or pass --repo. This audit measured nothing.", file=sys.stderr)
+        return 2
+
+    findings = Findings()
+    for repo in repos:
+        try:
+            labels = gh.list_labels(repo)
+            counts, capped = gh.open_issue_label_counts(repo)
+        except (RuntimeError, OSError) as exc:
+            # Degrade to WARN, never to a clean exit. An unauthenticated gh and a board
+            # in perfect parity produce the same empty finding list, and the whole point
+            # of this audit is that an empty result must not read as "nothing to do".
+            findings.warn.append(
+                f"{repo}: gh unavailable, parity NOT measured — {str(exc).strip() or exc!r}")
+            continue
+        # The roster is named, not counted. The orphan direction accuses a label of
+        # naming nobody, and it is only ever as right as the resolver behind it — six
+        # advisor-discovery functions in this tree disagree about who is an advisor
+        # (#69), and `canonical_advisors` skips project agent-defs when no anchor env
+        # var is set. A short roster turns live labels into orphans; printing the ids
+        # is what lets a reader see that before acting on the finding.
+        print(f"=== audit advisor-labels — {repo}: {len(roster)} advisor(s) "
+              f"({', '.join(roster) or 'none'}), "
+              f"{len(advisor_labels.advisor_labels(labels))} advisor label(s) ===")
+        rpt = advisor_labels.run(
+            roster, labels, issue_counts=counts, capped=capped, repo=repo)
+        findings.crit += rpt.crit
+        findings.warn += rpt.warn
+    return _emit(findings)
+
+
 def _records(args: argparse.Namespace) -> int:
     from enginelib.audit import records
     from enginelib.paths import decisions_dir, mentions_dir, sessions_dir
@@ -292,6 +341,7 @@ _AUDITS: dict[str, Callable[[argparse.Namespace], int]] = {
     "phantom-skills": _phantom_skills,
     "registry-consistency": _registry_consistency,
     "advisor-naming": _advisor_naming,
+    "advisor-labels": _advisor_labels,
     "identity-parity": _identity_parity,
     "feedback-owners": _feedback_owners,
     "overlays": _overlays,
@@ -306,7 +356,19 @@ _AUDITS: dict[str, Callable[[argparse.Namespace], int]] = {
 
 def register(subparsers: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
     p = subparsers.add_parser("audit", help="Run a named audit check.")
-    p.add_argument("name", choices=list(_AUDITS), help="Audit to run.")
+    # `nargs="?"` so `--list` can be asked without naming an audit. The cost is that a
+    # bare `engine audit` no longer fails in argparse, so _run has to refuse it by hand
+    # — argparse offers no "required unless" and faking one with a subcommand would
+    # change the invocation every protocol doc already spells.
+    p.add_argument("name", nargs="?", choices=list(_AUDITS), help="Audit to run.")
+    p.add_argument(
+        "--list",
+        action="store_true",
+        dest="list_audits",
+        default=False,
+        help="Print every audit name, one per line, and exit. The audit protocol's "
+             "Run loop iterates this rather than a hand-kept list (#302).",
+    )
     p.add_argument(
         "--agents-dir",
         dest="agents_dir",
@@ -357,6 +419,13 @@ def register(subparsers: argparse._SubParsersAction) -> None:  # type: ignore[ty
         help="Override forge-operations root (SKILL.md + references/; used by bloat).",
     )
     p.add_argument(
+        "--repo",
+        dest="repo",
+        default=None,
+        metavar="OWNER/REPO",
+        help="Override the board scope (used by advisor-labels).",
+    )
+    p.add_argument(
         "--quiet",
         action="store_true",
         dest="quiet",
@@ -367,4 +436,14 @@ def register(subparsers: argparse._SubParsersAction) -> None:  # type: ignore[ty
 
 
 def _run(args: argparse.Namespace) -> int:
+    if args.list_audits:
+        # Sorted, because the consumer is a shell loop in a protocol doc and dict
+        # insertion order would make the audit sequence depend on where the last
+        # contributor happened to add their line.
+        for name in sorted(_AUDITS):
+            print(name)
+        return 0
+    if not args.name:
+        print("audit: name is required (or --list to see them all)", file=sys.stderr)
+        return 2
     return _AUDITS[args.name](args)
