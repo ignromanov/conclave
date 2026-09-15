@@ -75,7 +75,7 @@ _DERIVED_FIELDS = ("id", "ref_session", "ref_handoff", "session_ref", "ref_decis
 # advisor id rather than a record class, and these are the two artifacts the duty model
 # writes into it (spec 091 §3-§4). Both are HISTORY, for two different reasons:
 #
-#   duty-ledger.yaml   append-only, derivable from nothing. Its ONLY statement of
+#   duty-ledger.yaml   only ever extended, derivable from nothing. Its ONLY statement of
 #                      ownership is the directory it sits in — no frontmatter, no
 #                      `advisor:` key — so the path rewrite IS the whole carry.
 #   COMPUTED-DUTIES.md a projection, and REGEN is still the wrong class: it is rebuilt

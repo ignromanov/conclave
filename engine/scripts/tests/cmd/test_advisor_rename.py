@@ -125,7 +125,7 @@ def _instance(tmp: Path) -> dict[str, Path]:
 
     # ---- history: the PER-ADVISOR duty directory, whose NAME is the id ------
     # `agent-memory/advisors/<id>/` is not a record class — its whole name is the
-    # advisor. The ledger is append-only and derivable from nothing (conclave#99);
+    # advisor. The ledger is only ever extended, derivable from nothing (conclave#99);
     # the projection beside it is derived, but by a command no protocol invokes.
     p["ledger"] = _w(
         tmp / "agent-memory" / "advisors" / OLD / "duty-ledger.yaml",
