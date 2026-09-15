@@ -159,3 +159,25 @@ def test_does_not_commit(tmp_path):
         assert not re.search(r'\bgit\b', text), (
             f"{src.name} must not invoke git (found 'git' in source)"
         )
+
+
+# --- #301: the boundary covers a writer nobody reported -------------------------------
+
+def test_a_decision_with_a_hazardous_tag_is_still_yaml(seed_advisors, tmp_path):
+    """`decision.md` substitutes eight raw scalars and no issue was ever filed against it
+    — zero of 52 live records carry a hazardous value, which says the fields are rarely
+    filled, not that they are safe. This is the half of #301 that the report did not name
+    and the sweep found.
+
+    Reddens under: `frontmatter.render_record` -> `template.render` in `file_decision`.
+    """
+    import yaml
+    seed_advisors("nexus-ceo", "kai-cto", "quorum", "shade-ciso")
+    body = tmp_path / "body.md"
+    body.write_text("Body content.\n")
+    r = _run_decision(body, tags="#297", meeting="Ruled: floor stays 3.11")
+    assert r.returncode == 0
+    f = decisions_dir() / f"{_DATE}-nexus-ceo-move-to-base.md"
+    meta = yaml.safe_load(f.read_text(encoding="utf-8").split("---\n")[1])
+    assert meta["tags"] == "#297"
+    assert meta["meeting"] == "Ruled: floor stays 3.11"

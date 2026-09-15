@@ -301,3 +301,43 @@ def test_resolve_preserves_body(seed_advisors, tmp_path):
     run_engine("mention", "resolve", "--id", mid, "--by", "spark-cmo", "--now", _RESOLVE_NOW)
     f = mentions_dir() / "spark-cmo" / "archive" / f"{mid}.md"
     assert "please review the deck" in f.read_text()
+
+
+# --- #301: the reference survives the write -----------------------------------------
+
+def test_a_bare_issue_reference_round_trips_through_a_yaml_reader(seed_advisors, tmp_path):
+    """`--ref-issue "#297"` wrote `ref_issue: #297` — a VALID document whose value is None.
+
+    The assertion goes through a real YAML parser because that is what the consumer uses:
+    `briefing/scans/mentions.py::_build_ref` reads this field with `python-frontmatter`,
+    so the loss showed up as a mention appearing in the briefing with no reference at all.
+    A line-based `fm_get` sees `#297` either way and would pass on the broken file.
+
+    Reddens under: `frontmatter.render_record` -> `template.render` in `mention.create`.
+    """
+    import yaml
+    seed_advisors("nexus-ceo", "spark-cmo", "kai-cto")
+    body = tmp_path / "body.md"
+    body.write_text("Reference me.\n")
+    r = _run_create(body, ref_issue="#297")
+    assert r.returncode == 0
+    f = mentions_dir() / "spark-cmo" / "open" / f"{r.stdout.strip()}.md"
+    meta = yaml.safe_load(f.read_text(encoding="utf-8").split("---\n")[1])
+    assert meta["ref_issue"] == "#297"
+
+
+def test_the_three_reference_forms_that_were_already_safe_are_unchanged(seed_advisors, tmp_path):
+    """`--ref-issue` advertises four forms; only the bare `#N` one broke, because in
+    `AI#12` and `owner/repo#12` the `#` is not preceded by whitespace. Those must not
+    start gaining quotes — a fix that churns every record buries the ones that changed.
+
+    Reddens under: quoting unconditionally in `as_scalar`.
+    """
+    seed_advisors("nexus-ceo", "spark-cmo", "kai-cto")
+    for form in ("AI#12", "ignromanov/conclave#12", "https://github.com/x/y/issues/12"):
+        body = tmp_path / f"body-{abs(hash(form))}.md"
+        body.write_text(f"Body for {form}.\n")
+        r = _run_create(body, ref_issue=form)
+        assert r.returncode == 0
+        f = mentions_dir() / "spark-cmo" / "open" / f"{r.stdout.strip()}.md"
+        assert f"ref_issue: {form}\n" in f.read_text(encoding="utf-8"), form

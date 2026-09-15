@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from enginelib import advisors, frontmatter, paths, template
+from enginelib import advisors, frontmatter, paths
 from enginelib.snapshot import snapshot_write
 
 _log = logging.getLogger(__name__)
@@ -87,7 +87,7 @@ def file_decision(opts: DecisionOpts) -> str:
     body_text = body_path.read_text(encoding="utf-8")
 
     # 5. Render (dict-form: "from" is not a key here but kept consistent with mention)
-    rendered = template.render(tpl, {
+    rendered = frontmatter.render_record(tpl, {
         "slug": opts.slug,
         "date": opts.date,
         "by": opts.by,
@@ -259,7 +259,7 @@ def file_handoff(opts: HandoffOpts) -> str:
     body_text = body_path.read_text(encoding="utf-8")
 
     # 6. Render via dict-form ("from" is a dict key)
-    rendered = template.render(tpl, {
+    rendered = frontmatter.render_record(tpl, {
         "title": opts.title,
         "from": opts.frm,
         "to": opts.to,
@@ -428,7 +428,7 @@ def close_session(opts: CloseSessionOpts) -> str:
     tpl = paths.templates_dir() / "session.md"
     if not tpl.exists():
         raise ValueError(f"template not found: {tpl}")
-    rendered = template.render(tpl, {
+    rendered = frontmatter.render_record(tpl, {
         "advisor": opts.advisor,
         "date": opts.date,
         "slug": opts.slug,
