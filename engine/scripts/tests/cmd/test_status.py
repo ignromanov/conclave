@@ -30,7 +30,8 @@ def instance(tmp_path):
     idx = tmp_path / "ops" / "feedback" / "_index"
     idx.mkdir(parents=True)
     idx.joinpath("index.jsonl").write_text(
-        "\n".join(json.dumps({"status": s}) for s in ["open", "resolved", "open"]) + "\n",
+        "\n".join(json.dumps({"feedback_id": "f1", "item_id": f"i{n}", "status": s})
+                  for n, s in enumerate(["open", "accepted", "open"])) + "\n",
         encoding="utf-8",
     )
     assert recent  # keeps the fixture's intent explicit
@@ -45,10 +46,17 @@ def test_handoffs_are_counted_instance_wide_and_terminal_ones_excluded(instance)
 
 
 def test_feedback_carries_its_denominator_and_its_proof(instance):
+    """The fixture's index holds three LIVE items and no archive — a real tree's shape.
+
+    It used to seed `{"status": "resolved"}` straight into the index and assert 1 of 3.
+    No producer can build that: `feedback_archive` takes every terminal item out of the
+    index, so the row under test could never see a resolved one and the assertion held
+    whether or not the code was right (GH#294).
+    """
     section = status_cmd._feedback_section(instance)
     m = section.measurement
     assert isinstance(m, Count)
-    assert (m.value, m.of) == (1, 3)
+    assert (m.value, m.of) == (0, 3)
     assert "index.jsonl" in m.proof
 
 
@@ -267,3 +275,150 @@ def test_the_wired_queue_slot_left_the_unwired_map():
     """A slot cannot be both wired and declared unwired; the pair would drift."""
     assert "очередь" not in status_cmd._NOT_YET_WIRED
     assert "p0" not in status_cmd._NOT_YET_WIRED
+
+
+# --- GH#294: the row's population, not its arithmetic -----------------------------
+#
+# The fixture above puts a `resolved` row straight into index.jsonl and asserts 1 of 3.
+# No producer can make that tree: feedback_archive stamps every terminal item with
+# `archived_at` (feedback_index then skips it) and unlinks the markdown of a review whose
+# items are ALL done, moving it to _archive/*.jsonl. So the index is the LIVE working set
+# by construction and the numerator `status == "resolved"` is empty in every reachable
+# world. The tests below are written against trees the archiver can actually produce.
+
+
+def _intake_tree(tmp_path, *, live, archive_lines):
+    """A DATA tree with a live index and an archive ledger — the shape on disk."""
+    idx = tmp_path / "ops" / "feedback" / "_index"
+    idx.mkdir(parents=True)
+    idx.joinpath("index.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in live) + "\n", encoding="utf-8")
+    arch = tmp_path / "ops" / "feedback" / "_archive"
+    arch.mkdir(parents=True)
+    arch.joinpath("2026-09.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in archive_lines) + "\n", encoding="utf-8")
+    return tmp_path
+
+
+def test_resolved_items_reach_the_numerator_from_the_archive(tmp_path):
+    """Reddens under: census reads index.jsonl only (the GH#294 defect, restored)."""
+    tree = _intake_tree(
+        tmp_path,
+        live=[{"feedback_id": "f1", "item_id": f"i{n}", "status": s}
+              for n, s in enumerate(["accepted", "open", "open"])],
+        archive_lines=[
+            {"kind": "item", "feedback_id": "f2", "item": {"id": "i1", "status": "resolved"}},
+            {"kind": "item", "feedback_id": "f2", "item": {"id": "i2", "status": "resolved"}},
+            {"kind": "item", "feedback_id": "f2", "item": {"id": "i3", "status": "rejected"}},
+        ],
+    )
+    m = status_cmd._feedback_section(tree).measurement
+    assert isinstance(m, Count)
+    assert (m.value, m.of) == (2, 6), "resolved items archived out of the index must still count"
+    assert "_archive" in m.proof, "the proof line must name both registers it summed"
+
+
+def test_a_whole_review_archived_as_a_husk_keeps_its_items_in_the_denominator(tmp_path):
+    """Six such rows exist here: item bodies lost, `item_count` is all that survives.
+
+    They were archived under `_all_done`, so they are terminal — but WHICH terminal is
+    unrecoverable, and `resolved` is a specific claim. Denominator yes, numerator no;
+    dropping them instead would silently shrink the intake, which is this issue's defect.
+    """
+    tree = _intake_tree(
+        tmp_path,
+        live=[{"feedback_id": "f1", "item_id": "i1", "status": "open"}],
+        archive_lines=[
+            {"kind": "item", "feedback_id": "f2", "item": {"id": "i1", "status": "resolved"}},
+            {"feedback_id": "f3", "item_count": 2, "summary": "body lost"},
+        ],
+    )
+    m = status_cmd._feedback_section(tree).measurement
+    assert (m.value, m.of) == (1, 4), "husk item_count belongs to the intake, not to resolved"
+
+
+def test_an_item_in_both_registers_is_counted_once_and_the_archive_wins(tmp_path):
+    """Reachable, not defensive: feedback_index's incremental `_merge_rows` KEEPS an old
+    row whose item the current pass skipped, so between an archive run and the next
+    `--rebuild` the same item sits in the index as `open` and in the ledger as `resolved`.
+    """
+    tree = _intake_tree(
+        tmp_path,
+        live=[{"feedback_id": "f1", "item_id": "i1", "status": "open"},
+              {"feedback_id": "f1", "item_id": "i2", "status": "open"}],
+        archive_lines=[
+            {"kind": "item", "feedback_id": "f1", "item": {"id": "i1", "status": "resolved"}},
+        ],
+    )
+    m = status_cmd._feedback_section(tree).measurement
+    assert (m.value, m.of) == (1, 2), "the stale live row must not double the intake"
+
+
+def test_a_measured_rate_is_not_a_stale_warning(tmp_path):
+    """`verdict` keyed on `resolved == 0` was a proxy for the defect, not for staleness."""
+    tree = _intake_tree(
+        tmp_path,
+        live=[{"feedback_id": "f1", "item_id": "i1", "status": "open"}],
+        archive_lines=[
+            {"kind": "item", "feedback_id": "f2", "item": {"id": "i1", "status": "resolved"}},
+        ],
+    )
+    assert status_cmd._feedback_section(tree).verdict == "fresh"
+
+
+def test_a_review_archived_whole_contributes_the_items_it_carries(tmp_path):
+    """Found by mutation, not by reading: disabling this branch reddened nothing.
+
+    Five ledger rows here archive a review as a unit and carry `items: [...]`; eight of
+    those items appear in no `kind: item` row, so a reader that honours only shape 1
+    loses them from the intake without any test noticing.
+    """
+    tree = _intake_tree(
+        tmp_path,
+        live=[{"feedback_id": "f1", "item_id": "i1", "status": "open"}],
+        archive_lines=[
+            {"feedback_id": "f9", "item_count": 2, "body": "...", "items": [
+                {"id": "i1", "status": "resolved"},
+                {"id": "i2", "status": "rejected"},
+            ]},
+        ],
+    )
+    m = status_cmd._feedback_section(tree).measurement
+    assert (m.value, m.of) == (1, 3), "items carried by a whole-review row were dropped"
+
+
+def test_the_per_item_row_wins_over_the_same_item_inside_a_review_row(tmp_path):
+    """Thirteen keys here carry both shapes. The per-item row is written the moment that
+    item closed, so it is the later and more specific record of its status."""
+    tree = _intake_tree(
+        tmp_path,
+        live=[],
+        archive_lines=[
+            {"kind": "item", "feedback_id": "f9", "item": {"id": "i1", "status": "resolved"}},
+            {"feedback_id": "f9", "item_count": 1, "body": "...", "items": [
+                {"id": "i1", "status": "rejected"},
+            ]},
+        ],
+    )
+    m = status_cmd._feedback_section(tree).measurement
+    assert (m.value, m.of) == (1, 1), "one item, counted once, at its per-item status"
+
+
+def test_a_corrupt_line_in_either_register_stays_in_the_intake(tmp_path):
+    """`feedback_index` records `index.malformed_line` because corruption was observed
+    here, not imagined. A line that stops parsing is still an item that was emitted;
+    dropping it quietly shrinks the denominator, which is the whole of GH#294.
+    """
+    tree = _intake_tree(
+        tmp_path,
+        live=[{"feedback_id": "f1", "item_id": "i1", "status": "open"}],
+        archive_lines=[{"kind": "item", "feedback_id": "f2", "item": {"id": "i1",
+                                                                     "status": "resolved"}}],
+    )
+    fb = tree / "ops" / "feedback"
+    for path in (fb / "_index" / "index.jsonl", fb / "_archive" / "2026-09.jsonl"):
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write("{not json at all\n")
+
+    m = status_cmd._feedback_section(tree).measurement
+    assert (m.value, m.of) == (1, 4), "a corrupt line vanished from the population"

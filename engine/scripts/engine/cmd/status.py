@@ -17,7 +17,6 @@ yet connected says so in words, and the operator can tell it from a real zero.
 """
 from __future__ import annotations
 
-import json
 import sys
 from datetime import UTC, datetime, timedelta
 
@@ -57,42 +56,36 @@ def _handoffs_section(repo_root):
 
 
 def _feedback_section(repo_root):
-    """Feedback notebook: how much of it is resolved, and how much is reachable."""
-    from enginelib.status.model import Absent, Count, SectionResult
+    """Feedback notebook: how much of the intake is resolved.
 
-    index = repo_root / "ops" / "feedback" / "_index" / "index.jsonl"
-    if not index.is_file():
+    The population is the union of both registers, not the index alone (GH#294).
+    `feedback_archive` takes every terminal item OUT of the index — by `archived_at`
+    stamp, and for a wholly-closed review by unlinking its markdown — so counting
+    `resolved` inside the index asks for the one status that register cannot hold.
+    `feedback.census` owns the ledger's three row shapes; this adapter only renders.
+    """
+    from enginelib.status.model import Absent, Count, SectionResult
+    from feedback.census import PROOF, read_intake
+
+    feedback_root = repo_root / "ops" / "feedback"
+    if not (feedback_root / "_index" / "index.jsonl").is_file():
         return SectionResult(
             name="фидбек",
             measurement=Absent(reason="индекс не собран (ops/feedback/_index/index.jsonl нет)"),
             verdict="unknown",
         )
 
-    total = resolved = 0
-    for line in index.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            # A malformed row is not a zero. Counting it as absent-from-total would
-            # understate the denominator silently, which is the failure this whole
-            # surface is written against; so it counts toward total and nothing else.
-            total += 1
-            continue
-        total += 1
-        if row.get("status") == "resolved":
-            resolved += 1
-
+    intake = read_intake(feedback_root)
     return SectionResult(
         name="фидбек",
         measurement=Count(
-            value=resolved, of=total,
+            value=intake.resolved, of=intake.total,
             noun="фидбек-записей resolved",
-            proof="ops/feedback/_index/index.jsonl",
+            proof=PROOF,
         ),
-        verdict="stale_warn" if total and resolved == 0 else "fresh",
+        # A real zero over a real population is news; the old `resolved == 0` trigger
+        # fired on the defect itself and so warned every single run.
+        verdict="stale_warn" if intake.total and intake.resolved == 0 else "fresh",
     )
 
 
