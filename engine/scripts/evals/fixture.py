@@ -23,6 +23,8 @@ import tarfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from evals.walk import walk_files
+
 # Tracked paths the fixture must not carry. `.conclave/` needs no entry: git cannot see it.
 #
 # `tests/test_constitution.py` is here because of what it DOES when the charter is gone, not
@@ -104,7 +106,7 @@ def find_norm_carriers(root: Path) -> list[str]:
     """Every text file that restates charter content. .md/.txt/.yaml/.yml get stripped by the
     caller; a .py hit is a bug to fix at the source, since the file cannot simply be deleted."""
     hits: list[str] = []
-    for path in sorted(root.rglob("*")):
+    for path in sorted(walk_files(root)):
         if not path.is_file() or path.suffix.lower() not in (TEXT_SUFFIXES | {PY_SUFFIX}):
             continue
         if _NORM_RE.search(path.read_text(encoding="utf-8", errors="ignore")):
@@ -202,7 +204,7 @@ def real_path_tokens(text: str) -> list[str]:
 def _real_path_hits(root: Path) -> list[tuple[Path, list[str]]]:
     """(file, [tokens]) for every text file under `root` naming a path that exists on disk."""
     hits: list[tuple[Path, list[str]]] = []
-    for path in sorted(root.rglob("*")):
+    for path in sorted(walk_files(root)):
         if not path.is_file() or path.suffix.lower() not in (TEXT_SUFFIXES | {PY_SUFFIX}):
             continue
         found = real_path_tokens(path.read_text(encoding="utf-8", errors="ignore"))
@@ -287,7 +289,7 @@ def assert_no_leakage(fx: Fixture) -> None:
     restated it.
     """
     problems: list[str] = []
-    for stray in fx.root.rglob(CHARTER_RELPATH):
+    for stray in (p for p in walk_files(fx.root) if p.name == CHARTER_RELPATH):
         problems.append(f"charter present ({stray.relative_to(fx.root)}) — 'absent' is not absent")
     for prefix in EXCLUDED_PREFIXES:
         if (fx.root / prefix).exists():
