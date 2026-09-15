@@ -87,9 +87,14 @@ def _reopen_matches(root: Path, meta: dict) -> list[str]:
 
     Makes Constitution VI's reversal path real (093 Component E, closes #89). Never
     resurrects the archived record — the recurrence is recorded on THIS new item, and
-    the archive itself is left untouched. Archive shards store whole reviews
-    ({items:[...]}); the fingerprint is recomputed per item exactly as feedback_index
-    does.
+    the archive itself is left untouched. The fingerprint is recomputed per item exactly
+    as feedback_index does.
+
+    The ledger is read through `census.read_closed_items`, which owns all three of its row
+    shapes and their precedence. This function used to walk the shards itself and honour
+    only `{"items": [...]}` — 111 of the 131 resolved items on this instance live in the
+    per-item shape instead and were invisible, so the detector reported nothing and
+    nothing reads identically to "no regression" (GH#297).
 
     Abstains on a file-level-only match (#59). Without `location.section` the fingerprint
     buckets an entire file+category, so any two script-defects in the same file collide
@@ -102,6 +107,7 @@ def _reopen_matches(root: Path, meta: dict) -> list[str]:
     """
     import json
 
+    from feedback.census import read_closed_items
     from feedback.schema import fingerprint
     fb_root = root / "ops" / "feedback"
     resolved_fp: dict[str, str] = {}
@@ -113,7 +119,15 @@ def _reopen_matches(root: Path, meta: dict) -> list[str]:
             line = line.strip()
             if not line:
                 continue
-            r = json.loads(line)
+            try:
+                r = json.loads(line)
+            except json.JSONDecodeError:
+                # A corrupt index line must not abort the finalize it interrupts: the
+                # review being validated is unrelated to it, and refusing to finalize
+                # would strand the author with a draft over someone else's bad row.
+                # It costs at most one missed match, and `index.malformed_line` is the
+                # channel that reports the corruption itself.
+                continue
             fp = r.get("fingerprint")
             if not fp:
                 continue
@@ -122,19 +136,15 @@ def _reopen_matches(root: Path, meta: dict) -> list[str]:
             elif r.get("status") in ("open", "accepted", "in_progress", "re-occurred"):
                 live_nonterminal_fp.add(fp)
 
-    arch_dir = fb_root / "_archive"
-    if arch_dir.is_dir():
-        for shard in sorted(arch_dir.glob("*.jsonl")):
-            for line in shard.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                review = json.loads(line)
-                for item in review.get("items", []):
-                    if item.get("status") != "resolved":
-                        continue
-                    fp = fingerprint(item.get("location", {}), item.get("category", ""))
-                    resolved_fp.setdefault(fp, f"{review.get('feedback_id')}:{item.get('id')}")
+    # Husks (the third shape) carry a count and no bodies, so they contribute no
+    # fingerprint and are correctly absent here — an item whose status is lost cannot
+    # evidence a regression.
+    closed, _husked = read_closed_items(fb_root / "_archive")
+    for (fid, item_id), item in closed.items():
+        if item.get("status") != "resolved":
+            continue
+        fp = fingerprint(item.get("location", {}), item.get("category", ""))
+        resolved_fp.setdefault(fp, f"{fid}:{item_id}")
 
     abstained: list[str] = []
     for item in meta.get("items", []):
