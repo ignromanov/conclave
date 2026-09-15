@@ -11,7 +11,7 @@ from pathlib import Path
 from briefing.frontmatter_io import read as fm_read
 from briefing.frontmatter_io import write
 from enginelib.lock import lock_path_for, with_lock
-from feedback.paths import triage_lock_target
+from feedback.paths import index_lock_target, triage_lock_target
 
 SCRIPTS_DIR = Path(__file__).parent.parent.parent  # .../scripts/
 FEEDBACK_PKG = Path(__file__).parent.parent        # .../scripts/feedback/
@@ -1067,3 +1067,127 @@ def test_check_reports_zero_skipped_when_every_review_is_valid(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert "skipped_invalid_reviews=0" in result.stdout, result.stdout
+
+
+# --- the rebuild's exit status must be ACCOUNTED FOR, not merely explainable ---
+#
+# The first cut of the 2026-09-15 ruling asked "is there an explainable cause?" and so
+# survived any non-zero as long as one unrelated review happened to be schema-invalid.
+# On the instance the ruling was written for that is the permanent state: the offending
+# review is deliberately left unrepaired. These tests come in pairs — an abort assertion
+# alone is satisfied by a run that aborts for any reason at all, including never getting
+# as far as the lock.
+
+
+def _index_lock_path(root, monkeypatch):
+    """Resolve the index lock path in the MAIN thread, with the same env the run uses.
+
+    Resolved here rather than inside the holder thread because both helpers read
+    LOCK_DIR and CONCLAVE_AI_ROOT from the process environment, and a thread that
+    mutates os.environ mutates it for the test session too.
+    """
+    monkeypatch.setenv("CONCLAVE_AI_ROOT", str(root))
+    monkeypatch.setenv("LOCK_DIR", str(root) + ".locks")
+    return lock_path_for(index_lock_target())
+
+
+def _check_with_the_index_lock_held(root, monkeypatch):
+    lock_file = _index_lock_path(root, monkeypatch)
+    stop, held = threading.Event(), threading.Event()
+
+    def _hold():
+        with with_lock(lock_file, timeout=10):
+            held.set()
+            stop.wait(30)
+
+    t = threading.Thread(target=_hold, daemon=True)
+    t.start()
+    assert held.wait(10), "the holder thread never took the index lock"
+    try:
+        return run_triage(root, ["--check"],
+                          env_extra={"CONCLAVE_INDEX_LOCK_TIMEOUT": "1"})
+    finally:
+        stop.set()
+        t.join(5)
+
+
+def test_a_lock_timeout_aborts_when_the_corpus_is_otherwise_clean(tmp_path, monkeypatch):
+    """The control for the test below: the fatal path must be reachable at all.
+
+    Without it, "a lock timeout aborts" cannot be told from "the holder thread never
+    took the lock, so nothing was contended".
+    """
+    _write_review(tmp_path, "2026-05-22", "atlas-valid.md",
+                  _valid_review_meta(feedback_id="fb-valid-aaaaaa"))
+
+    result = _check_with_the_index_lock_held(tmp_path, monkeypatch)
+
+    assert result.returncode != 0, (
+        f"a lock timeout must abort; stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "index lock" in result.stderr, result.stderr
+
+
+def test_a_lock_timeout_still_aborts_when_a_review_was_also_skipped(tmp_path, monkeypatch):
+    """Reddens under: `fatal = rc != 0 and (unreadable or not skipped_reviews)`.
+
+    That predicate is the one this test exists to forbid. With it, the presence of ONE
+    unrelated schema-invalid review disarms the lock-timeout abort entirely: the index
+    was never rewritten, `_load_index` reads a stale or absent file, and `--check`
+    prints a cadence verdict computed over it — measured as `open_items=0` with a
+    fresh corpus on the branch before this commit.
+
+    Also reddens under: dropping `REASON_INDEX_LOCK_TIMEOUT` from feedback_index's
+    LockTimeout handler, which is the same failure arriving as an unregistered reason.
+    """
+    _write_review(tmp_path, "2026-05-22", "atlas-valid.md",
+                  _valid_review_meta(feedback_id="fb-valid-bbbbbb"))
+    bad_item = _valid_item("it-bad")
+    del bad_item["location"]
+    bad_meta = _valid_review_meta(feedback_id="fb-bad-bbbbbb")
+    bad_meta["items"] = [bad_item]
+    bad_meta["_draft"] = False
+    _write_review(tmp_path, "2026-05-22", "atlas-handflipped.md", bad_meta)
+
+    result = _check_with_the_index_lock_held(tmp_path, monkeypatch)
+
+    assert result.returncode != 0, (
+        f"a lock timeout was survived because an unrelated review was skipped; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "triage_due=" not in result.stdout, (
+        f"a verdict was printed over an index this run never wrote: {result.stdout!r}"
+    )
+
+
+def test_an_unclassified_non_zero_is_fatal(monkeypatch):
+    """The contract, not one instance of it: an exit nobody explained must abort.
+
+    Every test above pins a failure mode that exists today. This one pins the direction
+    the predicate fails in, which is what protects the failure mode added next year: a
+    new `return 1` in feedback_index that forgets to register a reason leaves
+    `exit_reasons` short of the exit status, and the caller must stop rather than treat
+    the silence as survivable.
+
+    Reddens under: `fatal = rc != 0 and not reasons <= survivable` — dropping the
+    `reasons and` clause, so an empty reason list reads as "nothing unsurvivable".
+    """
+    import feedback_triage
+
+    from feedback import feedback_index
+
+    monkeypatch.setattr(feedback_index, "main", lambda argv, report=None: 1)
+    assert feedback_triage._rebuild_index_reporting().fatal is True
+
+    monkeypatch.setattr(
+        feedback_index, "main",
+        lambda argv, report=None: (
+            report.update({
+                "exit_reasons": [feedback_index.REASON_AUTHOR_COMPLETE_INVALID],
+                "author_complete_drops": ["x.md"],
+            }) or 1
+        ),
+    )
+    rebuild = feedback_triage._rebuild_index_reporting()
+    assert rebuild.fatal is False, "one author's invalid review must stay survivable"
+    assert rebuild.skipped_reviews == ["x.md"]

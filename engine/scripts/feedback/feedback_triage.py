@@ -42,7 +42,8 @@ if sys.version_info < (3, 11):  # noqa: UP036 — see engine/__main__.py
     sys.exit(1)
 
 from datetime import UTC, datetime  # noqa: E402 — must follow the floor guard above
-from pathlib import Path  # noqa: E402
+from pathlib import Path
+from typing import NamedTuple  # noqa: E402
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent
 if str(_SCRIPTS_DIR) not in sys.path:
@@ -119,15 +120,36 @@ _VALID_STATUSES = set(_typing.get_args(_Status))
 _NON_DEFECT_CATEGORIES = frozenset({"positive", "near-miss"})
 
 
-def _rebuild_index_reporting(root: Path) -> tuple[int, list[str], list[str]]:
-    """Rebuild the index and say *why* it failed, not only that it did.
+class IndexRebuild(NamedTuple):
+    """What a rebuild did, for a caller that must decide whether to continue.
 
-    Returns (exit code, dropped author-complete reviews, unreadable files). The two
-    lists exist because the exit code cannot distinguish them and the caller's
-    decision turns on exactly that: a dropped review is one author's file failing
-    validation, which the rest of the corpus survives; an unreadable file is not.
+    `fatal` is the decision, computed once here so the two callers cannot drift apart.
+    It is NOT `rc != 0`: one author's schema-invalid review is survivable by the
+    2026-09-15 ruling, and every other non-zero is not.
+    """
 
-    Deliberately a second function rather than a wider return type on the one below.
+    rc: int
+    skipped_reviews: list[str]
+    fatal: bool
+
+
+def _rebuild_index_reporting() -> IndexRebuild:
+    """Rebuild the index and say whether the failure is one a caller may continue past.
+
+    The exit code says only "something was wrong". The decision turns on which thing:
+    a dropped author-complete review is one author's file failing validation, which the
+    rest of the corpus survives; an unreadable file or a lock the run could not take is
+    not, because then the index a caller is about to read was never produced.
+
+    The predicate is subtractive and fails closed — an exit is survivable only if it
+    reported reasons AND every one of them is in the survivable set. An unclassified
+    non-zero reports no reasons and is therefore fatal. The first cut of this function
+    asked the opposite question, "is there an explainable cause?", and so continued past
+    a lock timeout whenever any unrelated review happened to be schema-invalid — which
+    on the instance this was written for is the permanent state, since the offending
+    review is deliberately left unrepaired.
+
+    Deliberately separate from `_rebuild_index` rather than widening its return type.
     Changing `_rebuild_index` to return a tuple left `feedback_verify.py:391`'s
     `if _rebuild_index(root) != 0:` comparing a tuple to an integer — always true, so
     --apply took its failure branch unconditionally and exited 1 with an empty stderr.
@@ -135,11 +157,34 @@ def _rebuild_index_reporting(root: Path) -> tuple[int, list[str], list[str]]:
     A caller that only wants the verdict keeps getting an int.
     """
     from feedback import feedback_index  # noqa: PLC0415
+
+    # Read from the module rather than restated here, so the two vocabularies are one.
+    survivable = {feedback_index.REASON_AUTHOR_COMPLETE_INVALID}
     report: dict = {}
     # --rebuild: triage must see a clean index — stale rows from archived/deleted
     # reviews would otherwise resurface as phantom clusters in the digest (#9).
     rc = feedback_index.main(["--rebuild"], report=report)
-    return rc, list(report.get("author_complete_drops") or []), list(report.get("unreadable") or [])
+    reasons = set(report.get("exit_reasons") or ())
+    return IndexRebuild(
+        rc=rc,
+        skipped_reviews=list(report.get("author_complete_drops") or []),
+        fatal=rc != 0 and not (reasons and reasons <= survivable),
+    )
+
+
+def skipped_reviews_note(skipped: list[str], absent_from: str) -> str:
+    """The one wording for "N reviews are missing from everything this run reports".
+
+    One formatter rather than one per call site: triage and the verify sweep both have
+    to say it, and a reader who learns the sentence at one of them should recognise it
+    at the other. The wording itself is a display contract and belongs to kosmos-cxo —
+    this function only keeps the two copies from drifting.
+    """
+    return (
+        f"NOTE: {len(skipped)} author-complete review(s) were skipped as schema-invalid "
+        f"and are absent from {absent_from}. Re-run `feedback_emit.py --finalize <path>` "
+        f"on each to see what it rejects."
+    )
 
 
 def _rebuild_index(root: Path) -> int:
@@ -147,9 +192,14 @@ def _rebuild_index(root: Path) -> int:
 
     Returns the exit code from feedback_index.main().
     Non-zero means one or more _draft:false reviews are schema-invalid, or a review
-    could not be read. Callers that must tell those apart use the function above.
+    could not be read, or the index lock could not be taken. Callers that must tell
+    those apart use `_rebuild_index_reporting` above.
+
+    `root` is unused and kept: feedback_index resolves the DATA root from the
+    environment, and three callers already pass it. Narrowing that signature is a
+    separate change from this one.
     """
-    return _rebuild_index_reporting(root)[0]
+    return _rebuild_index_reporting().rc
 
 
 def _load_index(idx_path: Path) -> list[dict]:
@@ -660,8 +710,9 @@ def main(argv: list[str] | None = None) -> int:
         # Step 1: Always rebuild index defensively.
         # Non-zero exit means _draft:false reviews are schema-invalid — abort triage
         # so corrupted reviews never silently bypass the queue.
-        index_rc, skipped_reviews, unreadable = _rebuild_index_reporting(root)
-        if index_rc != 0 and (unreadable or not skipped_reviews):
+        rebuild = _rebuild_index_reporting()
+        skipped_reviews = rebuild.skipped_reviews
+        if rebuild.fatal:
             # Still fatal: a file the run could not read, a lock it could not take, or a
             # non-zero it cannot account for. Continuing past an unexplained failure would
             # be the silence this whole path exists to prevent.
@@ -670,7 +721,7 @@ def main(argv: list[str] | None = None) -> int:
                 "a schema-invalid review. Fix the errors shown above, then re-run.",
                 file=sys.stderr,
             )
-            return index_rc
+            return rebuild.rc
         if skipped_reviews:
             # Ruled 2026-09-15 (Helm, engine scope) after one hand-flipped `_draft: false`
             # review took the cadence check down for all three advisors of an instance for
@@ -680,12 +731,8 @@ def main(argv: list[str] | None = None) -> int:
             # Spec 086 AC2's invariant is kept and read literally — the review never enters
             # the index, and the DROPPED line above names it. What it forbids is a *silent*
             # bypass, and the count below is what makes this one not silent.
-            print(
-                f"NOTE: {len(skipped_reviews)} author-complete review(s) were skipped as "
-                f"schema-invalid and are absent from every figure below. Re-run "
-                f"`feedback_emit.py --finalize <path>` on each to see what it rejects.",
-                file=sys.stderr,
-            )
+            print(skipped_reviews_note(skipped_reviews, "every figure below"),
+                  file=sys.stderr)
 
         idx_path = index_path()
         rows = _load_index(idx_path)

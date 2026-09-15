@@ -127,8 +127,9 @@ def _merge_rows(rows: list[dict], idx_path: Path, *, rebuild: bool) -> list[dict
 def _process_reviews(dirs: list[Path], existing: dict[str, str], check: bool) -> tuple[list[dict], list[str], list[str], list[str], int]:
     """Walk dirs, validate, produce index rows + rejection messages.
 
-    Returns (rows, parse_errors, author_complete_drops, review_count).
+    Returns (rows, parse_errors, author_complete_drops, unreadable, review_count).
     author_complete_drops: paths of _draft:false files that failed schema validation.
+    unreadable: paths that could not be parsed at all.
     """
     rows: list[dict] = []
     parse_errors: list[str] = []
@@ -222,13 +223,31 @@ def _process_reviews(dirs: list[Path], existing: dict[str, str], check: bool) ->
     return rows, parse_errors, author_complete_drops, unreadable, review_count
 
 
+# Reason codes for a non-zero exit, carried in `report["exit_reasons"]`.
+#
+# The vocabulary is closed and the caller's contract is subtractive: it names the codes
+# it knows how to continue past and aborts on everything else, INCLUDING an exit whose
+# reasons are empty. That is the direction that fails safe. A failure mode added here
+# later without a code leaves `exit_reasons` short of the exit status, and a caller
+# comparing the two stops rather than continuing past something nobody classified —
+# which is how the lock-timeout path escaped the first cut of this contract.
+REASON_AUTHOR_COMPLETE_INVALID = "author_complete_invalid"
+REASON_UNREADABLE = "unreadable"
+REASON_INDEX_LOCK_TIMEOUT = "index_lock_timeout"
+
+
 def main(argv: list[str] | None = None, report: dict | None = None) -> int:
     """Build the index; `report`, when given, receives what the exit code cannot carry.
 
     The exit code says only "something was wrong". A caller that must decide whether to
     continue needs to know *which* thing: a dropped author-complete review is one
-    author's defect and is survivable, an unreadable file is not. Passing a dict here
-    is how feedback_triage tells them apart; the CLI passes nothing and is unchanged.
+    author's defect and is survivable, an unreadable file or a lock it could not take is
+    not. Passing a dict here is how feedback_triage tells them apart; the CLI passes
+    nothing and is unchanged.
+
+    `report["exit_reasons"]` is the field that decision reads. The three lists beside it
+    say what was seen; only `exit_reasons` claims to account for the exit STATUS, and a
+    caller that compares the two is the reason a new failure mode cannot pass silently.
     """
     parser = argparse.ArgumentParser(description="Validate + build feedback JSONL index")
     parser.add_argument("--check", action="store_true", default=False,
@@ -251,12 +270,23 @@ def main(argv: list[str] | None = None, report: dict | None = None) -> int:
     rows, parse_errors, author_complete_drops, unreadable, review_count = _process_reviews(dirs, existing, args.check)
 
     # Populated before either exit path below, so a caller's view never depends on
-    # which branch the run took.
-    if report is not None:
-        report["author_complete_drops"] = list(author_complete_drops)
-        report["parse_errors"] = list(parse_errors)
-        report["unreadable"] = list(unreadable)
-        report["review_count"] = review_count
+    # which branch the run took. `exit_reasons` is re-published by any later path that
+    # adds one (see the LockTimeout handler); nothing below removes a reason.
+    reasons: list[str] = []
+    if author_complete_drops:
+        reasons.append(REASON_AUTHOR_COMPLETE_INVALID)
+    if unreadable:
+        reasons.append(REASON_UNREADABLE)
+
+    def _publish() -> None:
+        if report is not None:
+            report["author_complete_drops"] = list(author_complete_drops)
+            report["parse_errors"] = list(parse_errors)
+            report["unreadable"] = list(unreadable)
+            report["review_count"] = review_count
+            report["exit_reasons"] = list(reasons)
+
+    _publish()
 
     if args.check:
         pending = sum(1 for r in rows if r.get("status") == "open")
@@ -294,6 +324,13 @@ def main(argv: list[str] | None = None, report: dict | None = None) -> int:
                 "\n".join(json.dumps(r) for r in merged) + ("\n" if merged else ""),
             )
     except LockTimeout:
+        # The index was NOT rewritten, so every figure a caller derives from it is stale
+        # or absent. This is registered as a reason rather than left to the exit code
+        # because a caller that survives a schema-invalid review would otherwise read
+        # rc=1 as that same survivable failure and report a verdict over an index this
+        # run never produced.
+        reasons.append(REASON_INDEX_LOCK_TIMEOUT)
+        _publish()
         print(f"ERROR: could not acquire the feedback index lock at {lock_file} "
               f"(concurrent writer?)", file=sys.stderr)
         return 1
