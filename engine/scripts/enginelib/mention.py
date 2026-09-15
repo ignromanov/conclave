@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from enginelib import advisors, frontmatter, paths, slug, template
+from enginelib import advisors, frontmatter, paths, slug
 from enginelib.snapshot import snapshot_write
 
 _log = logging.getLogger(__name__)
@@ -91,7 +91,7 @@ def create(opts: MentionOpts) -> str:
     tpl = paths.templates_dir() / "mention.md"
     if not tpl.exists():
         raise ValueError(f"template not found: {tpl}")
-    rendered = template.render(tpl, {
+    rendered = frontmatter.render_record(tpl, {
         "id": mid,
         "from": opts.frm,
         "to": opts.to,

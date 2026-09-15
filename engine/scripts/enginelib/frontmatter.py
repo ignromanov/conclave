@@ -1,9 +1,41 @@
 """frontmatter.py — line-based YAML frontmatter r/w. Port of lib/frontmatter.sh.
 Values are simple strings; lists stored as "[a,b]". Intentionally NOT a yaml
 round-trip — preserves byte-for-byte layout of untouched lines (parity contract)."""
+import re
 from pathlib import Path
 
+from enginelib import template
 from enginelib.snapshot import snapshot_write
+
+
+class Raw(str):
+    """A value that is ALREADY YAML and must be written through untouched.
+
+    `render_record` serializes every value it puts inside a frontmatter fence. That is the
+    right default — it is the default being absent that produced #255, #249 and #301 — but
+    it is wrong for a caller that has built YAML on purpose: `as_flow_list("250,251")`
+    returns the SEQUENCE `[250,251]`, and serializing it again would quote the brackets and
+    turn a list into a string. The three serializers below return `Raw`, so those callers
+    need no change and the exemption is something a value carries rather than something a
+    key is listed for.
+    """
+
+
+def _plain_scalar_is_safe(text: str) -> bool:
+    """True when one line of *text* reads back through a YAML parser as itself.
+
+    The three hazards, in the order they were learned the hard way:
+      `": "`      — a ScannerError, loud, found in a day (#255).
+      leading `#` — a VALID document whose value is None; silent (#301).
+      mid `" #"`  — a valid document whose value is TRUNCATED; silent and partial, the
+                    worst of the three, and the one that cost five session reflexions.
+    """
+    return not (
+        ": " in text
+        or " #" in text
+        or text.endswith(":")
+        or text[0] in "#&*!|>'\"%@`-?:,[]{}"
+    )
 
 
 def fm_get(file: Path, key: str) -> str | None:
@@ -62,7 +94,7 @@ def fm_get_block(file: Path, key: str) -> str | None:
     return "\n".join(ln[pad:] if ln.strip() else "" for ln in body)
 
 
-def as_block(value: str, indent: int = 2, *, chomp: bool = False) -> str:
+def as_block(value: str, indent: int = 2, *, chomp: bool = False) -> Raw:
     """Render *value* as the right-hand side of a frontmatter key.
 
     Emits a `|` block scalar whenever the text cannot be a plain YAML scalar,
@@ -77,23 +109,16 @@ def as_block(value: str, indent: int = 2, *, chomp: bool = False) -> str:
     """
     text = value.strip()
     if not text:
-        return ""
+        return Raw("")
     lines = [ln.rstrip() for ln in text.splitlines()]
-    needs_block = (
-        len(lines) > 1
-        or ": " in text
-        or " #" in text
-        or text.endswith(":")
-        or text[0] in "#&*!|>'\"%@`-?:,[]{}"
-    )
-    if not needs_block:
-        return lines[0]
+    if len(lines) == 1 and _plain_scalar_is_safe(text):
+        return Raw(lines[0])
     pad = " " * indent
     header = "|-" if chomp else "|"
-    return header + "\n" + "\n".join(pad + ln if ln else "" for ln in lines)
+    return Raw(header + "\n" + "\n".join(pad + ln if ln else "" for ln in lines))
 
 
-def as_flow_list(csv: str) -> str:
+def as_flow_list(csv: str) -> Raw:
     """Render a comma-separated string as a YAML flow sequence: "a,b" -> "[a,b]".
 
     Quotes only the elements that need it, so the shape most of the corpus already
@@ -106,14 +131,79 @@ def as_flow_list(csv: str) -> str:
     routinely; 9 of 77 live session records were written this way (#255).
     """
     if not csv:
-        return "[]"
+        return Raw("[]")
     out = []
     for raw in csv.split(","):
         item = raw.strip()
         if item and (item[0] in "#&*!|>%@`" or any(c in item for c in ":[]{}\"'")):
             item = "'" + item.replace("'", "''") + "'"
         out.append(item)
-    return "[" + ",".join(out) + "]"
+    return Raw("[" + ",".join(out) + "]")
+
+
+def as_scalar(value: str) -> Raw:
+    """Render *value* as one frontmatter scalar, in the least invasive form that is valid.
+
+    Three tiers, chosen so the corpus does not churn: a value that is already a safe plain
+    scalar is returned verbatim (the overwhelming majority — ids, dates, advisor names,
+    `AI#297`), a single hazardous line is single-quoted, and only genuinely multi-line prose
+    becomes a block. Quoting unconditionally would rewrite all 166 records on this instance
+    and bury the handful that actually changed.
+
+    A quoted scalar is preferred over a block for the single-line case because these fields
+    are read by humans in a 12-line header, and because `fm_get` — still the reader in
+    `memory/index.py` — returns the literal "|-" for a block and the text for a quote.
+    """
+    text = value.strip()
+    if not text:
+        return Raw("")
+    if len(text.splitlines()) > 1:
+        return as_block(text, chomp=True)
+    if _plain_scalar_is_safe(text):
+        return Raw(text)
+    return Raw("'" + text.replace("'", "''") + "'")
+
+
+# A frontmatter fence. `render_record` applies this with `.match`, which anchors at
+# position 0 — the template must OPEN with the fence. `handoff.md` has no frontmatter and
+# a `---` rule in its prose; a second rule would let an unanchored search claim the span
+# between them as a header and serialize a paragraph.
+_FENCE_RE = re.compile(r"---[ \t]*\r?\n.*?\r?\n---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
+
+
+def render_record(tpl: Path, values: dict[str, str]) -> str:
+    """Render a record template, serializing every value that lands in its frontmatter.
+
+    This is the fix for a defect the engine shipped three times — #255 (reflexion),
+    #249 (mention note), #301 (ref_issue) — because each repair was scoped to the writer
+    the symptom appeared in. The value that decides whether a record parses is chosen by
+    whoever calls the writer, so the check belongs where values meet the fence, not in
+    each writer: a template that gains a field gets the guarantee without anyone
+    remembering to ask for it.
+
+    Serialization is per-REGION, not per-key. A key may legitimately appear both in the
+    header and in the body, and a block scalar dropped into a sentence is nonsense. No
+    template does that today (measured 2026-09-15: zero overlap across all four record
+    templates) — which is a fact about the corpus, not an invariant, so the split is
+    structural rather than trusted.
+
+    Values already carrying YAML (`as_flow_list`, `as_block`, `as_scalar` — anything of
+    type `Raw`) pass through untouched.
+    """
+    tpl = Path(tpl)
+    if not tpl.is_file():
+        raise FileNotFoundError(f"render_record: {tpl} not found")
+    content = tpl.read_text(encoding="utf-8")
+
+    fence = _FENCE_RE.match(content)
+    if fence is None:
+        return template.render(tpl, values)
+
+    serialized: dict[str, str] = {
+        k: v if isinstance(v, Raw) else as_scalar(v) for k, v in values.items()
+    }
+    return (template.substitute(fence.group(0), serialized)
+            + template.substitute(content[fence.end():], values))
 
 
 def fm_set(file: Path, key: str, value: str) -> None:

@@ -28,9 +28,18 @@ def render(tpl: Path, values: dict[str, str]) -> str:
         if not _KEY_RE.fullmatch(key):
             raise ValueError(f"render: invalid key: {key}")
 
-    content = tpl.read_text(encoding="utf-8")
+    return substitute(tpl.read_text(encoding="utf-8"), values)
 
+
+def substitute(text: str, values: dict[str, str]) -> str:
+    """Substitute ``{{key}}`` placeholders in *text*. The string-level half of render().
+
+    Split out so a caller can render one REGION of a template differently from the rest —
+    `frontmatter.render_record` serializes the values landing between the `---` fences and
+    leaves the body verbatim. Doing that per-key over the whole document would put a YAML
+    block scalar in the middle of a sentence.
+    """
     def _sub(match: re.Match) -> str:
         return values.get(match.group(1), "")
 
-    return _PLACEHOLDER_RE.sub(_sub, content)
+    return _PLACEHOLDER_RE.sub(_sub, text)
