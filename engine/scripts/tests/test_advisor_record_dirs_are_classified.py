@@ -37,10 +37,16 @@ its one hit names `advisors/feedback/`, a location `feedback/paths.py` retired u
 GH#105. Failing the suite over a changelog entry is how a gate gets switched off.
 
 A slug shaped like an advisor id (`<name>-<role>`, role from the closed vocabulary) is a
-PER-ADVISOR directory, not a record class: its whole name is the id, so the fix is a path
-rewrite rather than a class, and it has its own open issue (conclave#99 — duty artifacts).
-The test is `advisors.validate_advisor_id`, the engine's own vocabulary, so this carve-out
-cannot drift away from what an advisor id means.
+PER-ADVISOR directory, not a record class: its whole name is the id, so what it needs is a
+path rewrite rather than an entry in the enumeration below. The test is
+`advisors.validate_advisor_id`, the engine's own vocabulary, so this carve-out cannot
+drift away from what an advisor id means.
+
+That exclusion still holds after conclave#99 shipped, and the shape of the fix is why:
+the DIRECTORY is still not a record class, so it is still wrong to assert a class for it
+here. What #99 added is a rule keyed on the two FILENAMES the duty model writes inside it
+(`rename._DUTY_ARTIFACTS`, imported from their writers), which this gate's corpus — built
+from directory names — cannot see and should not try to.
 """
 from __future__ import annotations
 
@@ -140,9 +146,9 @@ def test_the_gate_found_both_of_its_producers():
 def test_an_advisor_id_is_not_a_record_class():
     """`agent-memory/advisors/kai-cto/` appears in a shipped template.
 
-    It is a per-advisor directory, not a record class, and conclave#99 owns it. Without
-    this filter the gate would redden on a real but different defect, and the fix for
-    THAT one is a path rewrite, not an entry in the enumeration.
+    It is a per-advisor directory, not a record class. Without this filter the gate would
+    redden on a real but different defect — conclave#99, whose fix was a path rewrite
+    keyed on the filenames inside the directory, not an entry in the enumeration.
     """
     assert _is_advisor_id("kai-cto")
     assert _is_advisor_id("forge-chro")

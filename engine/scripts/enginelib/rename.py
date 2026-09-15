@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from enginelib import advisors, paths
+from enginelib.duties.ledger import LEDGER_NAME
+from enginelib.duties.project import PROJECTION_NAME
 
 # Classes, in report order.
 CONFIG = "config"
@@ -68,6 +70,32 @@ _COMMON_NOUN_IDS = frozenset({
 # policy (they are the record's own past identity), but reported so the operator
 # sees what will no longer match its filename.
 _DERIVED_FIELDS = ("id", "ref_session", "ref_handoff", "session_ref", "ref_decision")
+
+# `agent-memory/advisors/<id>/` is the one directory under `advisors/` whose NAME is an
+# advisor id rather than a record class, and these are the two artifacts the duty model
+# writes into it (spec 091 §3-§4). Both are HISTORY, for two different reasons:
+#
+#   duty-ledger.yaml   only ever extended, derivable from nothing. Its ONLY statement of
+#                      ownership is the directory it sits in — no frontmatter, no
+#                      `advisor:` key — so the path rewrite IS the whole carry.
+#   COMPUTED-DUTIES.md a projection, and REGEN is still the wrong class: it is rebuilt
+#                      by `engine duty project`, a verb no command, hook or lifecycle
+#                      step invokes (`done.md` calls `duty record` and `duty discharge`
+#                      and nothing else). Dropping it deletes what nothing restores —
+#                      a silent delete wearing a cache's clothes. Carried instead, and
+#                      its stale title REPORTED, since HISTORY leaves prose alone.
+#
+# Named, not inferred from the directory. An advisor id is validated by SHAPE, and
+# `plan()` deliberately accepts a non-conforming `--from` because "the ids that most
+# need renaming are precisely the ones that never conformed" — a shape gate here would
+# skip the legacy migration this command exists for. Anything ELSE in that directory
+# stays unclassified, which is the completeness assertion doing its job: a third duty
+# artifact gets reported rather than guessed at.
+#
+# The two names are IMPORTED from the modules that write them, not spelled here: a
+# literal in two files is a fact nobody can check, and this carrier set has already
+# missed a category twice.
+_DUTY_ARTIFACTS = frozenset({LEDGER_NAME, PROJECTION_NAME})
 
 _SKIP_DIRS = frozenset({".git", "node_modules", "__pycache__", ".venv", ".pytest_cache"})
 
@@ -408,6 +436,11 @@ def _classify(path: Path, data_root: Path, claude_dirs: list[Path]) -> str:
         ("agent-memory", "advisors", "checkpoints"),
     ):
         return HISTORY
+    # The per-advisor duty directory (conclave#99). Reached only when the record-class
+    # names above did not match, so `advisors/sessions/` keeps its own class.
+    if (parts[:2] == ("agent-memory", "advisors") and len(parts) == 4
+            and parts[3] in _DUTY_ARTIFACTS):
+        return HISTORY
     # ops/decisions/ holds cross-cutting Y-statements keyed by `by:`, which the
     # briefing reads beside the advisor's own decisions (briefing/scans/decisions.py).
     # Knowing only agent-memory/advisors/decisions/ left them pointing at the retired
@@ -419,9 +452,15 @@ def _classify(path: Path, data_root: Path, claude_dirs: list[Path]) -> str:
     # has no frontmatter, and the ids it carries live in `] <advisor>: ` markers
     # that only the CONFIG token rewrite reaches. Left unclassified it would be
     # reported and skipped on every rename, keeping a retired id forever.
-    if rel.as_posix() in ("agent-memory/hot.md", "agent-memory/hot-archive.md") or rel.name in (
-        "role-manifest.yaml", "roster.yaml",
-    ):
+    # roster/norms.yaml is the third member of the roster-config family and the one
+    # that was missed. Its norms are written inline-flow (`- {type: …, role: <id>}`),
+    # so no frontmatter-field rule reaches them and HISTORY would be a silent no-op.
+    # Leaving it behind does not fail: `duty discharge` matches norms to the agent by
+    # `role:`, so the new id simply holds no obligations and the check the operator
+    # installed reports CLEAN — spec 091 P2's own failure mode, re-entered by a rename.
+    if rel.as_posix() in (
+        "agent-memory/hot.md", "agent-memory/hot-archive.md", "roster/norms.yaml",
+    ) or rel.name in ("role-manifest.yaml", "roster.yaml"):
         return CONFIG
     return UNCLASSIFIED
 
@@ -678,6 +717,16 @@ def plan(old: str, new: str) -> RenamePlan:
                 acted = acted or bool(details)
                 for d in _derived_notes(text, old):
                     p.notes.append(Note(dst, d))
+                if f.name == PROJECTION_NAME and dst != f:
+                    # Carried, and said to be carried stale. The projection's own title
+                    # names the retired id and HISTORY does not touch prose, so without
+                    # this line the rename hands back a lie with a fresh path and no
+                    # hint that one command fixes it.
+                    p.notes.append(Note(
+                        dst,
+                        f"derived projection still names {old} — rebuild with "
+                        f"`engine duty project --advisor {new}`",
+                    ))
             if not acted:
                 # Matched the old id but earned no move, edit or delete — a history
                 # record that names the advisor only in its prose. Left alone by
