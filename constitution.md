@@ -141,6 +141,7 @@ a test that exists; a principle tagged `reviewed` MUST name its monitor. A princ
 itself a claim about the world, and the axiom says a claim without a record does not hold.
 
 **Tier**: `mechanical` — **Check**: `tests/test_constitution.py::test_every_principle_declares_an_honest_tier`
+**Falsified by**: `p0-a-tier-claims-a-check-it-does-not-have`
 
 ### I. Never destroy a record
 
@@ -155,6 +156,7 @@ repaired; this one cannot. It therefore outranks all of them.
 discards the content it claims to preserve.
 
 **Tier**: `mechanical` — **Check**: `feedback/tests/test_archive.py::test_archive_row_preserves_every_item_and_the_body`
+**Falsified by**: `p1-archiving-a-review-drops-its-second-item`
 
 > Honest scope: the check binds the feedback-archive path, where this principle was being violated in
 > production until 2026-07-09. It does not yet bind every deletion in the engine.
