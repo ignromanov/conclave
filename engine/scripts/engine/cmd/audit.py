@@ -77,6 +77,22 @@ def _advisor_naming(args: argparse.Namespace) -> int:
     return _emit(advisor_naming.run(project_agents_dir()))
 
 
+def _identity_parity(args: argparse.Namespace) -> int:
+    from enginelib.audit import identity_parity
+    from enginelib.paths import project_agents_dir, project_skills_dir
+
+    agents = Path(args.agents_dir[0]) if args.agents_dir else project_agents_dir()
+    skills = Path(args.skills_dir) if args.skills_dir else project_skills_dir()
+    # Print the denominator before the verdict: a clean run over an empty roster
+    # and a clean run over the whole roster are the same two lines otherwise.
+    roster = identity_parity.scanned(agents, skills)
+    print(
+        f"=== audit identity-parity — {len(roster)} advisor(s): "
+        f"{', '.join(roster) or '(none)'} ==="
+    )
+    return _emit(identity_parity.run(agents, skills))
+
+
 def _feedback_owners(args: argparse.Namespace) -> int:
     from enginelib.advisors import canonical_advisors
     from enginelib.audit import feedback_owners
@@ -267,6 +283,7 @@ _AUDITS: dict[str, Callable[[argparse.Namespace], int]] = {
     "phantom-skills": _phantom_skills,
     "registry-consistency": _registry_consistency,
     "advisor-naming": _advisor_naming,
+    "identity-parity": _identity_parity,
     "feedback-owners": _feedback_owners,
     "overlays": _overlays,
     "agent-configs": _agent_configs,
@@ -320,7 +337,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:  # type: ignore[ty
         dest="skills_dir",
         default=None,
         metavar="DIR",
-        help="Override skills dir (used by phantom-skills).",
+        help="Override skills dir (used by phantom-skills, identity-parity).",
     )
     p.add_argument(
         "--forge-dir",
