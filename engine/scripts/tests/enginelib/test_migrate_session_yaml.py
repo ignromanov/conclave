@@ -10,6 +10,7 @@ import textwrap
 
 import yaml
 
+from enginelib.audit import Findings
 from enginelib.lifecycle import migrate_session_yaml as m
 
 
@@ -199,3 +200,168 @@ class TestRepairChunkDirectly:
 
     def test_a_line_that_is_not_a_key_is_refused(self):
         assert m.repair_chunk(["  stray continuation"]) is None
+
+
+# --- #262: the record that PARSES and still lost its value -------------------------
+
+TRUNCATED = """\
+    ---
+    advisor: sage-cto
+    date: 2026-07-08
+    slug: c-slug
+    decisions: []
+    issues: []
+    reflexion: Verifying disk state killed two false findings (register.py already fixed by #68; owner lives in the review file) — reviews go stale.
+    ---
+
+    body
+    """
+
+
+def _reflexion(path):
+    return yaml.safe_load(path.read_text().split("---")[1])["reflexion"]
+
+
+class TestValueLossNotParseFailure:
+    """The migration's entry condition was `yaml.safe_load(...) is a dict`, so a record
+    that parses and reads back SHORT was never examined — not merely passed, skipped
+    before the first chunk. `#` opens a comment, and 71% of one lesson went with it."""
+
+    def test_a_record_that_parses_but_reads_back_truncated_is_repaired(self, tmp_path):
+        p = _write(tmp_path, "t.md", TRUNCATED)
+        assert _parses(p), "precondition: this record PARSES — that is the whole point"
+        assert _reflexion(p).endswith("fixed by"), "precondition: and reads back truncated"
+
+        m.run(tmp_path)
+        assert "#68" in _reflexion(p)
+        assert _reflexion(p).endswith("reviews go stale.")
+
+    def test_the_repaired_value_equals_what_the_writer_was_given(self, tmp_path):
+        p = _write(tmp_path, "t.md", TRUNCATED)
+        written = TRUNCATED.split("reflexion: ", 1)[1].split("\n")[0]
+        m.run(tmp_path)
+        assert _reflexion(p) == written.strip()
+
+    def test_a_truncated_record_is_counted_as_updated_not_skipped(self, tmp_path):
+        _write(tmp_path, "t.md", TRUNCATED)
+        res = m.run(tmp_path, dry_run=True)
+        assert res.would_update, "a lossy record must be offered for repair"
+        assert res.skipped == 0
+
+    def test_a_record_that_parses_AND_loses_nothing_is_still_skipped(self, tmp_path):
+        """The guard must narrow, not vanish: an intact record stays byte-identical."""
+        clean = TRUNCATED.replace("by #68; owner", "by 68 -- owner")
+        p = _write(tmp_path, "t.md", clean)
+        before = p.read_bytes()
+        res = m.run(tmp_path)
+        assert res.skipped == 1 and res.updated == 0
+        assert p.read_bytes() == before
+
+
+BROKEN_MENTION = """\
+    ---
+    id: 2026-09-08-0419-a-to-b-something
+    from: a
+    to: b
+    status: resolved
+    resolved_note: Answered: the order, and one acceptance line I refuse as written.
+    ---
+
+    body
+    """
+
+
+class TestCorpusReach:
+    """`audit records` walks sessions, decisions AND mentions; the repair globbed one
+    directory, non-recursively. Five of the twelve live findings are mentions, nested
+    two levels under `mentions/<advisor>/<state>/`, so the reporter could see records
+    the repair could not reach — an instrument with no path out."""
+
+    def test_a_nested_record_is_reached(self, tmp_path):
+        nested = tmp_path / "mentions" / "sage-cto" / "archive"
+        nested.mkdir(parents=True)
+        p = _write(nested, "m.md", BROKEN_MENTION)
+        assert not _parses(p), "precondition: this mention does not parse"
+
+        m.run(tmp_path)
+        assert _parses(p)
+        doc = yaml.safe_load(p.read_text().split("---")[1])
+        assert doc["resolved_note"].startswith("Answered: the order")
+        assert doc["resolved_note"].endswith("refuse as written.")
+
+    def test_the_repair_defaults_to_every_corpus_the_audit_reports_on(
+            self, ai_root, monkeypatch):
+        """Behavioural, not an inspection of the source: a test that greps a function
+        body for `rglob` passes on a function that recurses into the wrong tree. This
+        one compares the two adapters' corpus lists, which is the claim."""
+        from engine.cmd import audit as audit_cmd
+        from engine.cmd import lifecycle as lifecycle_cmd
+
+        walked: list = []
+        monkeypatch.setattr(
+            "enginelib.audit.records.run", lambda dirs: walked.extend(dirs) or Findings())
+        monkeypatch.setattr("engine.cmd.audit._emit", lambda f: 0)
+        audit_cmd._AUDITS["records"](None)
+
+        assert walked, "precondition: the audit names its corpora"
+        assert set(lifecycle_cmd.repair_roots()) == set(walked)
+
+
+BLOCK_SEQUENCE = """\
+    ---
+    advisor: sage-cto
+    date: 2026-07-08
+    slug: d-slug
+    decisions:
+      - first-decision
+      - second-decision
+    issues: []
+    reflexion: lost the tail at #68 here
+    ---
+
+    body
+    """
+
+
+class TestWhatTheChunkGuardProtects:
+    """Both of these were found by a mutation that SURVIVED the suite as first written.
+
+    `if chunk_parses(chunk)` looked like an optimisation — skip the chunks that are
+    already fine. It is not: `repair_chunk` joins a chunk's lines and hands them to
+    `as_block`, which turns a block SEQUENCE into a block STRING. Nothing in the
+    corpus fixtures had one, so removing the guard stayed green while silently
+    converting `decisions: [first, second]` into a two-line string."""
+
+    def test_a_block_sequence_beside_a_broken_field_survives_as_a_list(self, tmp_path):
+        p = _write(tmp_path, "d.md", BLOCK_SEQUENCE)
+        m.run(tmp_path)
+        doc = yaml.safe_load(p.read_text().split("---")[1])
+        assert doc["decisions"] == ["first-decision", "second-decision"], (
+            "a list must not come back as a string")
+        assert "#68" in doc["reflexion"], "and the lossy field beside it is still repaired"
+
+    def test_a_rewrite_that_moved_the_body_is_refused(self, tmp_path, monkeypatch):
+        """The body gate is the last one standing between a reassembly bug and a
+        record's prose. Correct code never trips it, which is exactly why it needs a
+        forced failure rather than a fixture."""
+        p = _write(tmp_path, "a.md", BROKEN_COLON)
+        real = m.split_frontmatter
+        calls = {"n": 0}
+
+        def _drop_the_body_on_reassembly(text):
+            # Only the SECOND call — the one that re-reads the candidate. Corrupting
+            # both would leave the gate comparing two equally-damaged values and
+            # passing, which is how the first version of this test lied to me.
+            out = real(text)
+            calls["n"] += 1
+            if out is None or calls["n"] == 1:
+                return out
+            opening, lines, remainder = out
+            return opening, lines, remainder.replace("body text that must not move", "")
+
+        monkeypatch.setattr(m, "split_frontmatter", _drop_the_body_on_reassembly)
+        before = p.read_text()
+        res = m.run(tmp_path)
+        assert res.updated == 0
+        assert len(res.failed) == 1 and "body changed" in res.failed[0][1]
+        assert p.read_text() == before
