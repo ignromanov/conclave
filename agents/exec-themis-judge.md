@@ -124,15 +124,15 @@ elapsed_ms: 0
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/judge/judge_aggregate.py` | 3-sample majority-vote per AC-id; call before writing final verdict |
-| `scripts/judge/judge_citation_check.py` | Verify each finding cites a real tool-call/script line; uncited → auto-BLOCKER |
-| `scripts/judge/judge_schema_validate.py` | Validate verdict YAML field-for-field; spine calls before consuming |
-| `scripts/judge/judge_bias_controls.py` | Swap-order probe + length-normalize + self-preference flag |
-| `scripts/judge/judge_calibrate.py` | Advisory calibration stub (D32); uncalibrated until golden corpus built |
-| `scripts/judge/prose_verifier_scripts/section_presence.py` | Deterministic floor: required sections present in prose artifact |
-| `scripts/judge/prose_verifier_scripts/citation_format.py` | Deterministic floor: citations follow expected format |
-| `scripts/judge/prose_verifier_scripts/ac_grep.py` | Deterministic floor: mandatory AC phrases present in artifact |
-| `scripts/judge/oracle_signal_merge.py` | Merge owner — DO NOT MODIFY (single writer of oracle-signal.yaml, D23) |
+| `engine/scripts/judge/judge_aggregate.py` | 3-sample majority-vote per AC-id; call before writing final verdict |
+| `engine/scripts/judge/judge_citation_check.py` | Verify each finding cites a real tool-call/script line; uncited → auto-BLOCKER |
+| `engine/scripts/judge/judge_schema_validate.py` | Validate verdict YAML field-for-field; spine calls before consuming |
+| `engine/scripts/judge/judge_bias_controls.py` | Swap-order probe + length-normalize + self-preference flag |
+| `engine/scripts/judge/judge_calibrate.py` | Advisory calibration stub (D32); uncalibrated until golden corpus built |
+| `engine/scripts/judge/prose_verifier_scripts/section_presence.py` | Deterministic floor: required sections present in prose artifact |
+| `engine/scripts/judge/prose_verifier_scripts/citation_format.py` | Deterministic floor: citations follow expected format |
+| `engine/scripts/judge/prose_verifier_scripts/ac_grep.py` | Deterministic floor: mandatory AC phrases present in artifact |
+| `engine/scripts/judge/oracle_signal_merge.py` | Merge owner — DO NOT MODIFY (single writer of oracle-signal.yaml, D23) |
 
 ## maxTurns
 
