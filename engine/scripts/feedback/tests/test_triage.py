@@ -1191,3 +1191,80 @@ def test_an_unclassified_non_zero_is_fatal(monkeypatch):
     rebuild = feedback_triage._rebuild_index_reporting()
     assert rebuild.fatal is False, "one author's invalid review must stay survivable"
     assert rebuild.skipped_reviews == ["x.md"]
+
+
+# --- the post-write reconcile, at the --set call site ---
+#
+# `--set` writes a status into a review file and then rebuilds, so the item it just
+# classified is visible to the digest, --check and the dashboard. That rebuild's exit
+# code was dropped: a --set whose reconcile failed returned cmd_set's 0, and the item
+# the operator had just classified stayed invisible to every consumer with nothing said.
+#
+# Failing the rebuild on its second call is what separates this from the PRE-write
+# rebuild, which has the opposite verdict (abort — #311). Both real call sites run.
+
+def _fail_the_rebuild_on_call(monkeypatch, n: int, reasons: list[str] | None = None):
+    """Let the first n-1 rebuilds run for real; make the nth report a failure."""
+    from feedback import feedback_index
+
+    real = feedback_index.main
+    calls = {"n": 0}
+
+    def _flaky(argv, report=None):
+        calls["n"] += 1
+        if calls["n"] != n:
+            return real(argv, report=report)
+        if report is not None:
+            report.update({"author_complete_drops": [], "parse_errors": [],
+                           "unreadable": [], "review_count": 0,
+                           "exit_reasons": list(reasons or [])})
+        return 1
+
+    monkeypatch.setattr(feedback_index, "main", _flaky)
+    return calls
+
+
+def test_set_does_not_report_success_when_the_reconcile_left_the_item_invisible(
+        tmp_path, monkeypatch, capsys):
+    """Reddens under: restoring the bare `_rebuild_index(root)` after cmd_set."""
+    import feedback_triage
+
+    path = _write_review(tmp_path, "2026-05-22", "atlas-set.md",
+                         _valid_review_meta(feedback_id="fb-set-aaaaaa"))
+    monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
+    monkeypatch.setenv("LOCK_DIR", str(tmp_path) + ".locks")
+    calls = _fail_the_rebuild_on_call(monkeypatch, 2)
+
+    rc = feedback_triage.main(["--set", "fb-set-aaaaaa", "it-1", "accepted",
+                               "--owner", "sage-cto",
+                               "--waiver", "fixture: the accept-gate (#165) is not "
+                                           "the subject of this test"])
+    err = capsys.readouterr().err
+
+    assert calls["n"] == 2, f"--set did not rebuild after its write ({calls['n']} calls)"
+    assert rc != 0, "--set reported success over an index it failed to rebuild"
+    assert fm_read(path)[0]["items"][0]["status"] == "accepted", \
+        "the write must survive the reconcile failure"
+    assert "feedback_index.py --rebuild" in err, err
+
+
+def test_set_still_succeeds_when_the_post_write_rebuild_only_skipped_a_review(
+        tmp_path, monkeypatch, capsys):
+    """The control: a rebuild that dropped one author's invalid review DID rewrite the
+    index, so the cache matches the tree for everything it holds."""
+    import feedback_triage
+
+    from feedback import feedback_index
+
+    _write_review(tmp_path, "2026-05-22", "atlas-set.md",
+                  _valid_review_meta(feedback_id="fb-skp-bbbbbb"))
+    monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
+    monkeypatch.setenv("LOCK_DIR", str(tmp_path) + ".locks")
+    _fail_the_rebuild_on_call(
+        monkeypatch, 2, reasons=[feedback_index.REASON_AUTHOR_COMPLETE_INVALID])
+
+    rc = feedback_triage.main(["--set", "fb-skp-bbbbbb", "it-1", "accepted",
+                               "--owner", "sage-cto",
+                               "--waiver", "fixture: the accept-gate (#165) is not "
+                                           "the subject of this test"])
+    assert rc == 0, f"a skipped review is not a stale cache: {capsys.readouterr().err!r}"

@@ -338,15 +338,18 @@ def main(argv: list[str] | None = None) -> int:
             print(err, file=sys.stderr)
         return 1
 
+    reconcile_rc = 0
     if archived_count or archived_items:
         # Reconcile the cache: archived items are stamped out of the working set and an
         # archived review's file is gone, but the index still holds their rows until a
         # rebuild. Leaving it stale is how a closed item keeps costing every consumer.
-        from feedback_triage import _rebuild_index
-        _rebuild_index(root)
+        from feedback_triage import reconcile_index_after_writes
+        reconcile_rc = reconcile_index_after_writes("the archive")
 
+    # Printed either way, and before the return: the archiving itself succeeded, and a
+    # reader who sees only a non-zero exit must not go looking for work already on disk.
     print(f"Done: {archived_count} review(s) archived, {archived_items} item(s) archived.")
-    return 0
+    return reconcile_rc
 
 
 if __name__ == "__main__":
