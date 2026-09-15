@@ -180,26 +180,47 @@ def _migrate_add_type(args) -> int:
     return 0
 
 
+def repair_roots() -> list[Path]:
+    """The corpora this repair walks — the same three `audit records` reports on.
+
+    Written once and imported by both sides would be better still, but the audit
+    adapter resolves them for a Findings run and this one for a write; what matters
+    is that neither enumerates a corpus the other does not. A record the reporter can
+    see and the repair cannot reach is a diagnosis with no treatment.
+    """
+    from enginelib.paths import decisions_dir, mentions_dir, sessions_dir
+
+    return [sessions_dir(), decisions_dir(), mentions_dir()]
+
+
 def _migrate_session_yaml(args) -> int:
     from enginelib.lifecycle import migrate_session_yaml
-    from enginelib.paths import sessions_dir
 
     args._runlog_verb = "migrate-session-yaml"
-    root = Path(args.root) if args.root else sessions_dir()
-    if not root.is_dir():
-        print(f"migrate-session-yaml: sessions dir not found: {root}", file=sys.stderr)
-        args._runlog_args = f"root={root},updated=0,skipped=0"
+    roots = [Path(args.root)] if args.root else repair_roots()
+    present = [r for r in roots if r.is_dir()]
+    if not present:
+        print("migrate-session-yaml: no record corpus found: "
+              f"{', '.join(str(r) for r in roots)}", file=sys.stderr)
+        args._runlog_args = f"root={roots[0] if roots else ''},updated=0,skipped=0"
         return 1
-    res = migrate_session_yaml.run(root, args.dry_run)
-    for line in res.would_update:
-        print(f"WOULD REPAIR {line}")
-    for path, why in res.failed:
+
+    updated = skipped = 0
+    failed: list[tuple[str, str]] = []
+    for root in present:
+        res = migrate_session_yaml.run(root, args.dry_run)
+        for line in res.would_update:
+            print(f"WOULD REPAIR {line}")
+        updated += res.updated
+        skipped += res.skipped
+        failed += res.failed
+    for path, why in failed:
         print(f"REFUSED {path}: {why}", file=sys.stderr)
-    print(f"migrate-session-yaml: updated={res.updated} skipped={res.skipped} "
-          f"refused={len(res.failed)} under {root}")
-    args._runlog_args = (f"root={root},updated={res.updated},skipped={res.skipped},"
-                         f"refused={len(res.failed)}")
-    return 1 if res.failed else 0
+    print(f"migrate-session-yaml: updated={updated} skipped={skipped} "
+          f"refused={len(failed)} under {', '.join(str(r) for r in present)}")
+    args._runlog_args = (f"root={present[0]},updated={updated},skipped={skipped},"
+                         f"refused={len(failed)}")
+    return 1 if failed else 0
 
 
 def _migrate_router_bootstrap(args) -> int:
@@ -344,11 +365,16 @@ def register(sub) -> None:
     mg.set_defaults(func=_migrate_add_tags)
 
     ms = vsub.add_parser(
+        # The verb names the migration that commissioned it and the run-log history is
+        # keyed on it, so it stays; `repair-records` is what a reader looking for the
+        # counterpart to `engine audit records` will actually type.
         "migrate-session-yaml",
-        help="Repair session records whose frontmatter does not parse as YAML (#255).",
+        aliases=["repair-records"],
+        help="Repair records whose frontmatter does not parse, or parses and reads "
+             "back short (#255, #262). Sessions, decisions and mentions.",
     )
     ms.add_argument("--root", default=None,
-                    help="Sessions dir (default: agent-memory/advisors/sessions).")
+                    help="One record corpus (default: sessions, decisions and mentions).")
     ms.add_argument("--dry-run", action="store_true",
                     help="Report WOULD REPAIR without mutating.")
     ms.set_defaults(func=_migrate_session_yaml)

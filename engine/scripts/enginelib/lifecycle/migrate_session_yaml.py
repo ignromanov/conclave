@@ -41,6 +41,7 @@ from pathlib import Path
 import yaml
 
 from enginelib import frontmatter
+from enginelib.records import find_lost_values
 from enginelib.snapshot import snapshot_write
 
 _KEY = re.compile(r"^([A-Za-z_][\w-]*):(.*)$")
@@ -87,10 +88,20 @@ def chunk_fields(lines: list[str]) -> list[list[str]]:
 
 
 def chunk_parses(chunk: list[str]) -> bool:
+    """True when this chunk is readable AND gives back what was written.
+
+    Parse success alone was the original test, and it is the defect (#262): a plain
+    scalar holding ` #` parses perfectly and comes back cut at the hash, so the chunk
+    was copied through verbatim with the loss intact. `find_lost_values` is the
+    predicate for that, and it already shipped, one module away (#301).
+    """
+    text = "\n".join(chunk)
     try:
-        return isinstance(yaml.safe_load("\n".join(chunk)), dict)
+        if not isinstance(yaml.safe_load(text), dict):
+            return False
     except yaml.YAMLError:
         return False
+    return not find_lost_values(text)
 
 
 def repair_chunk(chunk: list[str]) -> list[str] | None:
@@ -148,8 +159,13 @@ def migrate_text(text: str) -> tuple[str | None, str]:
     if parts is None:
         return None, "no frontmatter"
     opening, fm_lines, remainder = parts
+    # Parse success was the ENTRY CONDITION, not merely the gate: a record that parsed
+    # was returned here before a single chunk was looked at, so the six truncated
+    # reflexions were never examined at all (#262). The guard narrows rather than
+    # vanishes — an intact record must still be skipped byte-identically.
+    fm_text = "\n".join(fm_lines)
     try:
-        if isinstance(yaml.safe_load("\n".join(fm_lines)), dict):
+        if isinstance(yaml.safe_load(fm_text), dict) and not find_lost_values(fm_text):
             return None, "already parses"
     except yaml.YAMLError:
         pass
@@ -197,9 +213,16 @@ def migrate_text(text: str) -> tuple[str | None, str]:
     return candidate, "repaired: " + ",".join(repaired)
 
 
-def run(sessions_root: Path, dry_run: bool = False) -> MigrateResult:
+def run(root: Path, dry_run: bool = False) -> MigrateResult:
+    """Repair every lossy record under *root*.
+
+    `rglob`, not `glob`: five of the twelve live findings are mentions, nested two
+    levels under `mentions/<advisor>/<state>/`. A non-recursive walk let `audit
+    records` report records this repair could not reach — a diagnosis with no
+    treatment, which is the state the audit's own docstring names.
+    """
     res = MigrateResult(updated=0, skipped=0)
-    for path in sorted(Path(sessions_root).glob("*.md")):
+    for path in sorted(Path(root).rglob("*.md")):
         text = path.read_text(encoding="utf-8")
         new_text, reason = migrate_text(text)
         if new_text is None:
