@@ -308,7 +308,13 @@ def main(argv=None) -> int:
     import sys
     from datetime import datetime
 
-    from feedback_triage import _load_index, _rebuild_index, cmd_set
+    from feedback_triage import (
+        _load_index,
+        _rebuild_index,
+        _rebuild_index_reporting,
+        cmd_set,
+        skipped_reviews_note,
+    )
     from shipped import is_shipped
 
     from briefing.paths import repo_root
@@ -388,8 +394,21 @@ def main(argv=None) -> int:
         print("ERROR: could not acquire triage lock (concurrent session?)", file=sys.stderr)
         return 1
     try:
-        if _rebuild_index(root) != 0:
+        # The same 2026-09-15 ruling the triage path carries, applied at the second
+        # caller. It was ruled for the cadence check and left here, so one author's
+        # hand-flipped `_draft: false` review went on taking down the 093 sweep — the
+        # mechanism that actually CLOSES items — after it had stopped taking down the
+        # check that merely reports on them. A ruling applied at one of two call sites
+        # fixes the symptom that was measured and leaves the one that was not.
+        rebuild = _rebuild_index_reporting()
+        if rebuild.fatal:
+            print("ERROR: sweep aborted — the index rebuild failed for a reason other "
+                  "than a schema-invalid review. Fix the errors above, then re-run.",
+                  file=sys.stderr)
             return 1
+        if rebuild.skipped_reviews:
+            print(skipped_reviews_note(rebuild.skipped_reviews, "this sweep"),
+                  file=sys.stderr)
         rows = _load_index(index_path())
         archive_rows = _load_archive_rows(root)
         counts = _derive_hit_counts(rows, archive_rows)

@@ -690,6 +690,23 @@ class TestStep1LoadBriefing:
 # Cadence guard (feedback triage check)
 # ---------------------------------------------------------------------------
 
+# A value only the scaffolded feedback_triage.py can produce, asserted by the two
+# absence tests in TestCadenceGuard so that "no skipped line" cannot be satisfied by a
+# run in which the fake never executed. Under a no-op seam the REAL feedback_triage.py
+# runs against the tmp DATA root, fails, and the guard emits
+# `  feedback: warning — feedback_triage.py --check exited 1, skipping cadence check` —
+# one string that satisfies every absence assertion in this class. Measured 2026-09-15
+# by replacing the `_pin_engine_root` body with `return`: 1 of the 3 tests added with
+# the skipped-review banner went red, and both absence controls stayed green.
+#
+# Deliberately NOT named `CADENCE_FAKE`. That token is the live closing predicate of
+# GH#215 (`file-contains`, root `code`, this file), and #215 is about SIX of this
+# class's eight tests. Writing the token here would let `feedback_verify --apply`
+# auto-close #215 on a file where its own defect survives in the six tests this commit
+# does not touch — a predicate satisfied by a string rather than by the fix.
+_FAKE_ONLY_UNREACHABLE = 4242
+
+
 class TestCadenceGuard:
     """Tests for _step_cadence_guard — prints feedback: line when triage is due."""
 
@@ -718,13 +735,18 @@ class TestCadenceGuard:
 
     def _make_feedback_script(
         self, root: Path, *, triage_due: bool, open_items: int = 5, exit_code: int = 0,
-        skipped_invalid: int | None = None,
+        skipped_invalid: int | None = None, unreachable: int | None = None,
     ) -> Path:
         """Scaffold a fake feedback_triage.py that prints the expected --check output.
 
         `skipped_invalid=None` omits the key entirely, which is what an engine older
         than 2026-09-15 prints — the guard must render nothing rather than 0 there,
         for the same reason it already drops the new_reviews clause.
+
+        `unreachable` exists for the absence tests below and defaults to omitted, so
+        the six older tests see byte-identical output. It is the one key the guard
+        renders regardless of `triage_due`, which is what makes it usable as proof
+        that this script — and not the real one — produced the lines under assertion.
         """
         scripts = root / "engine" / "scripts"
         feedback_dir = scripts / "feedback"
@@ -734,12 +756,17 @@ class TestCadenceGuard:
             "" if skipped_invalid is None
             else f"    print('skipped_invalid_reviews={skipped_invalid}')\n"
         )
+        unreachable_line = (
+            "" if unreachable is None
+            else f"    print('unreachable_accepted={unreachable}')\n"
+        )
         script = feedback_dir / "feedback_triage.py"
         script.write_text(
             f"import sys\n"
             f"if '--check' in sys.argv:\n"
             f"    print('triage_due={due_str}')\n"
             f"    print('open_items={open_items}')\n"
+            f"{unreachable_line}"
             f"{skipped_line}"
             f"    sys.exit({exit_code})\n"
             f"sys.exit({exit_code})\n",
@@ -812,26 +839,43 @@ class TestCadenceGuard:
         machine-read and an absent key cannot be told from a zero. The banner is the
         opposite consumer: a line reading "0 skipped" at every session start is the
         noise that made the previous warning invisible.
+
+        Paired with a positive assertion on `_FAKE_ONLY_UNREACHABLE` — see that
+        constant. An absence assertion alone is satisfied by the guard's own failure
+        line, which is GH#215's defect and was reproduced against this test.
         """
         root = _make_root(tmp_path)
         self._pin_engine_root(monkeypatch, root)
         self._make_triage_marker(root, age_days=1)
         self._make_feedback_script(root, triage_due=False, open_items=2,
-                                   skipped_invalid=0)
+                                   skipped_invalid=0,
+                                   unreachable=_FAKE_ONLY_UNREACHABLE)
 
         lines = session_init._step_cadence_guard()
 
+        assert any(str(_FAKE_ONLY_UNREACHABLE) in ln for ln in lines), (
+            f"the scaffolded script is not what ran: {lines}"
+        )
         assert not any("skipped" in ln for ln in lines), lines
 
     def test_older_engine_without_the_key_renders_nothing(self, tmp_path, monkeypatch):
-        """An absent key is not a measured zero — drop the clause, do not assert 0."""
+        """An absent key is not a measured zero — drop the clause, do not assert 0.
+
+        Same pairing as the test above: the sentinel proves the engine under assertion
+        is the scaffolded one, so "the key was absent" cannot be satisfied by a run in
+        which every key was absent because the fake never executed.
+        """
         root = _make_root(tmp_path)
         self._pin_engine_root(monkeypatch, root)
         self._make_triage_marker(root, age_days=1)
-        self._make_feedback_script(root, triage_due=False, open_items=2)
+        self._make_feedback_script(root, triage_due=False, open_items=2,
+                                   unreachable=_FAKE_ONLY_UNREACHABLE)
 
         lines = session_init._step_cadence_guard()
 
+        assert any(str(_FAKE_ONLY_UNREACHABLE) in ln for ln in lines), (
+            f"the scaffolded script is not what ran: {lines}"
+        )
         assert not any("skipped" in ln for ln in lines), lines
 
     def test_missing_triage_script_returns_warning(self, tmp_path, monkeypatch):

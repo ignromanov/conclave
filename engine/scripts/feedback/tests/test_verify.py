@@ -706,3 +706,73 @@ def test_dry_run_names_every_close_it_proposes(tmp_path):
     from briefing.frontmatter_io import read_commented
     assert read_commented(path)[0]["items"][0]["status"] == "accepted", \
         "a dry run must not write"
+
+
+# --- the 2026-09-15 ruling, at the second caller ---
+#
+# The ruling ("drop one author's schema-invalid review loudly and continue") was made
+# for the cadence check and applied only in feedback_triage. `feedback_verify.py`'s
+# pre-sweep rebuild kept `if _rebuild_index(root) != 0: return 1`, so the same single
+# hand-flipped `_draft: false` file went on taking down the 093 sweep — the mechanism
+# that actually CLOSES items — after it had stopped taking down the check that only
+# reports on them. Measured on the branch before this commit: --apply exit 1.
+
+
+def _sweepable_meta(fid: str) -> dict:
+    return {"feedback_id": fid, "agent": "sage-cto", "agent_type": "advisor",
+            "session_ref": "s1", "skill_version": "sha256:aabbcc",
+            "created": "2026-07-10T00:00:00Z", "updated_at": "2026-07-10T00:00:00Z",
+            "_draft": False, "summary": "t", "below_threshold_count": 0,
+            "items": [_apply_item(1)]}
+
+
+def test_the_sweep_survives_one_other_authors_invalid_review(tmp_path):
+    """Reddens under: restoring `if _rebuild_index(root) != 0: return 1` at the
+    pre-sweep rebuild.
+
+    The sweep's own item must still close — an exit code of 0 alone would be satisfied
+    by a sweep that ran and did nothing.
+    """
+    path = _write_review_file(tmp_path, "sage-apply.md", _sweepable_meta("fb-swp-aaaaaa"))
+    bad = _sweepable_meta("fb-bad-aaaaaa")
+    bad_item = _apply_item(9)
+    del bad_item["location"]
+    bad["items"] = [bad_item]
+    _write_review_file(tmp_path, "atlas-handflipped.md", bad)
+
+    res = _run_verify(tmp_path, ["--apply"])
+
+    assert res.returncode == 0, (
+        f"one other author's invalid review still takes the 093 sweep down; "
+        f"stdout={res.stdout!r} stderr={res.stderr!r}"
+    )
+    from briefing.frontmatter_io import read_commented
+    meta2, _ = read_commented(path)
+    assert meta2["items"][0]["status"] == "resolved", (
+        f"the sweep exited 0 without closing anything\n{res.stdout}{res.stderr}"
+    )
+    assert "atlas-handflipped.md" in res.stderr, (
+        f"the skipped review must be named, or the bypass is silent: {res.stderr!r}"
+    )
+    assert "absent from this sweep" in res.stderr, res.stderr
+
+
+def test_the_sweep_still_aborts_when_a_review_cannot_be_read(tmp_path):
+    """The control: narrowing the fatal path must not remove it.
+
+    Without this, "the sweep no longer aborts" is indistinguishable from "the sweep can
+    no longer abort" — and an unreadable file is not one author's validation defect,
+    it is a run that does not know what it is holding.
+    """
+    _write_review_file(tmp_path, "sage-apply.md", _sweepable_meta("fb-swp-bbbbbb"))
+    broken = tmp_path / "ops" / "feedback" / "2026-07-10" / "atlas-unparseable.md"
+    broken.write_text('---\nfeedback_id: [unclosed\n  bracket: yes\n---\nbody\n',
+                      encoding="utf-8")
+
+    res = _run_verify(tmp_path, ["--apply"])
+
+    assert res.returncode != 0, (
+        f"an unreadable review must still abort the sweep; "
+        f"stdout={res.stdout!r} stderr={res.stderr!r}"
+    )
+    assert "sweep aborted" in res.stderr, res.stderr
