@@ -844,3 +844,55 @@ def test_a_pointer_into_a_record_that_does_move_is_still_rewritten(tmp_path):
             f"hot.md cites sessions/{name}, which does not exist. "
             f"On disk: {sorted(p.name for p in sessions.iterdir())}"
         )
+
+
+def test_a_pointer_into_protected_evidence_is_not_rewritten(tmp_path):
+    """Protected evidence is frozen by construction — its citations must be too.
+
+    Added after a mutation run: dropping PROTECTED and UNCLASSIFIED from the
+    frozen set left the whole suite green, so the guard covered only the
+    prose-only bucket while claiming to cover every record the plan leaves in
+    place. `ops/proof/` is in the fixture and was never cited from anywhere.
+    """
+    _instance(tmp_path)
+    proof = tmp_path / "ops" / "proof" / f"opening-{OLD}.md"
+    assert proof.is_file(), "premise broken: fixture proof file missing"
+    hot = tmp_path / "agent-memory" / "hot.md"
+    hot.write_text(
+        hot.read_text(encoding="utf-8")
+        + f"- [2026-08-06T21:45-0300] {OLD}: opening → proof/opening-{OLD}.md\n",
+        encoding="utf-8",
+    )
+
+    r = _rename("--from", OLD, "--to", NEW, "--apply", "--confirm", tmp=tmp_path)
+    assert r.returncode == 0, r.stderr
+
+    assert proof.is_file(), "premise broken: protected evidence was moved"
+    cited = re.findall(r"proof/(\S+\.md)", hot.read_text(encoding="utf-8"))
+    assert cited, "the pointer line vanished from hot.md"
+    for name in cited:
+        assert (proof.parent / name).is_file(), (
+            f"hot.md cites proof/{name}, which does not exist. "
+            f"On disk: {sorted(p.name for p in proof.parent.iterdir())}"
+        )
+
+
+def test_a_bare_id_is_rewritten_even_when_a_frozen_file_is_named_exactly_for_it(tmp_path):
+    """The narrowing that says "a run equal to the match is not a pointer".
+
+    Without it, one extensionless frozen file named for the advisor
+    (`ops/proof/<id>`) turns EVERY bare occurrence of the id in config into an
+    exempted "pointer", and the rename quietly stops renaming. Mutating that
+    line out left the suite green, which is the only reason this test exists.
+    """
+    _instance(tmp_path)
+    _w(tmp_path / "ops" / "proof" / OLD, f"Evidence file named for {OLD}.\n")
+    manifest = tmp_path / "role-manifest.yaml"
+    assert OLD in manifest.read_text(encoding="utf-8"), "premise broken"
+
+    r = _rename("--from", OLD, "--to", NEW, "--apply", "--confirm", tmp=tmp_path)
+    assert r.returncode == 0, r.stderr
+
+    body = manifest.read_text(encoding="utf-8")
+    assert f"id: {NEW}" in body, f"the bare id was exempted as a pointer:\n{body}"
+    assert (tmp_path / "ops" / "proof" / OLD).is_file(), "protected evidence was touched"
