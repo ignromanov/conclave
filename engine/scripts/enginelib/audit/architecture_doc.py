@@ -28,12 +28,20 @@ def run(arch_file: Path, scripts_dir: Path, contracts_dir: Path) -> Findings:
     arch_text = arch_file.read_text(encoding="utf-8")
 
     # ── Check 1: every non-test *.sh appears in arch_file ─────────────────────
-    for sh in sorted(scripts_dir.rglob("*.sh")):
-        if "/tests/" in str(sh):
-            continue
-        base = sh.name
-        if base not in arch_text:
-            crit.append(f"script '{base}' not found in ARCHITECTURE.md")
+    shipped = [sh for sh in sorted(scripts_dir.rglob("*.sh")) if "/tests/" not in str(sh)]
+    for sh in shipped:
+        if sh.name not in arch_text:
+            crit.append(f"script '{sh.name}' not found in ARCHITECTURE.md")
+    if not shipped:
+        # The shell layer was ported to Python (spec 099) and no *.sh survives, so this check
+        # now grades an empty set and passes over any document at all. It says so rather than
+        # reporting a cleanliness it did not measure — and the direction it can never cover is
+        # the live one: a document naming a script that is gone. `skills/forge-operations/
+        # ARCHITECTURE.md` names 61 such scripts today, and this audit calls it clean.
+        warn.append(
+            f"no *.sh under {scripts_dir} — check 1 graded 0 scripts and proves nothing; "
+            "it cannot see a script the document names but the tree does not have"
+        )
 
     # ── Check 2: last-reviewed freshness ───────────────────────────────────────
     m = re.search(r"^last-reviewed:\s*(.+)$", arch_text, re.MULTILINE)

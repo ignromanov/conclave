@@ -166,7 +166,7 @@ Triggered by: `hire`, `evolve`, `audit`, any mutation to the advisor model.
 Responsibilities:
 - `protocols/hire.md` — generate a new advisor from templates, patch `@project-context.md`
   + `@constitution.md` into the SKILL, seed `memory/personality.md`, run `briefing-build`
-  for the new advisor, execute `register-advisor.sh`
+  for the new advisor, execute `engine register advisor`
 - `protocols/evolve.md` — mutate an existing advisor (voice, scope, toolbox, contracts),
   per-aspect commits, diff-preview before every edit
 - `protocols/audit.md` — detect advisor drift (scope creep, voice collapse, contract

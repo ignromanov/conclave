@@ -81,7 +81,7 @@ work begins. Detect whether interrupted work should resume. Classify request sca
 
 | Step | What happens | Output |
 |------|-------------|--------|
-| **1. Load briefing** | `session_init.py --advisor <name>` runs: TTL-gated `gh-fetch.sh` + `git-fetch.sh`; briefing build-and-compare (`briefing-build.sh` / `python -m briefing` always runs, writes only if content differs); resume scan; reflexion extract (last 3 sessions); overlay scan; feedback cadence check | Briefing loaded into context; resume/reflexion/overlay findings printed as prefixed lines |
+| **1. Load briefing** | `session_init.py --advisor <name>` runs: TTL-gated `engine lifecycle gh-fetch` + `engine lifecycle git-fetch`; briefing build-and-compare (`engine briefing build` always runs, writes only if content differs); resume scan; reflexion extract (last 3 sessions); overlay scan; feedback cadence check | Briefing loaded into context; resume/reflexion/overlay findings printed as prefixed lines |
 | **1b. Resume check** | If `spec-resume:` or `handoff:` lines in step 1 output → present with `AskUserQuestion` (Resume / Start new / Skip) | User confirms whether to continue interrupted work |
 | **1c. Reflexion context** | Last 3 non-empty `reflexion:` values from prior sessions applied as priors | Advisor starts session aware of recent failure patterns |
 | **2. Tier detection** | Classify by signal: Quick (<30 min, opinion) / Feature (1–4h, clear scope) / Epic (multi-session, worktree) | Tier governs ceremony depth for all subsequent steps |
@@ -93,7 +93,7 @@ work begins. Detect whether interrupted work should resume. Classify request sca
 | **7. Present & confirm** | Render `▍`-framed start summary; `AskUserQuestion` for tier/chain confirmation | Session confirmed before work begins |
 
 **Constitution II gate at step 1:** `session_init.py` always runs the briefing rebuild
-(`briefing-build.sh` / `python -m briefing`; there is no `briefing-build.py`) before loading, and
+(`engine briefing build`) before loading, and
 writes only when the rebuilt content actually differs from what's on disk (build-and-compare).
 The advisor never works from a stale cache — the cache rebuilds automatically, and mtime no longer
 gates whether that happens.
@@ -166,7 +166,7 @@ feedback_emit.py --agent <advisor> --agent-type advisor \
   --session-ref <id> --skill-version sha256:<12-hex>
 ```
 
-An `emission-gate.sh` script enforces completion: if no non-draft emission exists for the
+The `engine session emission-gate` command enforces completion: if no non-draft emission exists for the
 session, the gate exits non-zero and the rest of `done` is blocked until the emission is filed.
 
 ### Phase: Artifact filing
@@ -175,12 +175,12 @@ Scripts write to disk; one aggregate commit closes the session:
 
 | Artifact | Script | Destination |
 |----------|--------|-------------|
-| Decisions | `file-decision.sh` | `agent-memory/advisors/<advisor>/decisions/` |
-| Mentions | `mention.sh` | `agent-memory/advisors/<recipient>/mentions/` |
-| Session record + reflexion | `close-session.sh` | `agent-memory/advisors/<advisor>/sessions/` |
-| Handoff (if incomplete) | `file-handoff.sh` | `ops/handoffs/` |
+| Decisions | `engine file decision` | `agent-memory/advisors/<advisor>/decisions/` |
+| Mentions | `engine mention create` | `agent-memory/advisors/<recipient>/mentions/` |
+| Session record + reflexion | `engine session close` | `agent-memory/advisors/<advisor>/sessions/` |
+| Handoff (if incomplete) | `engine file handoff` | `ops/handoffs/` |
 
-The `--reflexion` arg to `close-session.sh` is mandatory. It is persisted to `session.md`
+The `--reflexion` arg to `engine session close` is mandatory. It is persisted to `session.md`
 frontmatter and injected into the next 3 sessions via `team.start` step 1c.
 
 ### Mandatory checklist items (always)
@@ -204,7 +204,7 @@ frontmatter and injected into the next 3 sessions via `team.start` step 1c.
 Runs `study_phase.py --advisor <advisor>`. Orchestrates 6 wiki health steps:
 capture-suggest → promote-decision → bridge-rebuild → audit-stale → hot-sync → link-check.
 
-Exit 3 (P0 blocking: wiki audit contradictions) must be resolved before `close-session.sh`.
+Exit 3 (P0 blocking: wiki audit contradictions) must be resolved before `engine session close`.
 All other failures are non-blocking (wiki-failure-policy: defer per ADR-0003).
 
 ### Phase: Lifecycle Retrospective
@@ -236,7 +236,7 @@ One sentence (≤280 chars), format "what surprised me / what I'd do differently
 `session.md` frontmatter. Read back at the next 3 sessions as behavioral priors. Filler
 ("good session") is forbidden — it degrades the buffer faster than a blank.
 
-**Constitution III enforcement**: `close-session.sh` will not complete without `--reflexion`.
+**Constitution III enforcement**: `engine session close` will not complete without `--reflexion`.
 A session without a reflexion is a session without a closed loop.
 
 ---
@@ -283,18 +283,20 @@ the advisor that filed the handoff. Invoked by `team.done` when work is incomple
 The lifecycle skills run in VoidPay's `.ai/` today. Three changes are required before they run
 cleanly in a Conclave instance without VoidPay-specific assumptions.
 
-### ENGINE_ROOT decoupling (blocking prerequisite)
+### ENGINE_ROOT decoupling (cleared 2026-09-18)
 
-All scripts that assume `VOIDPAY_AI_ROOT` or an absolute path to `.ai/` must be parameterized.
+This was a blocking prerequisite: every script assuming `VOIDPAY_AI_ROOT` or an absolute path to
+`.ai/` had to be parameterized. Re-measured by executing each row rather than reading it — all six
+are closed, and the table is kept as the record of what was owed.
 
-| File | Current hardcoding | Required change |
+| File | Hardcoding it carried | Measured today |
 |------|--------------------|-----------------|
-| ~~`briefing/paths.py`~~ | `VOIDPAY_AI_ROOT` env | ✅ done — re-exports `enginelib/paths.py`, which reads `CONCLAVE_AI_ROOT` only |
+| ~~`briefing/paths.py`~~ | `VOIDPAY_AI_ROOT` env | ✅ re-exports `enginelib/paths.py`, which reads `CONCLAVE_AI_ROOT` only |
 | ~~`paths.sh`~~ | `VOIDPAY_AI_ROOT` | ✅ n/a — the bash layer was retired by spec 099 |
-| `team.done/SKILL.md:109` | absolute path `~/code/voidpay/.ai` | `${CONCLAVE_ROOT}` |
-| `create-advisor.sh:7` + `register-advisor.sh:7` | `PROJECT_ROOT=~/code/voidpay` | `${CONCLAVE_ROOT:-...}` |
-| `session_init.py` | `briefing-build.sh` path | relative from `ENGINE_ROOT` |
-| `github-issues-protocol.md` | the origin instance's owner/repo slugs and its project board node id, inline | `${GH_OWNER}/${GH_REPO}`, `${GH_PROJECT_ID}` from `roster.yaml` |
+| ~~`team.done/SKILL.md:109`~~ | absolute path `~/code/voidpay/.ai` | ✅ no such skill, and no shipped surface names that path |
+| ~~`create-advisor.sh:7` + `register-advisor.sh:7`~~ | `PROJECT_ROOT=~/code/voidpay` | ✅ both ported; no engine module carries the constant, and the only `VOIDPAY_AI_ROOT` left is the guard in `enginelib/paths.py` that refuses to run on the retired alias |
+| ~~`session_init.py`~~ | `briefing-build.sh` path | ✅ invokes `engine briefing build` as a module, no path |
+| ~~`github-issues-protocol.md`~~ | the origin instance's owner/repo slugs and its board node id, inline | ✅ reads `github.owner` / `github.main_repo` / `github.ai_repo` from `roster.yaml` |
 
 ### 085 lifecycle simplification (folds into C-004)
 
@@ -352,7 +354,7 @@ Originally filed as feedback item `it-1` in `fb-1781159734-e51973`.
   ├─ mandatory checklist (commits, GH sync)      ← constitution III
   ├─ study phase (wiki health)
   ├─ lifecycle retrospective (6 prompts)         ← self-improvement loop signal
-  └─ reflexion → close-session.sh               ← constitution III
+  └─ reflexion → engine session close           ← constitution III
 
 /team.handoff  (if work is incomplete)
   └─ structured resume-prompt → ops/handoffs/
