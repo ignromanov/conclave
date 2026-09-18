@@ -344,31 +344,49 @@ Requires a spec, operator approval, and one further condition:
 This is the charter's own Obligation 2, applied to the charter: the tier tag is an irreversible public
 claim, so it is gated on a document — and the document is a failing test.
 
+**An amendment also edits an experiment.** This charter is the stimulus of its own efficacy eval,
+and the eval's control arm — `placebo.md`, a domain-null document of matched register — is held to
+within 2% of this file's length by
+`tests/evals/test_arms.py::test_placebo_is_length_matched_within_2_percent`. The two documents move
+together or the arms stop being comparable. Widening that tolerance instead would dissolve the one
+thing separating "the content steered the agent" from "a long authoritative block in context did",
+which is the question the eval exists to answer.
+
 **Version of record**: this file, at the root of the public engine repository.
 
 ---
 
-## 7. The honest ledger, 2026-07-09
+## 7. The honest ledger, 2026-09-18
 
 | Principle | Tier | Enforced by |
 |---|---|---|
 | 0. The charter binds itself | `mechanical` | `tests/test_constitution.py` |
 | I. Never destroy a record | `mechanical` | `feedback/tests/test_archive.py` (archive path only) |
-| II. The record outranks its views | `declaratory` | — |
-| III. Keep the record true | `declaratory` | — (all three mechanisms absent) |
+| II. The record outranks its views | `declaratory` | a check exists — `tests/cmd/test_status.py` — over one derived view: `engine status`'s intake count |
+| III. Keep the record true | `declaratory` | a check exists — `tests/enginelib/test_records.py` — over record integrity at the write boundary, and over none of the three mechanisms the principle names |
 | IV. Gate the one-way door | `reviewed` | the operator (+ a non-vacuous registry audit) |
 | V. External verifier for self-mutation | `reviewed` | the operator |
 | VI. The record lives in files | `declaratory` | — (honoured by engine code; unenforced for agents) |
-| VII. The lifecycle ritual | `declaratory` | — (reports; never blocks) |
+| VII. The lifecycle ritual | `declaratory` | `engine session emission-gate` exits 1 on a missing or draft emission — it binds an agent that runs it, and nothing runs it for them |
 
 **Two mechanical, two reviewed, four declaratory.** Before this rewrite: zero mechanical, one reviewed,
 five declaratory, and one — "never silent-delete" — actively violated by the engine's own archive path.
+
+Three `declaratory` rows now name a check. That is not an oversight, and not a tier waiting to be
+raised: each of those checks covers a fragment of what its principle says, and `mechanical` would
+claim the whole of it. §6's vocabulary has no way to say "enforced in part, and here is the
+remainder", so a low tier beside a named fragment is the most this table can say without claiming
+more enforcement than exists — which is Principle 0 applied to the ledger that reports on it.
 
 Known and deliberately open:
 
 1. What counts as irreversible needs a decision rule, not an enumeration that drifts.
 2. No `PreToolUse` hook exists; Principle VI cannot bind an agent's raw `Bash` calls until one does.
-3. `re-occurred`, `lesson-failed`, and lesson decay are unbuilt. Principle III binds on nothing.
+3. Two of Principle III's three mechanisms are unbuilt — **absent from engine code**: `lesson-failed`,
+   `decay`, `rerank`. The third has a writer now: `feedback_emit.py` stamps `re-occurred` with
+   `reopened_from` provenance, so the principle binds on one of the three things it names rather
+   than on nothing (**present in engine code**: `re-occurred`).
+   **Check**: `tests/test_constitution.py::test_the_ledger_absence_claims_are_still_true`
 4. Whether the sanctions of §5 are ever applied, by whom, and with what record.
 
 ---

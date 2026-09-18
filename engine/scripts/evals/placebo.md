@@ -520,7 +520,28 @@ a function does; a comment inside a function explains why a particular choice wa
 
 ---
 
-## 22. Summary of enforcement
+## 22. Type annotations at a module boundary
+
+**Tier**: `conventional`
+
+A function that is imported by another module MUST annotate its parameters and its return value.
+Inside a single module the annotation drops to `stylistic`: the reader already has the definition
+in view, and a four-line helper gains little from a signature twice the width of its body.
+
+The reason is not type safety. The type checker runs over this tree and would catch the same class
+of mistake with or without the convention. The reason is that a signature on a boundary is the one
+place a caller can read what a function promises without opening the file that implements it — and
+a caller who opens that file begins to depend on how it works rather than on what it offers.
+
+Two consequences follow. Prefer the narrower type where both are true: `Sequence[str]` tells a
+caller the argument will not be mutated, where `list[str]` leaves that question open and quietly
+invites a future implementer to answer it badly. And a signature SHOULD NOT be annotated `Any`
+merely to quieten a checker; a signature nobody can trust costs more than one that was never
+written, because the next reader will trust it anyway.
+
+---
+
+## 23. Summary of enforcement
 
 This guide is structured to separate what is checked automatically from what requires human
 judgment. The separation is important: **linters are good at enforcing syntax and style;
