@@ -92,8 +92,12 @@ Default tier is **Sonnet** (executors are role-minimal workers). Pass `model="op
    If the target agent already carries it (check its `skills:` and its toolbox), stop and say so.
 2. **Search ≥2 channels** of {registry (`skills find`), installed plugins, engine `skills/`,
    MCP surface}. One channel only → flag `single-channel-incomplete` and continue.
-3. **Verify each candidate**: `engine skill verify <name>`. Unresolved candidates are dropped
-   from output entirely — not listed as "possible".
+3. **Verify the candidates in one call**: `engine skill verify <name-1> <name-2> ...`. Read the
+   verdict off the `OK`/`PHANTOM` line for each name and the exit code — never off empty
+   output. One call per name answers with a bare path or nothing, and a command that failed
+   to run also prints nothing; that is indistinguishable from a phantom and has already
+   reported eleven present skills missing (#88). Unresolved candidates are dropped from
+   output entirely — not listed as "possible".
 4. **Install what is missing**: `engine skill install <owner/repo@skill>`. Exit 3 means refused
    by the allowlist: record it under `refused[]` with the manual command, and carry on. A refusal
    is a decision handed to the operator, never a silent omission.
