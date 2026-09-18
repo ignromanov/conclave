@@ -56,7 +56,9 @@ trigger: manual|auto-spec-complete|every-3rd-done
 - @<advisor>: <task> (priority: pN)
 ```
 
-Action items optionally promoted to GH Issues via existing `inbox-to-gh.sh` script.
+Action items optionally promoted to GH Issues via
+`python -m engine inbox to-issues --advisor <id> --file <path>`, which prints the
+`gh issue create` commands and runs them only with `--execute`.
 
 ## Chat-output (retro confirmation)
 

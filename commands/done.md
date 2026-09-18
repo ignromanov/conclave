@@ -317,9 +317,15 @@ Drop zero counters from the row text — show only fields that have non-zero val
 
 ## Phase: Infra (run-log surface)
 
-Surfaces telemetry that `lib/run-log.sh` is already writing to
-`agent-memory/run-log/<YYYY-MM-DD>.jsonl` on every script invocation. Zero new instrumentation —
-the data exists; we just render it.
+Surfaces telemetry that `enginelib/runlog.py` appends to
+`agent-memory/run-log/<UTC date>.jsonl` on exit from every `python -m engine <noun>` call — the
+date is UTC, not local, so a late-evening session writes tomorrow's file.
+
+It is not every invocation this protocol prescribes. The bare-script steps —
+`engine/scripts/lifecycle/session_init.py`, `engine/scripts/lifecycle/study_phase.py` six
+lines above, `engine/scripts/feedback/predicate_derive.py` in triage — are run as scripts
+rather than through `engine`, never reach that exit hook, and leave no row at all.
+Zero new instrumentation for what is covered; what is not covered is missing, not idle.
 
 ### When
 
