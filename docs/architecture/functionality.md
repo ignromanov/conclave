@@ -344,7 +344,9 @@ python3 engine/scripts/lifecycle/study_phase.py --advisor <advisor>
 > 2 and 3 are conditional on step 1 producing candidates and are never reached to be counted.
 >
 > The six below are therefore a **design of record, not a description of behaviour**, including the
-> P0-blocking gate in step 4, which blocks nothing. Whether to retire the phase or rebuild it is
+> P0-blocking gate in step 4, which blocks nothing — and which is unfounded twice over: the
+> `ADR-0003` cited for `wiki_p0_policy` / `wiki_failure_policy` is `0003-y-script-exit-codes`, and it
+> contains neither key. Whether to retire the phase or rebuild it is
 > open; until it is settled, nothing here should be read as shipped.
 
 Six steps in order:
