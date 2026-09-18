@@ -65,7 +65,7 @@ def _checkpoint(args) -> int:
     TRUE, because it is a completion record. Same machinery, opposite admission rules.
     """
     from enginelib.checkpoint import record, store
-    from enginelib.checkpoint.evidence import Roots, resolve_all
+    from enginelib.checkpoint.evidence import Roots, oldest_event_time, resolve_all
 
     args._runlog_verb = "session-checkpoint"
     args._runlog_args = f"kind={'intent' if args.intent else 'done'}"
@@ -78,6 +78,9 @@ def _checkpoint(args) -> int:
     kind, text = ((record.KIND_INTENT, args.intent) if args.intent
                   else (record.KIND_DONE, args.done))
     refs = tuple(args.evidence or ())
+    # An intent carries no event time because it names no event yet: it is the declaration, and
+    # the only time it has is the one it is written at.
+    at = ""
 
     if kind == record.KIND_INTENT and refs:
         print("checkpoint: --intent takes no --evidence — nothing has completed yet",
@@ -90,14 +93,19 @@ def _checkpoint(args) -> int:
             return 1
         # Every ref, not merely one: an unresolved ref is a typo or a claim, and keeping it
         # beside the resolved ones would put unverified text in the record's evidence field.
-        refused = [c for c in resolve_all(refs, Roots.current()) if not c.ok]
+        checks = resolve_all(refs, Roots.current())
+        refused = [c for c in checks if not c.ok]
         for check in refused:
             print(f"checkpoint: refused {check.ref} — {check.reason}", file=sys.stderr)
         if refused:
             return 1
+        # Read off the checks that were just executed, and from nothing else. The event time has
+        # to be taken at the same instant the evidence resolved: a `file:` ref's `st_mtime` is
+        # mutable, so a time recovered later is not a late measurement, it is a different one.
+        at = oldest_event_time(checks)
 
     try:
-        line = record.render(kind, text, evidence=refs)
+        line = record.render(kind, text, evidence=refs, at=at)
     except ValueError as exc:
         print(f"checkpoint: {exc}", file=sys.stderr)
         return 1

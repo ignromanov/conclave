@@ -95,6 +95,26 @@ def append(path: Path, line: str) -> None:
         fh.write(line + "\n")
 
 
+def records_for(advisor: str, session_id: str | None, *,
+                directory: Path | None = None) -> tuple[Path, ...]:
+    """Every record this session owns, oldest first.
+
+    **A session is identified by its token, never by a date.** The date in the filename is a
+    convenience for a human reading the directory and for the resume scan's age; it is not the
+    identity. One session outlives a midnight often enough — this instance has done it — and it
+    then owns two files under one token. Rebuilding the filename from the wall clock, as
+    `record_path` must do when it is *creating*, finds only the current day's and silently
+    leaves the rest: unfolded, so their units vanish from the tally, and undeleted, so the next
+    session reads them as a session that never closed.
+
+    Sorted by name, which is chronological because the stamp is ISO-8601 and leads.
+    """
+    base = directory if directory is not None else paths.checkpoints_dir()
+    if not base.is_dir():
+        return ()
+    return tuple(sorted(base.glob(f"*-{advisor}-{token_for(session_id)}.md")))
+
+
 def read(path: Path) -> record.Reading:
     """The record's entries and its damaged lines. Missing file reads as empty, not as an error.
 

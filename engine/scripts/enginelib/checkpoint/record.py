@@ -54,22 +54,38 @@ TS_FORMAT = "%Y-%m-%dT%H:%M%z"
 #: would otherwise read a unit that merely *mentions* it as one that carries evidence.
 _EV_OPEN = "[ev: "
 
+#: The event-time suffix's opening. Same rejection rule as `_EV_OPEN`, for the same reason: a
+#: unit whose text merely mentions it would otherwise parse as one carrying a measured time.
+_AT_OPEN = "[at: "
+
 _LINE_PREFIX = "- ["
 
 _ENTRY_RE = re.compile(
     r"^- \[(?P<ts>[^\]]+)\] (?P<kind>intent|done): (?P<text>.+?)"
-    r"(?: \[ev: (?P<ev>[^\]]*)\])? " + re.escape(SENTINEL) + r"$"
+    r"(?: \[ev: (?P<ev>[^\]]*)\])?"
+    r"(?: \[at: (?P<at>[^\]]*)\])? " + re.escape(SENTINEL) + r"$"
 )
 
 
 @dataclass(frozen=True)
 class Entry:
-    """One complete line. `evidence` holds the refs as written — resolving them is T3's job."""
+    """One complete line. `evidence` holds the refs as written — resolving them is T3's job.
+
+    `at` is the **event's own time**: the oldest moment among the refs that resolved, empty when
+    no ref could supply one. `ts` is when the line was written. The gap between the two is the
+    whole measurement — a unit recorded at the moment it happened and one recorded in an
+    end-of-session burst are indistinguishable from `ts` alone, and that is the pattern A2(b)
+    exists to detect.
+
+    Both fields default so that a v1 line — written before any of this, and parsed by the same
+    regex — yields an Entry rather than an error.
+    """
 
     kind: str
     ts: str
     text: str
     evidence: tuple[str, ...] = ()
+    at: str = ""
 
 
 @dataclass(frozen=True)
@@ -107,6 +123,7 @@ def render(
     *,
     evidence: tuple[str, ...] | list[str] = (),
     ts: str | None = None,
+    at: str = "",
 ) -> str:
     """One line, sentinel included, newline excluded — the adapter adds that with the append.
 
@@ -122,7 +139,7 @@ def render(
     if not text:
         raise ValueError("a checkpoint line must name the unit; empty text was given")
     for bad, why in (("\n", "newline"), ("\r", "carriage return"), (SENTINEL, "sentinel"),
-                     (_EV_OPEN, "evidence marker")):
+                     (_EV_OPEN, "evidence marker"), (_AT_OPEN, "event-time marker")):
         if bad in text:
             raise ValueError(f"checkpoint text may not contain a {why}: {text!r}")
     refs = tuple(r.strip() for r in evidence if r.strip())
@@ -130,8 +147,17 @@ def render(
         for bad in ("\n", "\r", ",", "]", SENTINEL):
             if bad in ref:
                 raise ValueError(f"evidence ref may not contain {bad!r}: {ref!r}")
+    at = at.strip()
+    for bad in ("\n", "\r", "]", SENTINEL):
+        if bad in at:
+            raise ValueError(f"event time may not contain {bad!r}: {at!r}")
     suffix = f" {_EV_OPEN}{', '.join(refs)}]" if refs else ""
-    return f"- [{ts or now_stamp()}] {kind}: {text}{suffix} {SENTINEL}"
+    # Trailing, and after the evidence, so that the group a v1 reader does not know about sits
+    # where its regex already stopped looking. Both groups are optional in `_ENTRY_RE`, which is
+    # why no `schema_version` bump is owed to a reader: a stamped line and an unstamped one are
+    # the same shape with one part absent, not two shapes.
+    stamp = f" {_AT_OPEN}{at}]" if at else ""
+    return f"- [{ts or now_stamp()}] {kind}: {text}{suffix}{stamp} {SENTINEL}"
 
 
 def parse(line: str) -> Entry | None:
@@ -141,7 +167,13 @@ def parse(line: str) -> Entry | None:
         return None
     ev = m.group("ev")
     refs = tuple(r.strip() for r in ev.split(",") if r.strip()) if ev else ()
-    return Entry(kind=m.group("kind"), ts=m.group("ts"), text=m.group("text"), evidence=refs)
+    return Entry(
+        kind=m.group("kind"),
+        ts=m.group("ts"),
+        text=m.group("text"),
+        evidence=refs,
+        at=(m.group("at") or "").strip(),
+    )
 
 
 def _is_candidate(line: str) -> bool:
