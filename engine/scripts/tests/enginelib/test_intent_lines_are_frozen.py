@@ -23,7 +23,6 @@ import inspect
 
 from enginelib.checkpoint import store
 
-
 #: Every public callable `store` is allowed to have. `append` is the only mutator, and it is
 #: O_APPEND: it can add a line and cannot reach one already written.
 _ALLOWED_STORE_SURFACE = {"token_for", "record_path", "ensure", "append", "read"}
