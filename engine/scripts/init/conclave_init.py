@@ -41,6 +41,11 @@ NONINTERACTIVE = os.environ.get("CONCLAVE_INIT_NONINTERACTIVE") == "1"
 DATA_SUBDIRS = (
     "agent-memory/advisors/briefings",
     "agent-memory/advisors/sessions",
+    # The in-flight half of sessions/: one open record per live session, unlinked by
+    # close_session (spec 117 R1). Scaffolded rather than created on first write because
+    # session-init writes into it before any verb does, and R1 forbids that write from
+    # being able to fail a session start.
+    "agent-memory/advisors/checkpoints",
     "agent-memory/advisors/decisions",
     # mentions/ was the one advisor dir missing here, so a fresh instance had a mailbox
     # nothing had created — every briefing build resolved mentions_dir() to an absent path

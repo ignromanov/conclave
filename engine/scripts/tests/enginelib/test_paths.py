@@ -27,6 +27,39 @@ def test_advisors_memory_dir_absolute(tmp_path, monkeypatch):
     assert str(paths.advisors_memory_dir()).endswith("/agent-memory/advisors")
 
 
+def test_checkpoints_dir_is_a_sibling_of_sessions_not_a_child(tmp_path, monkeypatch):
+    """Spec 117 T1. The shape is the requirement, not the existence.
+
+    Seven modules call `sessions_dir()` and read every `*.md` under it as a session that
+    has ENDED (measured: 8 non-test files reference it, one of which is its definition).
+    Nest the checkpoints under it and each one becomes a closed session record that no
+    close ever wrote — the briefing's session count, the memory index and the rename plan
+    all take the in-flight file as history.
+
+    So the assertion is the parent, not the path: a test spelling only
+    `endswith("/checkpoints")` passes with `sessions/checkpoints/`, which is the failure
+    this pins. It reddens both ways — remove `checkpoints_dir` and it errors, re-root it
+    under `sessions_dir()` and the parent assertion fails.
+    """
+    root = _make_ai_root(tmp_path)
+    monkeypatch.setenv("CONCLAVE_AI_ROOT", str(root))
+    assert paths.checkpoints_dir().parent == paths.advisors_memory_dir()
+    assert paths.checkpoints_dir() != paths.sessions_dir()
+    assert not paths.checkpoints_dir().is_relative_to(paths.sessions_dir())
+
+
+def test_scaffolder_creates_the_checkpoints_dir():
+    """R1 needs the directory before the first verb runs, so the scaffolder owns it.
+
+    Create-on-first-write is the wrong discipline here: `session_init` writes the open
+    record, and R1 forbids that write from being able to fail a session start. A
+    directory the scaffolder made cannot be the reason a start fails.
+    """
+    from init.conclave_init import DATA_SUBDIRS
+
+    assert "agent-memory/advisors/checkpoints" in DATA_SUBDIRS
+
+
 def test_ensure_dir_creates(tmp_path):
     target = tmp_path / "a" / "b" / "c"
     assert not target.exists()

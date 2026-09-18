@@ -298,6 +298,61 @@ class CloseSessionOpts:
     handoff_slug: str = ""
     duration_estimate: str = ""
     reflexion: str = ""
+    #: The harness's session id, for finding THIS session's checkpoint record (spec 117 T6).
+    #: Read from the environment by the adapter, never here: `_checkpoint` in
+    #: engine/cmd/session.py already reads it there, and a core that reaches for
+    #: CLAUDE_CODE_SESSION_ID itself makes close_session untestable without monkeypatching
+    #: the environment. Empty means the same thing it means everywhere else in 117 — the
+    #: record is fenced to no session and is named `unfenced`.
+    session_id: str = ""
+
+
+def _fold_checkpoint(advisor: str, session_id: str) -> tuple[str, Path | None]:
+    """The in-flight record's lines, rendered for the session record, and its path.
+
+    Returns `("", None)` when there is no record to fold — which is not an error and must
+    not read as one. `/conclave:done` is reachable without session_init having run, exactly
+    as the Now drain below already tolerates removing zero rows.
+
+    The tally is computed here rather than by the agent because that is the whole of R6: a
+    completion count that rests on the agent's own summary is wrong 44-76 % of the time, and
+    a count computed from lines the verb refused to write without resolving evidence is not.
+
+    Lines that did not parse are REPORTED rather than discarded. A torn tail
+    is the expected shape of a killed process, and a fold that silently discarded it would
+    make the tally quietly wrong in precisely the sessions worth auditing.
+    """
+    from enginelib.checkpoint import record as _record
+    from enginelib.checkpoint import store as _store
+
+    path = _store.record_path(advisor, session_id)
+    reading = _store.read(path)
+    if not path.is_file():
+        return "", None
+    if not reading.entries and not reading.discarded:
+        return "_No units recorded._", path
+
+    tally = _record.tally(reading.entries)
+    lines = [
+        f"**requested {tally.requested} · shipped {tally.shipped} · lost {len(tally.lost)}**",
+        "",
+    ]
+    lines += [
+        _record.render(e.kind, e.text, evidence=e.evidence, ts=e.ts) for e in reading.entries
+    ]
+    if tally.lost:
+        lines += ["", "Lost — declared and never completed with resolving evidence:"]
+        lines += [f"- {text}" for text in tally.lost]
+    if reading.discarded:
+        lines += [
+            "",
+            f"{len(reading.discarded)} line(s) did not parse and are kept verbatim:",
+            "",
+            "```",
+            *reading.discarded,
+            "```",
+        ]
+    return "\n".join(lines), path
 
 
 def close_session(opts: CloseSessionOpts) -> str:
@@ -405,6 +460,10 @@ def close_session(opts: CloseSessionOpts) -> str:
     if opts.followups_file:
         followups_text = Path(opts.followups_file).read_text(encoding="utf-8")
 
+    # 9b. Fold the in-flight checkpoint record (spec 117 T6/D3). Read here, unlinked
+    # only after the session record is safely on disk — see step 14b.
+    progress_text, checkpoint_path = _fold_checkpoint(opts.advisor, opts.session_id)
+
     # 10. Build list values. Quoting the elements that need it belongs beside as_block
     # in frontmatter: an id arriving as "#17" made the whole flow sequence a comment.
     decisions_val = frontmatter.as_flow_list(opts.decisions_csv)
@@ -441,6 +500,7 @@ def close_session(opts: CloseSessionOpts) -> str:
         "goal": opts.goal,
         "body": body_text,
         "followups": followups_text,
+        "progress": progress_text,
     })
 
     # 14. Atomic write: sessions_dir()/{date}-{advisor}-{slug}.md
@@ -450,6 +510,21 @@ def close_session(opts: CloseSessionOpts) -> str:
     if not rendered.endswith("\n"):
         rendered += "\n"
     snapshot_write(out_file, rendered)
+
+    # 14b. Only now the checkpoint may go. The order is the whole of D3 and it is the
+    # reverse of what the design doc's word "moves" suggests: close COMPOSES a record from
+    # the checkpoint's content, it does not rename the file into place. A crash between
+    # these two statements leaves both files — the session record written, the checkpoint
+    # still beside it — which is recoverable and loud. Unlink-first leaves neither, and the
+    # lines it destroys are the only evidence of what the session actually did.
+    #
+    # Failing to unlink is not failing to close: the record is already written, and a
+    # stale checkpoint is a duplicate, not a loss.
+    if checkpoint_path is not None:
+        try:
+            checkpoint_path.unlink()
+        except OSError:
+            _log.warning("checkpoint not removed after fold: %s", checkpoint_path, exc_info=True)
 
     # 15. Hot append (best-effort, guarded)
     try:

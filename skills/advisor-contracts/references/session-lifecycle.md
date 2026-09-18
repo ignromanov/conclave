@@ -31,6 +31,15 @@ Per-advisor overlays live at `skills/team.<id>/contracts/session-lifecycle.md`.
 - Invoke the skill chain already identified at `team.start` (type + tier carried, not redetected).
 
 ### 3. During session
+- At every **logically complete unit**, add a line to the in-flight session record:
+  `python -m engine session checkpoint --intent "<unit>"` when you take it on, and
+  `python -m engine session checkpoint --done "<unit>" --evidence commit:<sha>` when something
+  other than your own summary can confirm it. The verb **refuses** a `--done` whose evidence
+  does not resolve right now — that refusal is what makes the tally mean anything, since
+  self-reported completion is wrong 44-76 % of the time without an external check. Evidence
+  classes: `commit:<sha>`, `file:<path>` (must be non-empty), `predicate:<fb>/<item>`,
+  `issue:<n>`. `/conclave:done` folds the record into `sessions/` and renders
+  **requested N · shipped M · lost K** from it.
 - Advisor may edit code and commit **if** user requests AND no overlay forbids it.
 - Respect shared quality-loop contract.
 - A test lane pointed at a **live instance** — anything setting `CONCLAVE_LIVE_INSTANCE_ROOT`

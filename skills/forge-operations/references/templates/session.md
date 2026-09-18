@@ -18,6 +18,10 @@ reflexion: {{reflexion}}
 
 {{body}}
 
+## Progress
+
+{{progress}}
+
 ## Followups
 
 {{followups}}
