@@ -185,7 +185,7 @@ class TestLoadItems:
 
 
 # ---------------------------------------------------------------------------
-# canonical_advisors() — DATA-root .claude/skills/ registry scan
+# registry_advisors() — DATA-root .claude/skills/ registry scan
 # ---------------------------------------------------------------------------
 
 def _skill_dir(tmp_path, name):
@@ -209,14 +209,14 @@ class TestCanonicalAdvisorsRegistry:
     def test_conclave_prefixed_advisor_is_recognized(self, tmp_path, monkeypatch):
         _skill_dir(tmp_path, "conclave-keel-coo")
         monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
-        assert "keel-coo" in gh_board_query.canonical_advisors()
+        assert "keel-coo" in gh_board_query.registry_advisors()
 
     def test_legacy_team_prefixed_advisor_is_still_recognized(self, tmp_path, monkeypatch):
         # Legacy support is dual-read, not dropped — a leftover team.* dir must
         # still resolve.
         _skill_dir(tmp_path, "team.kai-cto")
         monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
-        assert "kai-cto" in gh_board_query.canonical_advisors()
+        assert "kai-cto" in gh_board_query.registry_advisors()
 
     def test_conclave_only_registry_does_not_degrade_to_empty(self, tmp_path, monkeypatch):
         # A registry holding ONLY conclave-* dirs (no leftover legacy team.* dir,
@@ -227,7 +227,7 @@ class TestCanonicalAdvisorsRegistry:
         _skill_dir(tmp_path, "conclave-keel-coo")
         _skill_dir(tmp_path, "conclave-sage-cto")
         monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
-        canonical = gh_board_query.canonical_advisors()
+        canonical = gh_board_query.registry_advisors()
         assert canonical == {"keel-coo", "sage-cto"}
 
 
@@ -239,7 +239,7 @@ class TestMainArgValidation:
     def test_unknown_advisor_exits_1(self, tmp_path, monkeypatch):
         # Non-empty registry (one real advisor) → an id absent from it is rejected.
         # A real skill dir always carries a SKILL.md — iter_advisor_skills() (the
-        # #54 discovery helper canonical_advisors() now reads through) keys off
+        # #54 discovery helper registry_advisors() now reads through) keys off
         # that file, not bare dir existence.
         skill_dir = tmp_path / ".claude" / "skills" / "team.kai-cto"
         skill_dir.mkdir(parents=True)
@@ -275,7 +275,11 @@ class TestMainArgValidation:
     def test_advisor_open_stdin(self, monkeypatch, capsys):
         # main() validates --advisor against the on-disk registry; seed it
         # hermetically so the test doesn't depend on the live instance roster.
-        monkeypatch.setattr(gh_board_query, "canonical_advisors", lambda: {"kai-cto"})
+        # Takes the skills base since #69: the wrapper that derived it from the DATA
+        # root was the second copy of the question, and the shared one is told where
+        # to look rather than deciding.
+        monkeypatch.setattr(
+            gh_board_query, "registry_advisors", lambda _skills=None: {"kai-cto"})
         data = json.dumps({"items": _ITEMS_WITH_DATA})
         monkeypatch.setattr("sys.stdin", StringIO(data))
         rc = gh_board_query.main(["--mode", "advisor-open", "--advisor", "kai-cto"])

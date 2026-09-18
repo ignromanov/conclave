@@ -225,7 +225,13 @@ def project_skills_dir() -> Path:
 
 # Advisor SKILL-dir naming: current mint is `conclave-<id>` (router.py); legacy
 # hires used `team.<id>`. During the #48 migration readers must tolerate both.
-_ADVISOR_SKILL_PREFIXES = ("conclave-", "team.")
+#
+# Public because it was spelled in six modules and the seventh was one PR away (#69).
+# It is a MIGRATION rule with an end date: when `team.` is finally dropped, every copy
+# that was missed keeps accepting it, silently, which is the shape of the bug that
+# made a `team.`-only scan reject every advisor the moment they migrated.
+ADVISOR_SKILL_PREFIXES = ("conclave-", "team.")
+_ADVISOR_SKILL_PREFIXES = ADVISOR_SKILL_PREFIXES   # pre-#69 name, kept for in-module use
 
 
 def advisor_skill_dir(

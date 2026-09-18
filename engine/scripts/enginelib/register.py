@@ -12,32 +12,21 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-# Bare lifecycle/meta skill ids — infrastructure, not advisors. Excluded from
-# discovery regardless of the conclave-/team. dir prefix (#48).
-_LIFECYCLE: frozenset[str] = frozenset({
-    "start", "processing", "done", "handoff", "forge",
-    "hire", "retro", "feedback", "feedback-triage",
-})
-
-# Advisor SKILL-dir prefixes tolerated during the #48 migration (conclave- is
-# canonical; team. is legacy). Kept local to avoid an enginelib.paths import cycle.
-_ADVISOR_PREFIXES = ("conclave-", "team.")
+from enginelib.advisors import registry_advisors
 
 
 def discover_advisors(roster_dir: Path) -> list[str]:
-    """Return sorted BARE advisor ids from roster_dir SKILL dirs, tolerating both
-    the canonical conclave-<id> and legacy team.<id> layouts, excluding lifecycle.
+    """Sorted BARE advisor ids from *roster_dir*'s SKILL dirs, lifecycle excluded.
 
-    Bare ids (not dir-names) are the contract: the agent-def files consumers look
-    up are bare `<id>.md`, so returning `team.<id>` mis-resolved the lookup (#48).
+    A list rather than a set because the caller prints it in order; the question
+    itself is `enginelib.advisors.registry_advisors`, which is where the two skill-dir
+    layouts and the lifecycle exclusion are known. This function used to answer it
+    itself, with its own prefix tuple and its own exclusion set (#69).
+
+    Bare ids (not dir-names) are the contract: the agent-def files consumers look up
+    are bare `<id>.md`, so returning `team.<id>` mis-resolved the lookup (#48).
     """
-    ids: set[str] = set()
-    for prefix in _ADVISOR_PREFIXES:
-        for p in roster_dir.glob(f"{prefix}*/SKILL.md"):
-            bare = p.parent.name[len(prefix):]
-            if bare not in _LIFECYCLE:
-                ids.add(bare)
-    return sorted(ids)
+    return sorted(registry_advisors(roster_dir))
 
 
 def advisor_role(agent_file: Path) -> str:
