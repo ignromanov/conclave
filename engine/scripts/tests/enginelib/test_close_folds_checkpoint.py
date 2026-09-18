@@ -160,3 +160,28 @@ def test_lines_that_did_not_parse_are_carried_over_rather_than_dropped(ai_root, 
     assert "requested 1 · shipped 1 · lost 0" in text, (
         "the torn line was counted as a unit — it is unparseable, not a unit"
     )
+
+
+def test_the_event_time_survives_the_fold_that_deletes_its_source(ai_root, body):
+    """Mutation: drop `at=e.at` from the re-render in `_fold_checkpoint` (T9 producer).
+
+    The fold does not copy lines, it re-renders parsed ones — and step 14b unlinks the
+    checkpoint the moment the render lands. So the folded copy is not one of two copies, it is
+    the last one, and a field the re-render forgets is not stale afterwards: it is gone, along
+    with the only file that still held it. The mutation is invisible to every other test here
+    because the tally, the evidence and the text all survive it.
+    """
+    path = store.ensure(_ADVISOR, _TOKEN)
+    store.append(path, record.render(
+        record.KIND_DONE, "T9 — the producer", evidence=("commit:3e2f42f",),
+        at="2026-04-21T09:08:07+00:00",
+    ))
+
+    close_session(_opts(body))
+
+    text = _record_text()
+    assert "2026-04-21T09:08:07+00:00" in text, (
+        "the folded record lost the event time, and the checkpoint that held it is deleted:\n"
+        + text
+    )
+    assert not path.exists()

@@ -11,6 +11,9 @@ contract line can actually run it.
 """
 from __future__ import annotations
 
+import os
+from datetime import datetime
+
 import pytest
 
 from engine.__main__ import main
@@ -141,3 +144,49 @@ def test_the_header_is_written_once_however_many_lines_follow(instance):
     assert text.count("type: checkpoint") == 1
     assert text.count("schema_version: 1") == 1
     assert len(_body(record)) == 3
+
+
+def test_the_line_carries_the_event_s_own_time_read_at_the_moment_of_the_write(instance):
+    """Mutation: render the line without `at=`, or compute the time from `now()` (T9 producer).
+
+    The stamp is `st_mtime` as it stood when the check ran, not when the line was rendered and
+    not when anyone reads it later. `now()` passes on every session where the artefact was just
+    produced — most of them — and fails precisely in the sessions where a unit sat finished for
+    an hour before being recorded, which is the only case A2(b) is looking for.
+
+    The second half demonstrates the property rather than catching a mutation in today's code:
+    nothing currently re-derives the time, so touching the file afterwards cannot make a
+    correct implementation red. It is here because the moment something *does* re-derive it —
+    an analysis pass reading `st_mtime` off the artefact — this assertion is already written
+    and already says which of the two answers is the record's.
+    """
+    artefact = instance / "report.md"
+    artefact.write_text("findings\n", encoding="utf-8")
+    written_at = datetime(2026, 3, 4, 5, 6, 7).astimezone()
+    os.utime(artefact, (written_at.timestamp(), written_at.timestamp()))
+
+    assert main(["session", "checkpoint", "--done", "T9 — the producer",
+                 "--evidence", "file:report.md"]) == 0
+
+    (rec,) = _records()
+    expected = f"[at: {written_at.isoformat(timespec='seconds')}]"
+    assert expected in _body(rec)[0], f"expected {expected} in:\n{_body(rec)[0]}"
+
+    os.utime(artefact, None)
+    assert expected in rec.read_text(encoding="utf-8"), (
+        "the recorded time moved when the artefact was touched — it is being derived, not kept"
+    )
+
+
+def test_an_intent_carries_no_event_time_because_it_names_no_event(instance):
+    """Mutation: stamp an intent with `now()` for symmetry with the done line.
+
+    An intent is the declaration, so its event *is* the write and the two times would always
+    agree. A column that is zero by construction on one of the two kinds is not a measurement,
+    and a reader comparing the kinds would draw the conclusion that intents are always recorded
+    promptly — which is true of nothing except the definition.
+    """
+    assert main(["session", "checkpoint", "--intent", "T9 — the producer"]) == 0
+
+    (rec,) = _records()
+    assert "[at: " not in _body(rec)[0], _body(rec)[0]

@@ -23,6 +23,14 @@ standing in* — measured: a commit made in a worktree resolves from the main ch
 worktrees share one object database. `file:` has no such immunity, which is the second reason
 not to point it at a CODE tree whose identity depends on an environment variable.
 
+**Every resolved check also reports when its event happened**, and that is a second job this
+module has because it is the only place that can do it: the check executes here, so `file:`'s
+mutable `st_mtime` is readable here and nowhere later. `Check.at` is that time, `""` when the
+class has none, and `oldest_event_time` folds a line's refs into the one stamp the record
+carries. The gap between that stamp and the line's own write time is what A2(b) measures — a
+record written as the work happened and one written in a burst at close are identical from the
+write times alone.
+
 **Refusal is the default.** An unknown class, a malformed ref, a missing item, an unreadable
 cache — all refuse. This is the one module where "I could not tell" must never round up to
 "true": every soft answer here becomes a shipped unit in R5's row.
@@ -109,11 +117,23 @@ class Roots:
 
 @dataclass(frozen=True)
 class Check:
-    """One ref, resolved. `reason` is written to be shown to whoever the verb just refused."""
+    """One ref, resolved. `reason` is written to be shown to whoever the verb just refused.
+
+    `at` is the **event's own time** — when the thing the ref names actually happened — as an
+    ISO-8601 string, empty for a class that cannot supply one. It is emphatically not the time
+    of this check: that is the write time, which the line already carries, and the distance
+    between the two is the only thing A2(b) measures. A class that can report nothing but the
+    check's own time therefore reports "" and says so, rather than reporting a zero gap that
+    would read as perfect discipline.
+
+    Captured **here, at append time, and nowhere else.** `file:` is the reason the whole task is
+    urgent: `st_mtime` is mutable, so a time not taken at the write is not late, it is gone.
+    """
 
     ref: str
     ok: bool
     reason: str
+    at: str = ""
 
 
 def resolve(ref: str, roots: Roots) -> Check:
@@ -130,17 +150,62 @@ def resolve_all(refs: tuple[str, ...] | list[str], roots: Roots) -> tuple[Check,
     return tuple(resolve(r, roots) for r in refs)
 
 
+def oldest_event_time(checks: tuple[Check, ...] | list[Check]) -> str:
+    """One time for the whole line: the oldest event among the refs that resolved.
+
+    **Oldest, not newest, and the choice is what keeps the predicate exclusion narrow.** A
+    `predicate:` ref carries no time at all (see `_predicate`), and an empty `at` is skipped
+    here rather than treated as a missing value — so a line carrying `commit:` *and*
+    `predicate:` is stamped with the commit's time, and only a line whose sole evidence is
+    predicate-class goes unstamped. "Exclude the predicate class" said loosely would have
+    thrown away the mixed line together with its perfectly good commit evidence.
+
+    Oldest is also the answer A2(b) asks for: how long a unit that was already complete sat
+    unrecorded. That is measured from the earliest moment it *could* have been recorded.
+
+    **Parsed before comparing, never sorted as text.** The three producing classes emit
+    different offsets by construction — `%cI` carries the committer's zone, `st_mtime` this
+    machine's, GitHub's `updatedAt` is `Z` — and two strings with different offsets sort
+    lexicographically in an order that has nothing to do with which happened first. The string
+    that goes into the line is the original, not the parse: a re-rendered time would silently
+    rewrite what the source reported.
+    """
+    stamped: list[tuple[datetime, str]] = []
+    for check in checks:
+        if not (check.ok and check.at):
+            continue
+        try:
+            moment = datetime.fromisoformat(check.at.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        # A naive stamp is read as local rather than dropped: dropping it would silently prefer
+        # a later well-formed time, which is the one direction that flatters the measurement.
+        stamped.append((moment.astimezone(), check.at))
+    return min(stamped)[1] if stamped else ""
+
+
+def _iso(epoch: float) -> str:
+    """A filesystem stamp as ISO-8601 in the local zone — the zone `record.TS_FORMAT` writes, so
+    a reader comparing the two times on one line never crosses an offset to do it."""
+    return datetime.fromtimestamp(epoch).astimezone().isoformat(timespec="seconds")
+
+
 def _commit(ref: str, sha: str, roots: Roots) -> Check:
     if not _SHA_RE.fullmatch(sha):
         return Check(ref, False, f"{sha!r} is not a hex object name — a branch or HEAD is not evidence")
     for name, root in (("CODE", roots.code), ("DATA", roots.data)):
+        # One command answers both questions. `show` refuses a missing object with the same
+        # non-zero exit `cat-file -e` gave, so the existence semantics `_SHA_RE` guards are
+        # unchanged and no second process is spawned per ref. `%cI` is the *committer* date:
+        # `%aI` would carry the author's original time through a rebase or a cherry-pick, which
+        # is a time from before this work and would report a lag nobody incurred.
         proc = subprocess.run(
-            ["git", "-C", str(root), "cat-file", "-e", f"{sha}^{{commit}}"],
+            ["git", "-C", str(root), "show", "-s", "--format=%cI", f"{sha}^{{commit}}"],
             capture_output=True,
             text=True,
         )
         if proc.returncode == 0:
-            return Check(ref, True, f"commit {sha} exists in {name}")
+            return Check(ref, True, f"commit {sha} exists in {name}", at=proc.stdout.strip())
     return Check(ref, False, f"no commit {sha} in CODE ({roots.code}) or DATA ({roots.data})")
 
 
@@ -163,9 +228,11 @@ def _file(ref: str, rel: str, roots: Roots) -> Check:
         # Named separately from "not found" on purpose: a dispatched agent returning an empty
         # file is this instance's measured failure mode, 6 of 6 times, and it is invisible if
         # it reports as a missing path.
-        if candidate.stat().st_size == 0:
+        st = candidate.stat()
+        if st.st_size == 0:
             return Check(ref, False, f"{rel} exists in {name} but is empty")
-        return Check(ref, True, f"{rel} exists in {name}, {candidate.stat().st_size} bytes")
+        return Check(ref, True, f"{rel} exists in {name}, {st.st_size} bytes",
+                     at=_iso(st.st_mtime))
     return Check(ref, False, f"no non-empty {rel} inside the instance — a source file is commit: evidence")
 
 
@@ -195,6 +262,10 @@ def _predicate(ref: str, ident: str, roots: Roots) -> Check:
         return Check(ref, False, f"{ident} carries no verify: predicate — nothing to execute")
     verdict = classify_predicate(Predicate(**row["verify"]), roots.project, roots.code)
     if verdict == "pass":
+        # No `at`, and this is structural rather than an omission: the predicate is *executed*
+        # on this line, so its event time is the write time and its gap is zero by construction.
+        # A truthful zero reported into the distribution would drag the median down and mask lag
+        # in the classes that can actually carry it, so the class abstains.
         return Check(ref, True, f"predicate for {ident} passes")
     # `broken` is kept distinct from `fail` because 093 already learned the difference: a
     # predicate whose target has been renamed away reports the same red as one that is
@@ -226,7 +297,13 @@ def _issue(ref: str, num: str, roots: Roots) -> Check:
     state = item.get("state")
     if state != "closed":
         return Check(ref, False, f"issue #{number} is {state or 'of unrecorded state'}, not closed")
-    return Check(ref, True, f"issue #{number} is closed as of {stamp.isoformat()}")
+    # Approximate by nature — `updatedAt` is the last touch of any kind, not the close — and
+    # guaranteed to be present rather than merely likely: the open-issue path (`gh.py:60`)
+    # requests `number,title,labels` with no `state` at all, and this class admits only
+    # `state == "closed"`, so the only items that can reach here are the ones the closed-issue
+    # search (`gh.py:112`) fetched, and that query asks for `updatedAt`.
+    return Check(ref, True, f"issue #{number} is closed as of {stamp.isoformat()}",
+                 at=str(item.get("updatedAt") or "").strip())
 
 
 def _captured_at(cache: Path) -> datetime | None:

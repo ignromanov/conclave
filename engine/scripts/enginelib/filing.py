@@ -338,7 +338,11 @@ def _fold_checkpoint(advisor: str, session_id: str) -> tuple[str, Path | None]:
         "",
     ]
     lines += [
-        _record.render(e.kind, e.text, evidence=e.evidence, ts=e.ts) for e in reading.entries
+        # `at=` is not optional decoration here. Step 14b deletes the checkpoint as soon as this
+        # render lands, so the folded copy is the last one: a re-render that dropped the event
+        # time would erase the measurement at exactly the moment its source ceases to exist.
+        _record.render(e.kind, e.text, evidence=e.evidence, ts=e.ts, at=e.at)
+        for e in reading.entries
     ]
     if tally.lost:
         lines += ["", "Lost — declared and never completed with resolving evidence:"]

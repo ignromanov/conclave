@@ -12,12 +12,13 @@ exception and it is the instrument under test — the repositories are real, bui
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from enginelib.checkpoint.evidence import Roots, resolve, resolve_all
+from enginelib.checkpoint.evidence import Check, Roots, oldest_event_time, resolve, resolve_all
 
 
 def _git(cwd, *args) -> str:
@@ -59,9 +60,12 @@ def roots(tmp_path) -> Roots:
     )
 
 
-def _snapshot(roots: Roots, name: str, *, number: int, state: str, age_seconds: int, ttl: int = 900):
+def _snapshot(roots: Roots, name: str, *, number: int, state: str, age_seconds: int, ttl: int = 900,
+              updated_at: str | None = None):
     stamp = (datetime.now(UTC) - timedelta(seconds=age_seconds)).strftime("%Y-%m-%dT%H:%M:%SZ")
     items = [{"number": number, "state": state, "title": "t", "labels": []}]
+    if updated_at is not None:
+        items[0]["updatedAt"] = updated_at
     (roots.gh_cache / name).write_text(
         f'---\ntype: gh-snapshot\ncaptured_at: "{stamp}"\nttl_seconds: {ttl}\n---\n\n'
         f"```json\n{json.dumps(items)}\n```\n",
@@ -257,3 +261,151 @@ def test_a_ref_naming_no_class_refuses_instead_of_being_ignored(roots):
 
     checks = resolve_all(("commit:HEAD", "file:/etc/hosts"), roots)
     assert len(checks) == 2 and not any(c.ok for c in checks)
+
+
+# --- the event time (T9 producer) --------------------------------------------------------
+#
+# Everything below is about a second fact each check reports: not *whether* the thing exists,
+# but *when it happened*. The reason it lives in the resolver and not in an analysis pass is
+# `file:` — `st_mtime` is mutable, so a time not taken at the moment of the write is not a
+# late measurement, it is a different one. The tests are named by that asymmetry.
+
+def test_a_commit_reports_the_date_it_was_committed(roots):
+    """Mutation: keep `cat-file -e` and leave `at` empty, or switch `%cI` to `%aI`.
+
+    The author date is the wrong one and wrong in a direction that flatters us: a rebase or a
+    cherry-pick carries a time from before the work landed here, so the gap it reports is a lag
+    nobody actually incurred.
+    """
+    env_date = "2026-01-02T03:04:05+00:00"
+    (roots.code / "later.txt").write_text("later\n", encoding="utf-8")
+    _git(roots.code, "add", "later.txt")
+    subprocess.run(
+        ["git", "-C", str(roots.code), "commit", "-qm", "dated"],
+        check=True, capture_output=True, text=True,
+        env={"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+             "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+             "GIT_AUTHOR_DATE": "2020-05-05T05:05:05+00:00",  # deliberately not the committer's
+             "GIT_COMMITTER_DATE": env_date,
+             "PATH": "/usr/bin:/bin:/usr/local/bin", "HOME": str(roots.code)},
+    )
+    sha = _git(roots.code, "rev-parse", "HEAD")
+
+    check = resolve(f"commit:{sha}", roots)
+    assert check.ok
+    assert datetime.fromisoformat(check.at) == datetime.fromisoformat(env_date), (
+        f"commit: reported {check.at!r}; the committer date was {env_date!r}"
+    )
+
+
+def test_a_file_reports_the_mtime_it_had_when_the_check_ran(roots):
+    """Mutation: report `datetime.now()`, or drop `at` for this class entirely.
+
+    This is the class the whole task is urgent for. `now()` would be indistinguishable from a
+    correct implementation in every session where the artefact was just written — which is most
+    of them — and wrong precisely in the sessions the measurement exists to find.
+    """
+    artefact = roots.data / "report.md"
+    artefact.write_text("findings\n", encoding="utf-8")
+    long_ago = datetime(2026, 3, 4, 5, 6, 7).astimezone()
+    os.utime(artefact, (long_ago.timestamp(), long_ago.timestamp()))
+
+    check = resolve("file:report.md", roots)
+    assert check.ok
+    assert datetime.fromisoformat(check.at) == long_ago, (
+        f"file: reported {check.at!r}, not the mtime {long_ago.isoformat()!r} it was given"
+    )
+
+
+def test_an_issue_reports_the_snapshot_s_updated_at(roots):
+    """Mutation: drop `at` for this class on the grounds that the cache might not carry it.
+
+    It always carries it, and the guarantee is structural rather than probable: the open-issue
+    path (`gh.py:60`) requests `number,title,labels` with no `state` at all, and this class
+    admits only `state == "closed"`. The only items that can reach the success branch are the
+    ones the closed-issue search fetched, and that query asks for `updatedAt` by name.
+    """
+    _snapshot(roots, "a.md", number=7, state="closed", age_seconds=10,
+              updated_at="2026-02-03T04:05:06Z")
+
+    check = resolve("issue:7", roots)
+    assert check.ok
+    assert datetime.fromisoformat(check.at.replace("Z", "+00:00")) == datetime(
+        2026, 2, 3, 4, 5, 6, tzinfo=UTC
+    ), f"issue: reported {check.at!r}"
+
+
+def test_a_predicate_reports_no_time_because_its_event_is_this_check(roots):
+    """Mutation: stamp the predicate with `now()` "for completeness".
+
+    It would be truthful and it would be poison: the resolver *executes* the predicate, so the
+    event time and the write time are the same instant and the gap is zero by construction.
+    Feeding a structural zero into the distribution drags the median down and hides real lag in
+    the classes that can carry it. Abstaining is the honest reading, and `oldest_event_time`
+    skips an empty stamp rather than treating it as a missing value.
+    """
+    (roots.project / "shipped.py").write_text("def checkpoint(): ...\n", encoding="utf-8")
+    _index(roots, {"feedback_id": "fb-1", "item_id": "it-1",
+                   "verify": {"kind": "file-contains", "root": "project", "file": "shipped.py",
+                              "pattern": "checkpoint"}})
+
+    check = resolve("predicate:fb-1/it-1", roots)
+    assert check.ok
+    assert check.at == "", f"predicate: reported a time: {check.at!r}"
+
+
+def test_a_predicate_beside_real_evidence_never_suppresses_the_line_s_time(roots):
+    """Mutation: exclude the predicate class by dropping any line that mentions one.
+
+    The narrow rule and the loose one differ exactly here. Written loosely — "exclude
+    predicate:" — a `--done` carrying both a commit and a predicate loses its perfectly good
+    commit time because of a ref that was never going to contribute one. Taking the oldest over
+    non-empty stamps gets the narrow rule for free: the predicate has nothing to offer, so it
+    cannot win, and only a line whose *sole* evidence is predicate-class goes unstamped.
+    """
+    (roots.project / "shipped.py").write_text("def checkpoint(): ...\n", encoding="utf-8")
+    _index(roots, {"feedback_id": "fb-1", "item_id": "it-1",
+                   "verify": {"kind": "file-contains", "root": "project", "file": "shipped.py",
+                              "pattern": "checkpoint"}})
+    sha = _git(roots.code, "rev-parse", "HEAD")
+
+    checks = resolve_all((f"commit:{sha}", "predicate:fb-1/it-1"), roots)
+    assert all(c.ok for c in checks)
+    commit_at = next(c.at for c in checks if c.ref.startswith("commit:"))
+    # Named first, and not decoration: without it the assertion below is true when `commit:`
+    # reports no time at all — "" == "" — so the mutation that empties the commit stamp would
+    # leave this test green while breaking the very thing it is named for.
+    assert commit_at, "the commit contributed no time; the assertion below would be vacuous"
+    assert oldest_event_time(checks) == commit_at
+
+    predicate_only = resolve_all(("predicate:fb-1/it-1",), roots)
+    assert oldest_event_time(predicate_only) == ""
+
+
+def test_the_oldest_is_the_earliest_instant_and_not_the_smallest_string():
+    """Mutation: `sorted(c.at for c in checks if c.at)[0]` — sort the ISO strings as text.
+
+    The three producing classes emit different offsets *by construction*: `%cI` carries the
+    committer's zone, `st_mtime` this machine's, GitHub's `updatedAt` is always `Z`. The two
+    stamps below name the same pair of instants in either order, and a text sort picks the
+    later one — a bug that is invisible on any machine sitting at UTC and silently under-reports
+    lag everywhere else.
+    """
+    earlier = Check("issue:1", True, "", at="2026-09-15T23:30:00+00:00")
+    later = Check("file:a.md", True, "", at="2026-09-15T21:00:00-03:00")  # == 00:00Z the next day
+    assert sorted((earlier.at, later.at))[0] == later.at, "the trap this test exists for is gone"
+
+    assert oldest_event_time((earlier, later)) == earlier.at
+    assert oldest_event_time((later, earlier)) == earlier.at
+
+
+def test_a_refused_check_contributes_no_time_however_old_it_is():
+    """Mutation: fold over every check rather than the resolved ones.
+
+    A refused ref is not evidence, and its stamp is not a measurement of anything — an old
+    mtime on a file that turned out to be empty would otherwise become the line's event time
+    and report a lag that never happened.
+    """
+    refused = Check("file:empty.md", False, "empty", at="2000-01-01T00:00:00+00:00")
+    good = Check("commit:abc1234", True, "ok", at="2026-09-15T12:00:00+00:00")
+    assert oldest_event_time((refused, good)) == good.at
