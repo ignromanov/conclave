@@ -43,18 +43,16 @@ _ANSWERS_THE_QUESTION = re.compile(r"^_?[a-z_]*advisors$")
 #: Second copies that stay, each with the reason. A row here is a debt with a name and
 #: a price, not an exemption — which is the whole difference between this and six
 #: modules that simply accumulated one each.
-DECLARED_PREFIX_COPIES: dict[str, str] = {
-    "briefing/__main__.py": (
-        "briefing keeps its startup path on os/pathlib only. Importing "
-        "enginelib.paths to reach the shared constant costs ~9ms more than "
-        "briefing.paths — measured, almost all of it glob+re — on a module whose "
-        "`--help` latency its author priced deliberately. Collapsing it is a "
-        "decision with an owner, not a cleanup."
-    ),
-}
+#:
+#: Empty since #133 F1. Its one row was `briefing/__main__.py`, priced at "~9ms more
+#: than briefing.paths" — and the price was not the reason it survived. Re-measured cold
+#: on the same machine, `import enginelib.paths` is 59.5ms against `import briefing.paths`
+#: at 62.7ms, i.e. no dearer at all; and the module already imported `enginelib.advisors`
+#: on the line above the gate, so the cost was being paid on every invocation that
+#: reached it. A declared debt is only as good as its next re-measurement.
+DECLARED_PREFIX_COPIES: dict[str, str] = {}
 
 DECLARED_DISCOVERY_ELSEWHERE: dict[str, str] = {
-    "briefing/__main__.py::_registry_advisors": "same startup-cost reason as above",
     "briefing/regen.py::regen_advisors": (
         "a verb, not a query: it regenerates a GIVEN list. Matched by name only."
     ),
@@ -211,4 +209,34 @@ def test_the_lifecycle_exclusion_set_is_spelled_in_one_module():
         f"importing LIFECYCLE_SKILLS from {ADVISOR_HOME}: {', '.join(strays)}.\n"
         "All copies were identical when measured, so a copy buys nothing and costs a "
         "place the next lifecycle verb can fail to appear (#69)."
+    )
+
+
+def test_no_declaration_outlives_the_thing_it_declares():
+    """A declared copy that no longer exists is a live exemption with no subject.
+
+    The three dicts above are the one hand-kept list this file allows itself, and the
+    whole premise of the gate is that a hand-kept list is what goes stale. Nothing here
+    noticed when #133 F1 deleted `briefing/__main__.py::_registry_advisors` and both of
+    that module's constant copies with it: all three rows stayed, still reading as a
+    priced debt, still granting an exemption — now to whatever next takes those names in
+    that file, which is precisely the seventh copy this gate exists to refuse.
+    """
+    stale = [
+        f"DECLARED_PREFIX_COPIES[{rel!r}]"
+        for rel in DECLARED_PREFIX_COPIES
+        if rel not in _modules_defining_the_prefix_rule()
+    ] + [
+        f"DECLARED_LIFECYCLE_COPIES[{rel!r}]"
+        for rel in DECLARED_LIFECYCLE_COPIES
+        if rel not in _modules_defining_the_lifecycle_set()
+    ] + [
+        f"DECLARED_DISCOVERY_ELSEWHERE[{name!r}]"
+        for name in DECLARED_DISCOVERY_ELSEWHERE
+        if name not in _discovery_functions()
+    ]
+    assert not stale, (
+        "these rows declare a second copy that is no longer there: "
+        f"{', '.join(sorted(stale))}.\nDelete the row with the copy — an exemption "
+        "whose subject is gone does not expire, it waits."
     )
