@@ -223,6 +223,42 @@ def project_skills_dir() -> Path:
     return project_claude_dir() / "skills"
 
 
+# A hired advisor's REAL files live in the DATA repo (spec 103 §4); the project-side
+# dirs above hold per-item symlinks pointing back here. The `.gitignore` in CODE
+# excludes `.claude/{agents,skills}` on exactly that understanding, so anything written
+# as a real file over there belongs to no repository at all (#134).
+
+
+def data_claude_dir() -> Path:
+    """DATA-side .claude/ — where hired advisors actually live.
+
+    Equal to `project_claude_dir()` on a colocated instance (no `.conclave` root, or
+    one pointed at the project itself): then there is no second place to point at and
+    the caller writes a real file. `is_split_layout()` is that question asked once.
+    """
+    return repo_root() / ".claude"
+
+
+def data_agents_dir() -> Path:
+    """DATA hired agent-defs (.conclave/.claude/agents/)."""
+    return data_claude_dir() / "agents"
+
+
+def data_skills_dir() -> Path:
+    """DATA advisor SKILL dirs (.conclave/.claude/skills/)."""
+    return data_claude_dir() / "skills"
+
+
+def is_split_layout() -> bool:
+    """True when DATA and CODE are two different roots.
+
+    Compared as RESOLVED paths, and neither root need exist: `Path.resolve()` is
+    non-strict, and a test layout that names the same directory two ways — `tmp` and
+    `tmp/./` — must answer 'colocated', or the caller links a file to itself.
+    """
+    return repo_root().resolve() != project_root().resolve()
+
+
 # Advisor SKILL-dir naming: current mint is `conclave-<id>` (router.py); legacy
 # hires used `team.<id>`. During the #48 migration readers must tolerate both.
 #

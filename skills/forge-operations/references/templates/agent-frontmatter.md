@@ -1,6 +1,7 @@
 ---
 name: ${ID}
 description: ${DESCRIPTION}
+emoji: ${EMOJI}
 color: ${COLOR}
 tools: "*"
 ---
