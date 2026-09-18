@@ -25,7 +25,12 @@ from enginelib.checkpoint import store
 
 #: Every public callable `store` is allowed to have. `append` is the only mutator, and it is
 #: O_APPEND: it can add a line and cannot reach one already written.
-_ALLOWED_STORE_SURFACE = {"token_for", "record_path", "ensure", "append", "read"}
+#:
+#: `records_for` was added after this pin existed, and the pin is what made the case be argued
+#: rather than assumed: it names the files a session owns and returns paths. It opens nothing,
+#: writes nothing, and cannot reach a line at all — a finder, on the same side of the line as
+#: `record_path`.
+_ALLOWED_STORE_SURFACE = {"token_for", "record_path", "records_for", "ensure", "append", "read"}
 
 #: Every option the checkpoint verb accepts. No `--amend`, no `--edit`, no `--drop`.
 _ALLOWED_VERB_OPTIONS = {"-h", "--help", "--intent", "--done", "--evidence", "--advisor"}

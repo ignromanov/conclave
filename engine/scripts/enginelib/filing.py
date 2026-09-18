@@ -307,10 +307,16 @@ class CloseSessionOpts:
     session_id: str = ""
 
 
-def _fold_checkpoint(advisor: str, session_id: str) -> tuple[str, Path | None]:
-    """The in-flight record's lines, rendered for the session record, and its path.
+def _fold_checkpoint(advisor: str, session_id: str) -> tuple[str, tuple[Path, ...]]:
+    """The in-flight record's lines, rendered for the session record, and the paths folded.
 
-    Returns `("", None)` when there is no record to fold — which is not an error and must
+    **Every record the session owns, not the one whose name today's date would spell.** The
+    session's identity is its token; the date in a record's filename is where it was opened, and
+    a session that crosses a midnight opens a second one. Keying the fold on the wall clock lost
+    the earlier file twice over — its units never reached the tally, and the file it left behind
+    is exactly the shape T7 reads as "a previous session never closed".
+
+    Returns `("", ())` when there is no record to fold — which is not an error and must
     not read as one. `/conclave:done` is reachable without session_init having run, exactly
     as the Now drain below already tolerates removing zero rows.
 
@@ -325,14 +331,19 @@ def _fold_checkpoint(advisor: str, session_id: str) -> tuple[str, Path | None]:
     from enginelib.checkpoint import record as _record
     from enginelib.checkpoint import store as _store
 
-    path = _store.record_path(advisor, session_id)
-    reading = _store.read(path)
-    if not path.is_file():
-        return "", None
-    if not reading.entries and not reading.discarded:
-        return "_No units recorded._", path
+    paths_found = _store.records_for(advisor, session_id)
+    if not paths_found:
+        return "", ()
+    entries: list = []
+    discarded: list[str] = []
+    for path in paths_found:
+        reading = _store.read(path)
+        entries += list(reading.entries)
+        discarded += list(reading.discarded)
+    if not entries and not discarded:
+        return "_No units recorded._", paths_found
 
-    tally = _record.tally(reading.entries)
+    tally = _record.tally(entries)
     lines = [
         f"**requested {tally.requested} · shipped {tally.shipped} · lost {len(tally.lost)}**",
         "",
@@ -342,21 +353,21 @@ def _fold_checkpoint(advisor: str, session_id: str) -> tuple[str, Path | None]:
         # render lands, so the folded copy is the last one: a re-render that dropped the event
         # time would erase the measurement at exactly the moment its source ceases to exist.
         _record.render(e.kind, e.text, evidence=e.evidence, ts=e.ts, at=e.at)
-        for e in reading.entries
+        for e in entries
     ]
     if tally.lost:
         lines += ["", "Lost — declared and never completed with resolving evidence:"]
         lines += [f"- {text}" for text in tally.lost]
-    if reading.discarded:
+    if discarded:
         lines += [
             "",
-            f"{len(reading.discarded)} line(s) did not parse and are kept verbatim:",
+            f"{len(discarded)} line(s) did not parse and are kept verbatim:",
             "",
             "```",
-            *reading.discarded,
+            *discarded,
             "```",
         ]
-    return "\n".join(lines), path
+    return "\n".join(lines), paths_found
 
 
 def close_session(opts: CloseSessionOpts) -> str:
@@ -466,7 +477,7 @@ def close_session(opts: CloseSessionOpts) -> str:
 
     # 9b. Fold the in-flight checkpoint record (spec 117 T6/D3). Read here, unlinked
     # only after the session record is safely on disk — see step 14b.
-    progress_text, checkpoint_path = _fold_checkpoint(opts.advisor, opts.session_id)
+    progress_text, checkpoint_paths = _fold_checkpoint(opts.advisor, opts.session_id)
 
     # 10. Build list values. Quoting the elements that need it belongs beside as_block
     # in frontmatter: an id arriving as "#17" made the whole flow sequence a comment.
@@ -524,7 +535,9 @@ def close_session(opts: CloseSessionOpts) -> str:
     #
     # Failing to unlink is not failing to close: the record is already written, and a
     # stale checkpoint is a duplicate, not a loss.
-    if checkpoint_path is not None:
+    # Each independently: one unremovable file must not leave the others behind, because a
+    # leftover record is read by the next session as a session that never closed.
+    for checkpoint_path in checkpoint_paths:
         try:
             checkpoint_path.unlink()
         except OSError:

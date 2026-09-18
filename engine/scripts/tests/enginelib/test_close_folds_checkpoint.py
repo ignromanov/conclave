@@ -14,6 +14,7 @@ why the load-bearing test here is the one that makes the write fail.
 from __future__ import annotations
 
 import os
+from datetime import date as _date_cls
 from pathlib import Path
 
 import pytest
@@ -185,3 +186,48 @@ def test_the_event_time_survives_the_fold_that_deletes_its_source(ai_root, body)
         + text
     )
     assert not path.exists()
+
+
+def test_a_session_that_outlives_a_midnight_folds_both_of_its_records(ai_root, body):
+    """Mutation: look the record up with `record_path(advisor, session_id)` (today's name).
+
+    A session is identified by its **token**; the date in a record's filename says where it was
+    opened, and one that crosses a midnight opens a second file under the same token. The
+    wall-clock lookup then finds only the current day's, and loses the earlier one twice over:
+    its units never reach the tally, and the file left behind is exactly what T7's resume scan
+    reads as "a previous session never closed". Found by dogfooding — this instance produced the
+    two-file case against itself before any test did.
+    """
+    first = store.ensure(_ADVISOR, _TOKEN, today="2026-04-21")
+    store.append(first, record.render(record.KIND_INTENT, "the unit from before midnight"))
+    second = store.ensure(_ADVISOR, _TOKEN, today=_date_cls.today().isoformat())
+    store.append(second, record.render(record.KIND_INTENT, "the unit from after it"))
+
+    close_session(_opts(body))
+
+    text = _record_text()
+    assert "requested 2 · shipped 0 · lost 2" in text, text
+    assert "the unit from before midnight" in text
+    assert "the unit from after it" in text
+    assert not first.exists(), "the earlier record survived the close that folded it"
+    assert not second.exists()
+
+
+def test_the_fold_finds_the_record_by_token_and_not_by_the_date_at_close(ai_root, body):
+    """Mutation: the same wall-clock lookup, seen from its other side.
+
+    The test above needs a record that *is* today's to show the partial loss. This one has none:
+    a session opened on another day and closed now folds nothing at all under the old lookup —
+    no tally, no units, and the record still on disk — because the name it spells matches no
+    file. The two mutations are the same line; the harms are different enough to name apart.
+    """
+    only = store.ensure(_ADVISOR, _TOKEN, today="2026-04-20")
+    store.append(only, record.render(record.KIND_DONE, "the unit from another day",
+                                     evidence=("commit:3e2f42f",)))
+
+    close_session(_opts(body))
+
+    text = _record_text()
+    assert "requested 1 · shipped 1 · lost 0" in text, text
+    assert "the unit from another day" in text
+    assert not only.exists()
