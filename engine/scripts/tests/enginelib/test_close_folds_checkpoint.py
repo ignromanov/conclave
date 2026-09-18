@@ -57,6 +57,20 @@ def _opts(body: Path, **kw) -> CloseSessionOpts:
     )
 
 
+@pytest.fixture()
+def artefact(ai_root) -> str:
+    """An evidence ref that actually resolves, as the R12 gate re-checks at close (T8).
+
+    These tests seeded a short sha that exists in no repository the fixture builds. That was
+    harmless while nothing re-read the evidence, and the close gate turned it into a refusal: the
+    fold tests were asserting on records whose completions nothing could confirm. Giving them a
+    real artefact keeps them about the fold rather than routing them through the override, and is
+    the more truthful fixture besides.
+    """
+    (paths.repo_root() / "artefact.md").write_text("what the unit produced\n", encoding="utf-8")
+    return "file:artefact.md"
+
+
 def _seed_checkpoint(*entries: tuple[str, str, tuple[str, ...]]) -> Path:
     path = store.ensure(_ADVISOR, _TOKEN)
     for kind, text, evidence in entries:
@@ -68,18 +82,18 @@ def _record_text() -> str:
     return (paths.sessions_dir() / f"{_DATE}-{_ADVISOR}-folds.md").read_text(encoding="utf-8")
 
 
-def test_the_checkpoint_is_folded_and_then_removed(ai_root, body):
+def test_the_checkpoint_is_folded_and_then_removed(ai_root, body, artefact):
     """The happy path — and it is the test that proves nothing about the ordering."""
     checkpoint = _seed_checkpoint(
         (record.KIND_INTENT, "T6 — the fold", ()),
-        (record.KIND_DONE, "T6 — the fold", ("commit:3e2f42f",)),
+        (record.KIND_DONE, "T6 — the fold", (artefact,)),
         (record.KIND_INTENT, "T7 — the glob", ()),
     )
     close_session(_opts(body))
 
     text = _record_text()
     assert "requested 2 · shipped 1 · lost 1" in text
-    assert "T6 — the fold" in text and "commit:3e2f42f" in text
+    assert "T6 — the fold" in text and artefact in text
     assert "T7 — the glob" in text
     assert not checkpoint.exists(), "the checkpoint outlived a successful close"
 
@@ -109,7 +123,7 @@ def test_a_failed_record_write_leaves_the_checkpoint_in_place(ai_root, body, mon
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores the mode bits this test relies on")
-def test_an_unremovable_checkpoint_does_not_fail_the_close(ai_root, body):
+def test_an_unremovable_checkpoint_does_not_fail_the_close(ai_root, body, artefact):
     """The other half of the order: failing to unlink is not failing to close.
 
     Once the session record is written the close has succeeded. A checkpoint that cannot be
@@ -119,7 +133,7 @@ def test_an_unremovable_checkpoint_does_not_fail_the_close(ai_root, body):
     method globally also breaks `snapshot_write`'s own tmp-file handling, so the first
     version of this test failed for a reason that had nothing to do with what it asserts.
     """
-    checkpoint = _seed_checkpoint((record.KIND_DONE, "shipped", ("commit:3e2f42f",)))
+    checkpoint = _seed_checkpoint((record.KIND_DONE, "shipped", (artefact,)))
     checkpoint.parent.chmod(0o500)
     try:
         close_session(_opts(body))
@@ -141,7 +155,7 @@ def test_a_session_with_no_checkpoint_closes_the_way_it_always_did(ai_root, body
     assert "What the agent says it did." in _record_text()
 
 
-def test_lines_that_did_not_parse_are_carried_over_rather_than_dropped(ai_root, body):
+def test_lines_that_did_not_parse_are_carried_over_rather_than_dropped(ai_root, body, artefact):
     """Nothing vanishes without the record saying so — applied to the shape a killed
     process actually leaves.
 
@@ -149,7 +163,7 @@ def test_lines_that_did_not_parse_are_carried_over_rather_than_dropped(ai_root, 
     the sessions worth auditing. Dropping it would make the tally quietly wrong exactly
     there — so the fold reports the count and reproduces the bytes.
     """
-    checkpoint = _seed_checkpoint((record.KIND_DONE, "complete", ("commit:3e2f42f",)))
+    checkpoint = _seed_checkpoint((record.KIND_DONE, "complete", (artefact,)))
     with checkpoint.open("a", encoding="utf-8") as fh:
         fh.write("- [2026-04-22T16:01-0300] done: torn in the mi")
 
@@ -163,7 +177,7 @@ def test_lines_that_did_not_parse_are_carried_over_rather_than_dropped(ai_root, 
     )
 
 
-def test_the_event_time_survives_the_fold_that_deletes_its_source(ai_root, body):
+def test_the_event_time_survives_the_fold_that_deletes_its_source(ai_root, body, artefact):
     """Mutation: drop `at=e.at` from the re-render in `_fold_checkpoint` (T9 producer).
 
     The fold does not copy lines, it re-renders parsed ones — and step 14b unlinks the
@@ -174,7 +188,7 @@ def test_the_event_time_survives_the_fold_that_deletes_its_source(ai_root, body)
     """
     path = store.ensure(_ADVISOR, _TOKEN)
     store.append(path, record.render(
-        record.KIND_DONE, "T9 — the producer", evidence=("commit:3e2f42f",),
+        record.KIND_DONE, "T9 — the producer", evidence=(artefact,),
         at="2026-04-21T09:08:07+00:00",
     ))
 
@@ -213,7 +227,7 @@ def test_a_session_that_outlives_a_midnight_folds_both_of_its_records(ai_root, b
     assert not second.exists()
 
 
-def test_the_fold_finds_the_record_by_token_and_not_by_the_date_at_close(ai_root, body):
+def test_the_fold_finds_the_record_by_token_and_not_by_the_date_at_close(ai_root, body, artefact):
     """Mutation: the same wall-clock lookup, seen from its other side.
 
     The test above needs a record that *is* today's to show the partial loss. This one has none:
@@ -223,7 +237,7 @@ def test_the_fold_finds_the_record_by_token_and_not_by_the_date_at_close(ai_root
     """
     only = store.ensure(_ADVISOR, _TOKEN, today="2026-04-20")
     store.append(only, record.render(record.KIND_DONE, "the unit from another day",
-                                     evidence=("commit:3e2f42f",)))
+                                     evidence=(artefact,)))
 
     close_session(_opts(body))
 

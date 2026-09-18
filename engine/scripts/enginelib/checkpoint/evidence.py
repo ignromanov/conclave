@@ -134,6 +134,17 @@ class Check:
     ok: bool
     reason: str
     at: str = ""
+    #: The check could not be RUN, as against running and finding the artefact absent. Both are
+    #: `ok=False` — at append time R6 admits nothing but a check that passed, and "I could not
+    #: tell" must never round up to "true". They part company at close, where the question is a
+    #: different one: whether a unit already recorded as complete has *lost* its artefact. A
+    #: stale gh snapshot, an unreadable index, a predicate whose target was renamed away — none
+    #: of those observed anything, so none of them may be reported as work that vanished.
+    #:
+    #: 093 paid for this distinction once already and it has lived in `reason` ever since, as
+    #: prose: `broken` kept apart from `fail`, because a rotted check and an unmet condition
+    #: read the same red. A caller that must act on the difference cannot act on prose.
+    unknown: bool = False
 
 
 def resolve(ref: str, roots: Roots) -> Check:
@@ -255,11 +266,12 @@ def _predicate(ref: str, ident: str, roots: Roots) -> Check:
             if candidate.get("feedback_id") == fb and candidate.get("item_id") == item:
                 row = candidate
     except (OSError, json.JSONDecodeError) as exc:
-        return Check(ref, False, f"the feedback index could not be read: {exc}")
+        return Check(ref, False, f"the feedback index could not be read: {exc}", unknown=True)
     if row is None:
-        return Check(ref, False, f"no feedback item {ident} in the index")
+        return Check(ref, False, f"no feedback item {ident} in the index", unknown=True)
     if not row.get("verify"):
-        return Check(ref, False, f"{ident} carries no verify: predicate — nothing to execute")
+        return Check(ref, False, f"{ident} carries no verify: predicate — nothing to execute",
+                     unknown=True)
     verdict = classify_predicate(Predicate(**row["verify"]), roots.project, roots.code)
     if verdict == "pass":
         # No `at`, and this is structural rather than an omission: the predicate is *executed*
@@ -270,7 +282,9 @@ def _predicate(ref: str, ident: str, roots: Roots) -> Check:
     # `broken` is kept distinct from `fail` because 093 already learned the difference: a
     # predicate whose target has been renamed away reports the same red as one that is
     # honestly unmet, and folding them hides a rotted check behind an unfinished unit.
-    return Check(ref, False, f"predicate for {ident} is {verdict}")
+    # `broken` is the rotted check — it observed nothing, so it cannot claim the unit is
+    # incomplete. `fail` observed the condition and found it unmet, which is a real disagreement.
+    return Check(ref, False, f"predicate for {ident} is {verdict}", unknown=(verdict == "broken"))
 
 
 def _issue(ref: str, num: str, roots: Roots) -> Check:
@@ -289,11 +303,19 @@ def _issue(ref: str, num: str, roots: Roots) -> Check:
         # Absence is never evidence: the cache is per-advisor and label-scoped, so an issue
         # owned by somebody else is missing from it for a reason that has nothing to do with
         # whether it closed.
-        return Check(ref, False, f"issue #{number} is in no gh-cache snapshot — refresh, or use another class")
+        return Check(ref, False,
+                     f"issue #{number} is in no gh-cache snapshot — refresh, or use another class",
+                     unknown=True)
     stamp, item, ttl = newest
     age = (datetime.now(UTC) - stamp).total_seconds()
     if age > ttl:
-        return Check(ref, False, f"the snapshot naming #{number} is {int(age)}s old (ttl {ttl}s) — run gh-fetch")
+        # Unknown, emphatically not absent: the TTL expiring is the cache ageing, not the issue
+        # reopening. A snapshot goes stale in 900s and a session lasts longer than that, so a gate
+        # that read this as a vanished artefact would refuse every close carrying issue: evidence
+        # — a refusal keyed on the evidence class rather than on anything that happened.
+        return Check(ref, False,
+                     f"the snapshot naming #{number} is {int(age)}s old (ttl {ttl}s) — run gh-fetch",
+                     unknown=True)
     state = item.get("state")
     if state != "closed":
         return Check(ref, False, f"issue #{number} is {state or 'of unrecorded state'}, not closed")
