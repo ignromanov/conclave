@@ -49,7 +49,10 @@ from enginelib.advisors import LIFECYCLE_SKILLS
 from enginelib.audit import Findings
 
 # A dotted routing token: `workflow.dev-lifecycle`, `team.quorum`. Backticked or bare.
-_DOTTED_RE = re.compile(r"\b((?:workflow|team)\.[a-z][a-z0-9-]*)")
+# `\b` is not enough: a hyphen is a non-word character, so the boundary matches inside
+# `wiki-workflow.md` and the gate reports a missing routing target `workflow.md`. Same
+# lookbehind `_AI_ROOT_RE` uses below, and `_SCRIPT_REF` in test_referenced_scripts_exist.py.
+_DOTTED_RE = re.compile(r"(?<![\w.-])((?:workflow|team)\.[a-z][a-z0-9-]*)")
 
 # A reference to the retired origin-instance DATA root, in backticks or in a shell fragment. The
 # lookbehind drops `/` from the exclusion class so a path-embedded `.ai` (e.g. `/path/to/.ai`) is

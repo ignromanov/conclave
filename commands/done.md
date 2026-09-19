@@ -281,57 +281,36 @@ After every 3rd `/conclave:done` invocation (or after major spec merge), suggest
 
 If yes → invoke `team.retro` skill. If no → carry counter to next session.
 
-## Phase: Study (Phase 2 E14)
+## Phase: Study — **retired 2026-09-19 (spec 121 P1)**
 
-Knowledge-graduation step. Runs after artifact filing, before session-close commit.
-**Non-blocking per ADR-0003 `wiki_failure_policy: defer`** — failures log + continue.
-**P0-blocking exception** per ADR-0003 `wiki_p0_policy: block` — see step 4 below.
+This phase is gone. It is recorded here rather than deleted silently because it was **mandatory**
+in this protocol for four months, and anyone reading an older session record will find `study` rows
+that no longer have a producer.
 
-Run all 6 steps in one call:
+**What it was.** `engine/scripts/lifecycle/study_phase.py`, now **removed** — 349 lines orchestrating
+six wiki-health shell scripts, with step 4 documented P0-blocking.
 
-```bash
-python3 engine/scripts/lifecycle/study_phase.py --advisor <advisor>
-```
+**Why it went.** Not decay. The 096/099 extraction carried the orchestrator and **not its steps**:
+the source tree (`~/code/vl/ai/.claude/skills/team.forge/scripts/`) holds both `lifecycle/study_phase.py`
+and `wiki/` with seven scripts; this distribution received the first and never the second. Every step
+was guarded by `is_file()`, so the phase ran, warned, and exited having done nothing — for its entire
+life here. It did not decay into being stepless; it arrived that way.
 
-- Exit 0 → every step ran and was clean; omit study row from Summary
-- Exit 2 → non-blocking findings (captures / P1 stale / link violations), **or** a step that
-  never ran (`steps-not-run:{N}` — absent script or exit=1); emit `⚠ study` row either way.
-  A step that could not run has measured nothing, so omitting the row would assert a health
-  nobody checked (#56A). Since the wiki extraction the scripts live in the `/wiki:*` plugin
-  and `engine/scripts/wiki/` is absent, so this is the expected state until that is resolved.
-- Exit 3 → **P0 BLOCKING** (wiki-audit-stale contradictions / canonical-ref drift) — must triage before close-session commit; emit `✗ study` row
-- Exit 1 → orchestration error; treat as P1
+The design was not untried. In the origin instance it ran and produced artefacts —
+`~/code/vl/wiki/_bridges/ops-bridge.md`, 2026-06-03. Both instances then stopped: that vault's newest
+file is 2026-06-17 (1058 files), this one's 2026-07-31 (53 files). The larger and older investment is
+the deader. Retired for want of demand, not of implementation.
 
-Steps orchestrated (in order): capture-suggest → promote-decision (per candidate) →
-bridge-rebuild (if ≥1 promoted) → audit-stale (P0-blocking) → hot-sync (always) → link-check.
+**Where the record lives.** The founding contract — which defines `wiki_failure_policy: defer` and
+`wiki_p0_policy: block`, and which those keys' "ADR-0003" citation actually pointed at — is archived
+as `.conclave/ops/specs/121-study-phase-orchestrates-nothing/wiki-workflow-contract.md`, marked
+retired. The citation was never false: VoidPay numbered two documents `0003`, and the extraction
+carried `decisions/0003-y-script-exit-codes.md` while leaving `contracts/wiki-workflow.md` behind, so
+in this repository the reference silently resolved to the wrong record. Nothing failed; the number
+still resolved.
 
-`study_phase.py` is the single orchestrator for all six steps — there is no per-step shell
-entrypoint. For direct wiki operations (capture, audit, link-check) use the `/wiki:*` plugin
-commands (e.g. `/wiki:capture`, `/wiki:audit`), which own the vault after the wiki extraction.
-
-### Aggregate Study summary
-
-Collapsed into one row inside the ▍-block (inline, no sidecar lane):
-
-```
-▍ ⚠ **study**    link:violations {N} open · capture:{N} · promoted:{N} · stale:P0:{N}/P1:{N}
-```
-
-Render rules (per `output-formatting.md` silence-on-success):
-- All Study steps exit 0 → **omit the row entirely** (clean = absent)
-- Step 4 P1 stale OR step 6 wikilink violations → emit row with `⚠` (informational)
-- Step 4 exit 3 (P0 BLOCKING) → emit row with `✗` (must triage before close-session commit)
-
-Drop zero counters from the row text — show only fields that have non-zero values.
-
-### Anti-patterns
-
-- Skipping Study because "tests pass, ship it" → defeats knowledge graduation
-- Promoting every candidate (bypassing 5-test filter) → wiki signal degrades
-- Treating Study exit codes as blocking (except step 4 P0) → violates `wiki_failure_policy: defer`
-- Running Study INSIDE `engine session close` → must run BEFORE close-session for failures to be visible in the session record
-
----
+Ruled by helm-ceo, 2026-09-19, after a cross-instance reachability search found no caller outside
+this project.
 
 ## Phase: Infra (run-log surface)
 
@@ -340,9 +319,9 @@ Surfaces telemetry that `enginelib/runlog.py` appends to
 date is UTC, not local, so a late-evening session writes tomorrow's file.
 
 It is not every invocation this protocol prescribes. The bare-script steps —
-`engine/scripts/lifecycle/session_init.py`, `engine/scripts/lifecycle/study_phase.py` six
-lines above, `engine/scripts/feedback/predicate_derive.py` in triage — are run as scripts
-rather than through `engine`, never reach that exit hook, and leave no row at all.
+`engine/scripts/lifecycle/session_init.py` and `engine/scripts/feedback/predicate_derive.py` in
+triage — are run as scripts rather than through `engine`, never reach that exit hook, and leave no
+row at all. (`study_phase.py` was a third until spec 121 P1 **removed** it.)
 Zero new instrumentation for what is covered; what is not covered is missing, not idle.
 
 ### When

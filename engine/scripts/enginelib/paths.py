@@ -27,7 +27,7 @@ def check_legacy_data_root_env() -> None:
     """Refuse to run when the retired VOIDPAY_AI_ROOT alias is the only DATA root set.
 
     The alias dates from the instance this engine was extracted from. Six call sites
-    read it — `briefing/paths.py`, roster, study_phase, gh_board_query, session_init
+    read it — `briefing/paths.py`, roster, gh_board_query, session_init
     and the emission gate — and a seventh, `enginelib/paths.py`, ignored it. That
     seventh was the resolver the other six were meant to defer to, which is what made
     the split a split. A process could therefore honour the alias in one

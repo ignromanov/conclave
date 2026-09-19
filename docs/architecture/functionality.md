@@ -52,7 +52,7 @@ Phases in execution order:
 | Phase | What happens |
 |-------|-------------|
 | Feedback emission | `feedback_emit.py` scaffolds review; agent fills `items[]`; `--finalize` validates + flips `_draft: false`; emission gate (`engine session emission-gate`) blocks if missing |
-| Study | `study_phase.py`: 6-step wiki graduation — **no step is implemented; see §Study below** (capture-suggest → promote-decision → bridge-rebuild → audit-stale → hot-sync → link-check); P0 exit blocks `close-session.sh` |
+| Study | **retired 2026-09-19 (spec 121 P1)** — `study_phase.py` and its six steps are removed; see §8 |
 | Infra | `engine lifecycle runlog-summary`: surfaces script exit codes from `run-log/`; row omitted if all clean |
 | Lifecycle Retrospective | 6 episodic prompts (job / stuck / instead / acted-on / removed-step / unexecuted), answered from the transcript; `nothing` is a valid answer to each; findings filed as `/team.feedback` items; cap 5 per session |
 | Reflexion | One sentence ≤280 chars; persisted to `session.md` frontmatter; read back for 3 sessions |
@@ -321,50 +321,42 @@ feedback improves next-session accuracy without retraining.
 
 ---
 
-## 8. Wiki Capture (Knowledge Graduation)
+## 8. Wiki Capture (Knowledge Graduation) — **retired 2026-09-19 (spec 121 P1)**
 
-**What it does:** Promotes durable understanding from session artifacts to the team wiki —
-the long-term knowledge layer. Distinct from memory (records *what happened*); wiki encodes
-*why it works* (concepts, patterns, decisions, architecture explanations).
+**This section described a phase that has been removed.** It is kept as a record, not as a
+description of behaviour — which is the distinction spec 121 exists to enforce.
 
-**Module:** C-004 Lifecycle (study phase) + wiki scripts
-**Triggered by:** `/team.done` Study phase (mandatory for spec/research sessions)
+**What it was.** A Study phase in `/conclave:done`, mandatory for spec and research sessions,
+promoting durable understanding from session artifacts into a team wiki. `study_phase.py`
+orchestrated six shell steps: capture-suggest → promote-decision → bridge-rebuild → audit-stale →
+hot-sync → link-check, with step 4 P0-blocking on contradictions.
 
-**Invocation:**
+**Why it is gone, measured rather than argued.** The 096/099 extraction carried the orchestrator and
+**not its steps**. The source tree — `~/code/vl/ai/.claude/skills/team.forge/scripts/` — holds both
+`lifecycle/study_phase.py` and `wiki/` with seven scripts; this distribution received the first and
+never the second. Every step sat behind an `is_file()` guard, so the phase ran, warned and exited
+having done nothing, for its whole life here. It did not decay into being stepless; it arrived that
+way. The figure it printed was short too: `steps-not-run:3` against six, because steps 2 and 3 are
+conditional on step 1 producing candidates and were never reached to be counted.
 
-```bash
-python3 engine/scripts/lifecycle/study_phase.py --advisor <advisor>
-```
+**The design was not untried, and that is why it loses.** In the origin instance it ran and produced
+its artefact — `~/code/vl/wiki/_bridges/ops-bridge.md`, dated 2026-06-03. Then both instances stopped
+using it: that vault's newest file is 2026-06-17 across 1058 files, this one's 2026-07-31 across 53.
+The larger, older, more invested corpus is the deader. A subsystem built, run, and abandoned twice is
+starved of demand, not of implementation.
 
-> **Measured 2026-09-18: none of the six steps exists.** `engine/scripts/wiki/` is absent, and
-> `study_phase.py` guards every step with `is_file()`, so the phase runs, warns, and exits 2 with
-> nothing done. `commands/done.md` says the scripts moved to the `/wiki:*` plugin; that was checked
-> and is not so — the plugin ships 22 `.sh` files and none of these six, and it sits in
-> `_quarantine/`. The reported figure is also short: the run prints `steps-not-run:3` because steps
-> 2 and 3 are conditional on step 1 producing candidates and are never reached to be counted.
->
-> The six below are therefore a **design of record, not a description of behaviour**, including the
-> P0-blocking gate in step 4, which blocks nothing — and which is unfounded twice over: the
-> `ADR-0003` cited for `wiki_p0_policy` / `wiki_failure_policy` is `0003-y-script-exit-codes`, and it
-> contains neither key. Whether to retire the phase or rebuild it is
-> open; until it is settled, nothing here should be read as shipped.
+**On the `ADR-0003` citation this section used to carry.** It was never false. VoidPay numbered two
+documents `0003` — `contracts/wiki-workflow.md`, which defines `wiki_failure_policy: defer` and
+`wiki_p0_policy: block`, and `decisions/0003-y-script-exit-codes.md`, which defines neither. The
+extraction carried the second and left the first, so in this repository the reference silently
+resolved to the wrong record. **Nothing failed; the number still resolved.** A reference-checker
+would have reported `ADR-0003 found` and gone green — which is why it survived four months.
 
-Six steps in order:
+The contract is archived at
+`.conclave/ops/specs/121-study-phase-orchestrates-nothing/wiki-workflow-contract.md`, marked retired.
 
-1. `wiki-capture-suggest.sh --since HEAD~5` — suggest wiki-capture candidates from recent diffs
-2. `promote-decision.sh --id <id>` — graduate each candidate decision to wiki (per candidate)
-3. `wiki-bridge-rebuild.sh` — rebuild `_bridges/ops-bridge.md` (runs only if ≥1 promoted)
-4. `wiki-audit-stale.sh` — flag stale entries; **P0-blocking** on contradictions (exit 3 = must triage before `close-session.sh`)
-5. `wiki-hot-sync.sh` — sync `hot.md` signals to wiki entries
-6. `wiki-link-check.sh --quiet` — validate wikilinks across vault
-
-Exit semantics: 0 = clean (Study row omitted from session summary); 2 = non-blocking findings
-(⚠ row); 3 = P0 blocking (✗ row, must triage before close commit). Non-blocking failures
-follow ADR-0003 `wiki_failure_policy: defer`.
-
-For Conclave, the team-wiki (the reference instance's knowledge vault) maps to a top-level
-`knowledge/` directory beside `engine/` (not inside it). The reference instance's concept pages
-carry across as `instances/<instance>/knowledge-seed/` — not as engine assets.
+Ruled by helm-ceo on 2026-09-19, after a cross-instance reachability search found no caller of
+`study_phase.py` outside this project.
 
 ---
 

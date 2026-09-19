@@ -35,11 +35,22 @@ def _surfaces() -> list[Path]:
     return out
 
 
+# A line that marks the script gone is declaring an absence, not claiming a presence. A
+# retirement record has to be able to name what it retired — spec 121 removed
+# `lifecycle/study_phase.py` and `commands/done.md` keeps the record of it — and a gate blind
+# to that difference fires on the honest text and teaches people to delete the record instead.
+# Same convention the charter and `skills/forge-operations/ARCHITECTURE.md` already use.
+_RETIRED = re.compile(r"\*\*(deleted|retired|removed)\b", re.IGNORECASE)
+
+
 def _references() -> dict[str, set[str]]:
     hits: dict[str, set[str]] = {}
     for p in _surfaces():
-        for m in _SCRIPT_REF.finditer(p.read_text(encoding="utf-8")):
-            hits.setdefault(m.group(1), set()).add(str(p.relative_to(REPO)))
+        for line in p.read_text(encoding="utf-8").splitlines():
+            if _RETIRED.search(line):
+                continue
+            for m in _SCRIPT_REF.finditer(line):
+                hits.setdefault(m.group(1), set()).add(str(p.relative_to(REPO)))
     return hits
 
 
@@ -73,4 +84,29 @@ def test_every_referenced_engine_script_exists():
     assert not broken, (
         "surfaces name engine scripts that do not exist at the path given "
         f"(resolve from the repo root): {broken}"
+    )
+
+
+def test_a_line_marking_a_script_retired_is_not_read_as_a_claim(tmp_path, monkeypatch):
+    """The exemption is load-bearing, not decorative.
+
+    Without it, spec 121's retirement record in `commands/done.md` — which must name
+    `engine/scripts/lifecycle/study_phase.py` to say that it is gone — fails this gate, and the
+    only way to go green is to delete the record. That is the opposite of what the gate is for:
+    it exists so surfaces stop naming scripts as if they ran, not so they stop remembering them.
+    """
+    surface = tmp_path / "commands"
+    surface.mkdir()
+    (surface / "a.md").write_text(
+        "Run `engine/scripts/lifecycle/ghost.py` for this.\n"
+        "`engine/scripts/lifecycle/gone.py` is **retired** — removed by spec 121.\n"
+    )
+    monkeypatch.setattr("tests.test_referenced_scripts_exist.SURFACE_DIRS", [surface])
+    monkeypatch.setattr("tests.test_referenced_scripts_exist.REPO", tmp_path)
+    refs = _references()
+    assert "engine/scripts/lifecycle/ghost.py" in refs, (
+        "the unmarked reference must still be collected, or the exemption has swallowed the gate"
+    )
+    assert "engine/scripts/lifecycle/gone.py" not in refs, (
+        f"a line declaring the script retired was read as a claim that it exists — {refs}"
     )

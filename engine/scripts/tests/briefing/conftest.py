@@ -4,7 +4,7 @@ Provides the hermetic kai_cto_tmp_root fixture used by test_backfill_cli.py
 so briefing_main(["kai-cto"]) never writes to the live agent-memory/ tree.
 
 Path note: scripts/lifecycle/ (Phase-4, spec 085) is added to sys.path so
-test_session_init, test_gh_board_query, and test_study_phase can import their
+test_session_init and test_gh_board_query can import their
 modules directly without installation.
 
 Determinism contract:

@@ -46,7 +46,7 @@ if sys.version_info < (3, 11):  # noqa: UP036 — see engine/__main__.py
 
 # Reach the enginelib package when run as a standalone lifecycle script
 # (`python3 lifecycle/session_init.py`): sys.path[0] is lifecycle/, so add scripts/.
-# Matches study_phase.py / gh_board_query.py (GH#1 it-8).
+# Matches gh_board_query.py (GH#1 it-8).
 _SCRIPTS_DIR = str(Path(__file__).resolve().parent.parent)
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)

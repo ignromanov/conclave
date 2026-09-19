@@ -143,7 +143,7 @@ have covered one of six.
 | `briefing/paths.py` | honoured it | re-exports `enginelib/paths.py` |
 | `enginelib/roster.py` | honoured it | guard + `CONCLAVE_AI_ROOT` |
 | `lifecycle/session_init.py` | honoured it | guard + `CONCLAVE_AI_ROOT` |
-| `lifecycle/study_phase.py` | honoured it | guard + `CONCLAVE_AI_ROOT` |
+| `lifecycle/study_phase.py` | honoured it | **retired 2026-09-19 (spec 121 P1)** — removed |
 | `lifecycle/gh_board_query.py` | honoured it | guard + `CONCLAVE_AI_ROOT` |
 | `engine/cmd/session.py` | honoured it | guard + `CONCLAVE_AI_ROOT` |
 

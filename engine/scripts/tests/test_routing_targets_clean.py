@@ -87,3 +87,26 @@ def test_the_routing_table_is_actually_reached():
 def test_no_shipped_command_names_a_routing_target_that_does_not_exist():
     findings = rt.run(_surfaces(), SKILLS_ROOTS, _roster())
     assert findings.crit == [], "\n".join(findings.crit)
+
+
+def test_a_hyphenated_filename_is_not_sliced_into_a_routing_target():
+    """`wiki-workflow.md` must not be read as a reference to the routing target `workflow.md`.
+
+    `_DOTTED_RE` anchored on `\\b`, and a hyphen is a non-word character, so the boundary matches
+    mid-name: every mention of a file whose stem ends in `-workflow` or `-team` was reported as a
+    missing routing target. Found when spec 121's retirement record cited
+    `contracts/wiki-workflow.md` and this gate reddened on prose that names a real archived file.
+
+    The guard already exists twice in this repository — `_AI_ROOT_RE` seven lines below the
+    defect in the same module, and `_SCRIPT_REF` in `test_referenced_scripts_exist.py`, whose
+    comment explains this exact failure. It had not been applied here.
+    """
+    from enginelib.audit.routing_targets import _DOTTED_RE
+
+    assert not _DOTTED_RE.findall("see `contracts/wiki-workflow.md` for the contract"), (
+        "a hyphenated filename was sliced into a routing target"
+    )
+    assert not _DOTTED_RE.findall("the sub-team.done shorthand"), "sliced after a hyphen"
+    # positive control: the real forms must still be caught, or the fix has blinded the gate
+    assert _DOTTED_RE.findall("routes into workflow.plan"), "the gate stopped seeing `workflow.*`"
+    assert _DOTTED_RE.findall("hand to team.done"), "the gate stopped seeing `team.*`"
