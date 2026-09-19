@@ -154,12 +154,12 @@ sequenceDiagram
     participant Done as team.done
     participant Hand as team.handoff
     participant Forge as team.forge (if forge work)
-    participant Scripts as forge scripts
+    participant Scripts as engine CLI
 
     User->>Start: /conclave:start
-    Start->>Scripts: lib/snapshot.sh (load cached state)
-    Start->>Scripts: lifecycle/gh-fetch.sh (GH snapshot)
-    Start->>Scripts: lifecycle/git-fetch.sh (git snapshot)
+    Start->>Scripts: enginelib/snapshot.py (load cached state)
+    Start->>Scripts: engine lifecycle gh-fetch (GH snapshot)
+    Start->>Scripts: engine lifecycle git-fetch (git snapshot)
     Start-->>User: context loaded + resume check
 
     User->>Proc: /conclave:processing
@@ -167,7 +167,7 @@ sequenceDiagram
 
     alt forge work requested
         User->>Forge: /conclave:forge (hire/evolve/audit)
-        Forge->>Scripts: protocol scripts (per §A.1/A.2/A.3)
+        Forge->>Scripts: protocol commands (per §A.1/A.2/A.3)
         Scripts-->>Forge: results
         Forge-->>User: outcome + per-aspect commits
     else product work
@@ -176,15 +176,15 @@ sequenceDiagram
     end
 
     User->>Done: /conclave:done
-    Done->>Scripts: briefing-build.sh <advisor>
-    Done->>Scripts: memory-index.sh
-    Done->>Scripts: hot-md-append.sh
-    Done->>Scripts: lifecycle/archive-aged.sh
+    Done->>Scripts: engine briefing build <advisor>
+    Done->>Scripts: engine memory index
+    Done->>Scripts: engine memory hot-append
+    Done->>Scripts: engine lifecycle archive-aged
     Done-->>User: completion checklist
 
     alt work incomplete
         User->>Hand: /conclave:handoff
-        Hand->>Scripts: file-handoff.sh
+        Hand->>Scripts: engine file handoff
         Hand-->>User: structured resume prompt
     end
 ```
@@ -287,94 +287,109 @@ graph LR
 
 ### B.2 Script responsibility table
 
-All 59 non-test scripts. Row count equals `find scripts -name '*.sh' -not -path '*/tests/*' | wc -l`.
+Spec 099 ported the shell layer to Python and **no `*.sh` file remains in this repository**.
+Every row below is therefore a retirement record, not a description of something that runs.
+The columns that used to hold measured behaviour — invoked-by, reads, writes, side-effects —
+were measured against the shell implementation and are not carried over under a new name: a
+Python successor's I/O is a fresh claim and belongs to the module that makes it, not to this
+table. What this table is good for now is the migration: old name → what to call instead.
 
-#### Top-level scripts (32)
+> The previous version of this sentence read *"All 59 non-test scripts. Row count equals
+> `find scripts -name '*.sh' -not -path '*/tests/*' | wc -l`"*. That command returns **0**.
+> A document that states its own invariant in executable form is worth more than one that
+> does not — this one was falsifiable, and it was false for four months.
 
-| Script | Invoked by | Reads | Writes | Side-effects |
+#### Top-level scripts — all retired
+
+| Script | Successor | Reads | Writes | Side-effects |
 |--------|-----------|-------|--------|--------------|
-| apply-overlay.sh | hire.md Ph3b, evolve.md | contracts/ base | skills/team.*/contracts/ | Creates overlay scaffold |
-| archive-feedback.sh | **deleted (spec 086)** — replaced by `scripts/feedback/feedback_archive.py` | — | — | — |
-| audit-agent-configs.sh | audit.md cat.8 | .claude/ all | none | Exit 2 on CRIT |
-| audit-bloat.sh | audit.md cat.3 | skills/team.*/SKILL.md | none | Prints WARN/CRIT |
-| audit-overlays.sh | audit.md cat.6 | skills/team.*/contracts/*.md | none | Prints WARN/INFO |
-| audit-phantom-skills.sh | audit.md cat.2 | skills/team.*/SKILL.md | none | Prints WARN |
-| audit-registry-consistency.sh | audit.md cat.5 | CLAUDE.md, agents/*.md | none | Prints CRIT |
-| audit-versions.sh | audit.md cat.1 | skills/team.*/SKILL.md frontmatter | none | Prints OK/WARN/CRIT |
-| briefing-build.sh | hire.md post-hire, team.done | gh-cache, sessions, decisions, mentions | briefings/<a>.md | Reads lifecycle/ snapshots |
-| bump-model-version.sh | hire.md Ph3c, evolve.md St6 | agent-model-version.md | skills/team.*/SKILL.md | Stamps forge.model-version |
-| close-session.sh | team.done | agent-memory/ session | none (orchestrates) | Calls resolve-mention, file-handoff |
-| engine advisor create | hire.md Ph3a | templates/*.md | skills/team.<id>/ tree | Scaffolds advisor |
-| evolve-feedback.sh | **deleted (spec 086)** — channel C dead loop removed | — | — | — |
-| file-decision.sh | team.done, advisors | decision template | decisions/YYYY-MM-DD-<slug>.md | Optional meeting cross-ref |
-| file-handoff.sh | team.handoff, close-session | none | ops/handoffs/YYYY-MM-DD-<slug>.md | Creates handoff doc |
-| find-references.sh | evolve.md St3 | .ai/.claude + CLAUDE.md | none | grep results |
-| hot-md-append.sh | team.done, advisors | hot.md | hot.md | Atomic append; auto-compacts >500 words |
-| hot-md-init.sh | team.start | hot.md template | agent-memory/hot.md | Idempotent init |
-| engine inbox to-issues | Quorum / migration | topics/inbox.md (legacy) | none | Prints gh issue create commands |
-| memory-index.sh | team.done, periodic | decisions, sessions, mentions | advisors/INDEX.md | Full index rebuild |
-| mention.sh | advisors cross-ping | none | mentions/<to>/open/<id>.md | Creates mention file |
-| normalize-spec-frontmatter.sh | spec 078 setup, manual | ops/specs/*/spec.md | ops/specs/*/spec.md | Dry-run by default; --apply to write |
-| migrate-foundations-to-wiki.sh | spec 074 Phase 1.7 one-time | .ai/{product,progress-summary,constitution}.md | <wiki>/<project>/{product,progress,constitution}.md + symlinks | Idempotent foundations migration |
-| register-advisor.sh | hire.md Ph4 | skills/team.*/SKILL.md, agents/*.md | .claude/CLAUDE.md, quorum/SKILL.md | Discovery-driven rebuild |
-| register-executor.sh | forge hire (executor) | templates/executor-agent.md | agents/exec-<id>.md agent-def + agent-memory/executors/<id>/ | Scaffolds executor |
-| report-issue.sh | **deleted (spec 086)** — replaced by `scripts/feedback/feedback_emit.py` + `/conclave:feedback` | — | — | — |
-| resolve-mention.sh | team.done, close-session | mentions/*/open/<id>.md | mentions/<a>/archive/<id>.md | Mutates frontmatter, moves file |
-| skill-stocktake.sh | audit.md cat.9, quarterly | skills/ all | none | Advisory verdicts (Improve/Retire/Merge) |
-| summarize-feedback.sh | **deleted (spec 086)** — replaced by `scripts/feedback/feedback_triage.py --digest` | — | — | — |
-| verify-skill.sh | hire.md Ph2b | plugin cache, .claude/skills/ | none | Prints path or empty; phantom guard |
+| apply-overlay.sh | **retired (spec 099)** — `engine overlay apply` | — | — | — |
+| archive-feedback.sh | **deleted (spec 086)** — `engine/scripts/feedback/feedback_archive.py` | — | — | — |
+| audit-agent-configs.sh | **retired (spec 099)** — `engine audit agent-configs` | — | — | — |
+| audit-bloat.sh | **retired (spec 099)** — `engine audit bloat` | — | — | — |
+| audit-overlays.sh | **retired (spec 099)** — `engine audit overlays` | — | — | — |
+| audit-phantom-skills.sh | **retired (spec 099)** — `engine audit phantom-skills` | — | — | — |
+| audit-registry-consistency.sh | **retired (spec 099)** — `engine audit registry-consistency` | — | — | — |
+| audit-versions.sh | **retired (spec 099)** — `engine audit versions` | — | — | — |
+| briefing-build.sh | **retired (spec 099)** — `engine briefing build` | — | — | — |
+| bump-model-version.sh | **retired (spec 099)** — `engine model bump` | — | — | — |
+| close-session.sh | **retired (spec 099)** — `engine session close` | — | — | — |
+| evolve-feedback.sh | **deleted (spec 086)** — channel C dead loop removed; no successor | — | — | — |
+| file-decision.sh | **retired (spec 099)** — `engine file decision` | — | — | — |
+| file-handoff.sh | **retired (spec 099)** — `engine file handoff` | — | — | — |
+| find-references.sh | **retired (spec 099)** — `engine find references` | — | — | — |
+| hot-md-append.sh | **retired (spec 099)** — `engine memory hot-append` | — | — | — |
+| hot-md-init.sh | **retired (spec 099)** — `engine memory hot-init` | — | — | — |
+| memory-index.sh | **retired (spec 099)** — `engine memory index` | — | — | — |
+| mention.sh | **retired (spec 099)** — `engine mention create` | — | — | — |
+| migrate-foundations-to-wiki.sh | **retired (spec 099)** — no successor built; see spec 121 | — | — | — |
+| normalize-spec-frontmatter.sh | **retired (spec 099)** — `engine spec normalize-frontmatter` | — | — | — |
+| register-advisor.sh | **retired (spec 099)** — `engine register advisor` | — | — | — |
+| register-executor.sh | **retired (spec 099)** — `engine register executor` | — | — | — |
+| report-issue.sh | **deleted (spec 086)** — `engine/scripts/feedback/feedback_emit.py` + `/conclave:feedback` | — | — | — |
+| resolve-mention.sh | **retired (spec 099)** — `engine mention resolve` | — | — | — |
+| skill-stocktake.sh | **retired (spec 099)** — `engine skill stocktake` | — | — | — |
+| summarize-feedback.sh | **deleted (spec 086)** — `engine/scripts/feedback/feedback_triage.py --digest` | — | — | — |
+| verify-skill.sh | **retired (spec 099)** — `engine skill verify` | — | — | — |
 
-> Note: apply-overlay.sh and verify-skill.sh are listed in top-level but also serve as gate functions for hire.md.
+Two rows that were already commands rather than scripts keep their place: `engine advisor create`
+(hire.md Ph3a, scaffolds the `skills/team.<id>/` tree) and `engine inbox to-issues` (prints the
+`gh issue create` commands for a legacy `topics/inbox.md`; `--execute` is required to run them).
 
-#### lib/ scripts (10)
+#### lib/ scripts — all retired into `enginelib/`
 
-| Script | Purpose |
-|--------|---------|
-| lib/advisors.sh | Canonical advisor inventory + is_canonical_advisor() with --allow-lifecycle |
-| lib/feedback.sh | **deleted (spec 086)** — no remaining consumer |
-| lib/frontmatter.sh | Read/write/replace YAML frontmatter in markdown files |
-| lib/gh-query.sh | gh CLI wrappers; --template flag (no jq dependency) |
-| lib/obsidian-parse.sh | Obsidian markdown primitives (callouts, wikilinks) |
-| lib/paths.sh | Path constants and directory helpers; sources first in callers |
-| lib/run-log.sh | Append-on-exit JSONL observability (EXIT trap pattern) |
-| lib/slug.sh | Slug-ification and id generators (ASCII-only contract) |
-| lib/snapshot.sh | Concurrency-safe atomic write, TTL, mkdir-lock, schema_version |
-| lib/template.sh | Render {{key}} placeholders from template file |
+| Script | Successor | Purpose it served |
+|--------|-----------|-------------------|
+| lib/advisors.sh | **retired (spec 099)** — `enginelib/advisors.py` | Canonical advisor inventory |
+| lib/feedback.sh | **deleted (spec 086)** — no remaining consumer | — |
+| lib/frontmatter.sh | **retired (spec 099)** — `enginelib/frontmatter.py` | Read/write YAML frontmatter |
+| lib/gh-query.sh | **retired (spec 099)** — `enginelib/gh.py` | gh CLI wrappers |
+| lib/obsidian-parse.sh | **retired (spec 099)** — `enginelib/obsidian.py` | Obsidian markdown primitives |
+| lib/paths.sh | **retired (spec 099)** — `enginelib/paths.py` | Path constants and directory helpers |
+| lib/run-log.sh | **retired (spec 099)** — `enginelib/runlog.py` | Append-on-exit JSONL observability |
+| lib/slug.sh | **retired (spec 099)** — `enginelib/slug.py` | Slug-ification and id generators |
+| lib/snapshot.sh | **retired (spec 099)** — `enginelib/snapshot.py` | Concurrency-safe atomic write, TTL |
+| lib/template.sh | **retired (spec 099)** — `enginelib/template.py` | Render `{{key}}` placeholders |
 
-#### lifecycle/ scripts (6)
+#### lifecycle/ scripts — all retired
 
-| Script | Purpose |
-|--------|---------|
-| lifecycle/archive-aged.sh | Sweep status/resolved files older than N days to archived |
-| lifecycle/gh-fetch.sh | GH issue snapshot writer — sole `gh` call site in lifecycle |
-| lifecycle/git-fetch.sh | Git state snapshot writer — sole `git status` call site in lifecycle |
-| lifecycle/migrate-add-tags.sh | Retroactive `tags:` frontmatter injection |
-| lifecycle/migrate-add-type.sh | Retroactive `type:` frontmatter injection |
-| lifecycle/resolve-finding.sh | Transition status/open audit-finding to status/resolved |
+| Script | Successor |
+|--------|-----------|
+| lifecycle/archive-aged.sh | **retired (spec 099)** — `engine lifecycle archive-aged` |
+| lifecycle/gh-fetch.sh | **retired (spec 099)** — `engine lifecycle gh-fetch` |
+| lifecycle/git-fetch.sh | **retired (spec 099)** — `engine lifecycle git-fetch` |
+| lifecycle/migrate-add-tags.sh | **retired (spec 099)** — `engine lifecycle migrate-add-tags` |
+| lifecycle/migrate-add-type.sh | **retired (spec 099)** — `engine lifecycle migrate-add-type` |
+| lifecycle/resolve-finding.sh | **retired (spec 099)** — `engine lifecycle resolve-finding` |
 
-#### wiki/ scripts (7) — spec 074 Phase 2
+#### wiki/ scripts — all retired, **none replaced**
 
-| Script | Purpose |
-|--------|---------|
-| wiki/promote-decision.sh | Promote `.ai/ops/decisions/<slug>.md` to `<wiki>/decisions/<slug>.md` with provenance |
-| wiki/wiki-audit-stale.sh | Flag wiki entries whose `updated:` frontmatter is older than threshold |
-| wiki/wiki-bridge-rebuild.sh | Regenerate `<wiki>/_bridges/ops-bridge.md` cross-reference index |
-| wiki/wiki-capture-suggest.sh | Suggest wiki capture candidates from `.ai/ops/` content |
-| wiki/wiki-frontmatter-validate.sh | Validate `<wiki>/**/*.md` frontmatter (type, updated, owner) |
-| wiki/wiki-hot-sync.sh | Sync `.ai/agent-memory/hot.md` cross-agent entries into wiki |
-| wiki/wiki-link-check.sh | Validate `[[wikilinks]]` resolve to existing files (ADR-0003 exit codes) |
+Spec 074 Phase 2 designed seven wiki scripts. None was ported and none exists; `engine/scripts/wiki/`
+is absent from the tree. `commands/done.md` states they moved to the `/wiki:*` plugin — that was
+checked on 2026-09-18 and is not so: the plugin ships 22 shell scripts, none of these seven, and it
+sits in `_quarantine/`. The Study phase that orchestrates them is the subject of **spec 121**, whose
+P1 is the operator's choice between retiring the phase and rebuilding it. Until that is decided no
+successor can be named here, because whether there should be one is the open question.
+
+| Script | Successor |
+|--------|-----------|
+| wiki/promote-decision.sh | **retired (spec 099)** — none; blocked on spec 121 |
+| wiki/wiki-audit-stale.sh | **retired (spec 099)** — none; blocked on spec 121 |
+| wiki/wiki-bridge-rebuild.sh | **retired (spec 099)** — none; blocked on spec 121 |
+| wiki/wiki-capture-suggest.sh | **retired (spec 099)** — none; blocked on spec 121 |
+| wiki/wiki-frontmatter-validate.sh | **retired (spec 099)** — none; blocked on spec 121 |
+| wiki/wiki-hot-sync.sh | **retired (spec 099)** — none; blocked on spec 121 |
+| wiki/wiki-link-check.sh | **retired (spec 099)** — none; blocked on spec 121 |
 
 #### skill-feedback/ scripts — **deleted (spec 086)**
 
-All four scripts (`emit.sh`, `aggregate.sh`, `hash-skill.sh`, `audit.sh`) and the
-`skill-feedback/` directory were removed in spec 086. Channel B (executor skill
-feedback) is now handled by `scripts/feedback/feedback_emit.py` + `/conclave:feedback`.
+All four scripts — `emit.sh`, `aggregate.sh`, `hash-skill.sh`, `audit.sh` — and the `skill-feedback/` directory were **removed** in spec 086. Channel B (executor skill
+feedback) is now handled by `engine/scripts/feedback/feedback_emit.py` + `/conclave:feedback`.
 
-#### tests/ (10 — not in responsibility table, audit-aware)
+#### tests/ — **removed** with the scripts they covered
 
-apply-overlay.test.sh, audit-bloat.test.sh, audit-phantom-skills.test.sh,
-audit-registry-and-overlays.test.sh, audit-versions.test.sh, bump-model-version.test.sh,
-create-advisor.test.sh, find-references.test.sh, register-advisor.test.sh, verify-skill.test.sh
+Ten bats files were **deleted** with their subjects: `apply-overlay.test.sh`, `audit-bloat.test.sh`, `audit-phantom-skills.test.sh`, `audit-registry-and-overlays.test.sh`, `audit-versions.test.sh`, `bump-model-version.test.sh`, `create-advisor.test.sh`, `find-references.test.sh`, `register-advisor.test.sh`, `verify-skill.test.sh`. Coverage moved to the pytest suite
+under `engine/scripts/tests/`, where `tests/cmd/` holds the adapter-level ports.
 
 ---
 
@@ -430,21 +445,21 @@ graph TD
 |-------------|----------------------|-------------------|
 | Edit SKILL.md router logic | hire.md / evolve.md / audit.md dispatch | manual smoke test all 3 protocols |
 | Edit protocols/hire.md | templates/, scripts called in Ph1-5, first-launch-protocol.md | run `engine advisor create` (manual smoke test — no `--dry-run` flag exists) |
-| Edit protocols/evolve.md | aspects/ load order, bump-model-version.sh invocation, ARCHITECTURE.md §A.2 | audit-versions.sh + manual evolve smoke |
-| Edit protocols/audit.md | all audit-*.sh scripts, quality-loop.md, fix-mode delegation | run all audit-*.sh scripts |
-| Add a new script to scripts/ | ARCHITECTURE.md §B responsibility table | audit-architecture-doc.sh |
-| Edit any contracts/*.md | all advisor SKILL.md (overlay check) + lifecycle skills | audit-overlays.sh + audit-registry-consistency.sh |
-| Edit contracts/session-lifecycle.md | all 5 advisor session flows + Kai overlay | audit-overlays.sh |
-| Edit contracts/feedback-protocol.md | `scripts/feedback/feedback_emit.py`, `feedback_triage.py`, `feedback_archive.py`, `/conclave:feedback`, `/conclave:triage` | run pytest for `scripts/feedback/` |
-| Edit contracts/persona-voice.md | all 5 advisor SKILL.md Voice Signature blocks | audit-versions.sh (check last-evolve stamps) |
-| Edit references/agent-model-version.md | all 5 advisor SKILL.md forge.model-version stamps | audit-versions.sh |
-| Bump agent-model semver | all 5 advisor SKILL.md forge: frontmatter | bump-model-version.sh --all + audit-versions.sh |
+| Edit protocols/evolve.md | aspects/ load order, `engine model bump` invocation, ARCHITECTURE.md §A.2 | `engine audit versions` + manual evolve smoke |
+| Edit protocols/audit.md | every `engine audit <name>` check, quality-loop.md, fix-mode delegation | `engine audit --list`, then run each |
+| Add a new `engine` subcommand | ARCHITECTURE.md §B retirement map | `engine audit architecture-doc` |
+| Edit any contracts/*.md | all advisor SKILL.md (overlay check) + lifecycle skills | `engine audit overlays` + `engine audit registry-consistency` |
+| Edit contracts/session-lifecycle.md | all 5 advisor session flows + Kai overlay | `engine audit overlays` |
+| Edit contracts/feedback-protocol.md | `engine/scripts/feedback/feedback_emit.py`, `feedback_triage.py`, `feedback_archive.py`, `/conclave:feedback`, `/conclave:triage` | run pytest for `engine/scripts/feedback/` |
+| Edit contracts/persona-voice.md | all 5 advisor SKILL.md Voice Signature blocks | `engine audit versions` (check last-evolve stamps) |
+| Edit references/agent-model-version.md | all 5 advisor SKILL.md forge.model-version stamps | `engine audit versions` |
+| Bump agent-model semver | all 5 advisor SKILL.md forge: frontmatter | `engine model bump --all` + `engine audit versions` |
 | Edit memory/personality.md (Forge persona) | Forge voice in all sessions | manual spot-check |
-| Edit references/aspects/<aspect>.md | evolve.md Stage 2 aspect loading + all callers | find-references.sh <aspect-name> |
-| Edit scripts/lib/<lib>.sh | all scripts that source it | grep for `source.*<lib>` + bats tests |
-| Edit scripts/lifecycle/gh-fetch.sh | briefing-build.sh (reads gh-cache), team.start context load | briefing-build.sh dry run |
-| Edit advisor SKILL.md contracts/ overlay | base contract in ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/ | audit-overlays.sh |
-| Move memory paths (agent-memory/) | briefing-build.sh, close-session.sh, memory-index.sh, mention.sh, lib/paths.sh | run bats + briefing-build.sh |
+| Edit references/aspects/<aspect>.md | evolve.md Stage 2 aspect loading + all callers | `engine find references <aspect-name>` |
+| Edit `enginelib/<module>.py` | every importer of that module | `pytest engine/scripts/tests/` |
+| Edit `engine lifecycle gh-fetch` | `engine briefing build` (reads gh-cache), team.start context load | `engine briefing build <advisor>` |
+| Edit advisor SKILL.md contracts/ overlay | base contract in ${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/ | `engine audit overlays` |
+| Move memory paths (agent-memory/) | `engine briefing build`, `engine session close`, `engine memory index`, `engine mention create`, `enginelib/paths.py` | `pytest engine/scripts/tests/` + `engine briefing build <advisor>` |
 
 ---
 
@@ -462,7 +477,7 @@ graph TD
 
 **Context**: A single global version cannot track per-advisor drift while also signaling breaking changes to all advisors.
 
-**Decision**: Three axes: (1) `agent-model-version.md` is the canonical standard (SSOT), (2) each advisor SKILL.md carries `forge.model-version` stamp auditable via `audit-versions.sh`, (3) each overlay carries `overrides-base-version` lockable to a specific contract revision. This enables drift detection without forcing lockstep upgrades.
+**Decision**: Three axes: (1) `agent-model-version.md` is the canonical standard (SSOT), (2) each advisor SKILL.md carries `forge.model-version` stamp auditable via `engine audit versions`, (3) each overlay carries `overrides-base-version` lockable to a specific contract revision. This enables drift detection without forcing lockstep upgrades.
 
 **Anchor**: `CHANGELOG.md [1.0.0]`, `references/agent-model-version.md` §Semver lens.
 
@@ -500,17 +515,17 @@ graph TD
 
 ### D.7 Feedback loop — unified channel (spec 086, supersedes 052)
 
-**Context**: Spec 052 introduced `report-issue.sh` + `archive-feedback.sh` with auto-commit semantics. Spec 077 added executor `emit.sh`. Both channels accumulated without closing the loop (101-entry backlog, empty aggregation output).
+**Context**: Spec 052 introduced `report-issue.sh` + `archive-feedback.sh` with auto-commit semantics, and spec 077 added executor `emit.sh` — all three since **deleted**. Both channels accumulated without closing the loop (101-entry backlog, empty aggregation output).
 
-**Decision**: Spec 086 replaced both channels with a single Python package (`scripts/feedback/`) and the `/conclave:feedback` skill. Reviews are markdown files in `ops/feedback/`; `feedback_index.py` builds the JSONL aggregate; `/conclave:triage` closes the loop on a weekly cadence. The bash scripts (`report-issue.sh`, `archive-feedback.sh`, `evolve-feedback.sh`, `summarize-feedback.sh`, `emit.sh`, `aggregate.sh`, `audit.sh`, `hash-skill.sh`, `lib/feedback.sh`) were deleted.
+**Decision**: Spec 086 replaced both channels with a single Python package (`engine/scripts/feedback/`) and the `/conclave:feedback` skill. Reviews are markdown files in `ops/feedback/`; `feedback_index.py` builds the JSONL aggregate; `/conclave:triage` closes the loop on a weekly cadence. The bash scripts (`report-issue.sh`, `archive-feedback.sh`, `evolve-feedback.sh`, `summarize-feedback.sh`, `emit.sh`, `aggregate.sh`, `audit.sh`, `hash-skill.sh`, `lib/feedback.sh`) were **deleted**.
 
 **Anchor**: `CHANGELOG.md "Feedback Loop — 2026-04-27"` (spec 052 history), spec 086.
 
 ### D.8 File-as-message-bus for lifecycle (spec 076)
 
-**Context**: `briefing-build.sh` originally made live `gh` API calls during `/conclave:done`. These calls added latency, burned API rate limits, and created a hard external dependency in the session-close critical path.
+**Context**: `briefing-build.sh` — **deleted** in spec 099, now `engine briefing build` — originally made live `gh` API calls during `/conclave:done`. These calls added latency, burned API rate limits, and created a hard external dependency in the session-close critical path.
 
-**Decision**: Two writer scripts (`lifecycle/gh-fetch.sh`, `lifecycle/git-fetch.sh`) are the sole `gh`/`git` call sites. They write snapshot files with TTL. `briefing-build.sh` reads those snapshots — never calls external services. Lifecycle is now offline-capable after a warm cache.
+**Decision**: Two writers — today `engine lifecycle gh-fetch` and `engine lifecycle git-fetch` — are the sole `gh`/`git` call sites. They write snapshot files with TTL. `engine briefing build` reads those snapshots and never calls external services, so lifecycle is offline-capable after a warm cache. The decision survived the port to Python unchanged; only the names moved.
 
 **Anchor**: `CHANGELOG.md` spec 076 Phase 0, `references/loop-discipline.md`.
 
@@ -518,7 +533,12 @@ graph TD
 
 **Context**: macOS ships bash 3.2 at `/bin/bash`. CI and developer machines may run scripts with `/bin/bash` shebang. bash 4+ features (`declare -A`, `mapfile`, `${var^}`) break silently or loudly on 3.2.
 
-**Decision**: All forge scripts use `#!/usr/bin/env bash` with `set -euo pipefail` and avoid 4+-only features. Workarounds: awk for parsing (obsidian-parse.sh), printf+mkdir-lock instead of flock (snapshot.sh), POSIX tr instead of `${var^}` (apply-overlay.sh).
+**Decision**: All forge scripts used `#!/usr/bin/env bash` with `set -euo pipefail` and avoided 4+-only features. Workarounds, in scripts all since **deleted**: awk for parsing (`obsidian-parse.sh`), printf+mkdir-lock instead of flock (`snapshot.sh`), POSIX tr instead of `${var^}` (`apply-overlay.sh`).
+
+> **Superseded by spec 099.** Every script named above is **deleted** and no `*.sh` remains in the
+> repository, so this constraint binds nothing. The floor that replaced it is a Python version, not a
+> bash one — `engine doctor` reports the interpreter in use. The record is kept because it explains
+> shapes still visible in the ported code, such as the mkdir-lock in `enginelib/snapshot.py`.
 
 **Anchor**: `CHANGELOG.md [1.0.0]` script hardening known-follow-ups, `memory/MEMORY.md` in atlas + global `~/.claude/CLAUDE.md` environment table.
 
@@ -544,4 +564,4 @@ graph TD
 
 **Decision**: lib/ directory holds sourced-only libraries (no direct invocation). lifecycle/ directory holds the sole external I/O call sites (gh, git). This creates a clear I/O boundary: scripts/ can be tested without network; only lifecycle/ needs a live git/gh environment.
 
-**Anchor**: `CHANGELOG.md` spec 076 Phase 0 description, `lib/paths.sh`, `lifecycle/gh-fetch.sh` headers.
+**Anchor**: `CHANGELOG.md` spec 076 Phase 0 description; the boundary now lives in `enginelib/paths.py` and `engine/cmd/lifecycle.py`.

@@ -2,8 +2,11 @@
 
 I/O-free: no print/argparse/sys.exit. Returns Findings for the adapter to format.
 
-Three checks:
-  1. §B scripts: every *.sh under scripts_dir (recursive, excl. /tests/ paths) appears in arch_file.
+Four checks:
+  1a. §B scripts: every *.sh under scripts_dir (recursive, excl. /tests/ paths) appears in arch_file.
+  1b. the converse: every *.sh arch_file names exists under scripts_dir, unless the line naming it
+      marks it retired. 1a walks the tree, so an empty tree makes it vacuous; 1b walks the
+      document, so it still has something to grade once the scripts are gone.
   2. last-reviewed freshness: missing→CRIT; unparseable→WARN; >30d→CRIT (stale); >14d→WARN.
   3. §C contracts: every *.md stem in contracts_dir (top-level) appears in arch_file;
      missing contracts_dir→WARN.
@@ -15,6 +18,12 @@ import re
 from pathlib import Path
 
 from enginelib.audit import Findings
+
+# Dots belong to the name: without them `apply-overlay.test.sh` yields the tail `test.sh`,
+# a file that never existed, and the check demands its presence. The lookbehind stops a
+# match starting mid-name for the same reason.
+_SH_RE = re.compile(r"(?<![\w.-])[A-Za-z0-9_.-]+\.sh")
+_RETIRED_RE = re.compile(r"\*\*(deleted|retired|removed)\b", re.IGNORECASE)
 
 
 def run(arch_file: Path, scripts_dir: Path, contracts_dir: Path) -> Findings:
@@ -41,6 +50,28 @@ def run(arch_file: Path, scripts_dir: Path, contracts_dir: Path) -> Findings:
         warn.append(
             f"no *.sh under {scripts_dir} — check 1 graded 0 scripts and proves nothing; "
             "it cannot see a script the document names but the tree does not have"
+        )
+
+    # ── Check 1b: every *.sh the document names exists ────────────────────────
+    # The converse of check 1, and the only direction that can fail once the tree is empty.
+    # A line that marks the script retired is declaring its absence, not claiming its presence:
+    # ARCHITECTURE.md already writes those as `**deleted (spec 086)** — replaced by ...`, so the
+    # audit reads the document's own convention instead of inventing a second one. Without this
+    # exemption the check would fire on the honest rows and teach people to silence it.
+    # `shipped` excludes tests; 1b must not, or a document naming a live *.test.sh is
+    # reported as naming a ghost.
+    on_disk = {sh.name for sh in scripts_dir.rglob("*.sh")}
+    missing: list[str] = []
+    for line in arch_text.splitlines():
+        if _RETIRED_RE.search(line):
+            continue
+        for name in _SH_RE.findall(line):
+            if name not in on_disk and name not in missing:
+                missing.append(name)
+    for name in missing:
+        crit.append(
+            f"ARCHITECTURE.md names '{name}', which does not exist under {scripts_dir} "
+            "— mark the row retired or name the successor"
         )
 
     # ── Check 2: last-reviewed freshness ───────────────────────────────────────
