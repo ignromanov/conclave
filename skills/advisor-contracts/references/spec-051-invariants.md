@@ -1,6 +1,6 @@
 ---
 schema_version: "1.0.0"
-applies-to: advisors+executors
+appliers: [all advisors, all executors]
 spec: 051
 status: active
 stages: [implement, deliver]

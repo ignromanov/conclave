@@ -1,7 +1,7 @@
 ---
 contract: quality-loop
+appliers: [all advisors]
 version: 1.0.0
-appliers: [all advisors via lifecycle skills]
 propagation: hire-template
 source: c-level-advisor skill (inspiration)
 stages: [verify, deliver]

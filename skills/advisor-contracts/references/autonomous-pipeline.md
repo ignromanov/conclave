@@ -1,9 +1,9 @@
 ---
 contract: autonomous-pipeline
+appliers: [all advisors]
 version: 1.0.0
 propagation: hire-template
 autonomy_level: L3
-applies-to: all advisors (autonomous mode — spec 089)
 spec: 089-autonomous-advisor-pipeline
 stages: [clarify, design, spec, plan, implement, verify, deliver]
 tiers: [work]

@@ -1,8 +1,8 @@
 ---
 type: contract
+appliers: [all advisors, team.start, team.processing, team.done, team.handoff, team.retro]
 name: output-discipline
 schema_version: 1.0
-applies_to: [all advisor SKILL.md, team.start, team.processing, team.done, team.handoff, team.retro]
 stages: [clarify, design, spec, plan, implement, verify, deliver]
 tiers: [quick, work]
 task_types: [dev, content, research, review, advisory]

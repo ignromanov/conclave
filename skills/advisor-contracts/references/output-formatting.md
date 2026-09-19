@@ -1,8 +1,8 @@
 ---
 type: contract
+appliers: [all advisors, team.start, team.processing, team.done, team.handoff, team.retro]
 name: output-formatting
 schema_version: 4.1
-applies_to: [team.done, team.start, team.processing, team.handoff, team.retro, team.forge, all advisor SKILL.md]
 supersedes: schema_version 1 (Render-B table + 27-glyph palette, 2026-05-18 5e63a34), schema_version 3 (bare-text minimalism — sections блекли), schema_version 3.1 (persona emoji вместе с decorative были излишне удалены), schema_version 3.2 (не покрывал fan-out / batch lists — advisor fan-out скатился к box-drawing), schema_version 3.4 (render grammar only — carried no slot contract, so a report could render perfectly and still omit its evidence)
 stages: [clarify, design, implement, verify, deliver]
 tiers: [quick, work]
