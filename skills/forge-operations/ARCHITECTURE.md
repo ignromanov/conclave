@@ -1,7 +1,7 @@
 ---
 title: Forge Architecture (As-Built)
-last-reviewed: 2026-05-16
-covers-as-of-commit: 91098a8
+last-reviewed: 2026-09-19
+covers-as-of-commit: d8d35f1
 pairs-with: spec 049 — team-forge (design intent, internal record)
 ---
 
@@ -43,7 +43,7 @@ sequenceDiagram
     CA-->>Hire: created file paths
 
     Hire->>Forge: Edit enrichment on SKILL.md + personality.md (Phase 3b)
-    Note over Hire: forge invariant #1: diff-preview before every Edit
+    Note over Hire: invariant #1 — diff-preview before every Edit (commands/forge.md)
     Hire->>Forge: engine model bump --advisor <id> --set-all (Phase 3c)
 
     Hire->>RA: engine register advisor --dry-run (Phase 4)
@@ -87,7 +87,7 @@ sequenceDiagram
     User-->>Evolve: proceed / revise / abort
 
     loop per aspect in plan (Stage 5)
-        Evolve->>User: diff-preview (invariant #1)
+        Evolve->>User: diff-preview (invariant #1, commands/forge.md)
         User-->>Evolve: approve / edit / skip / abort
         Evolve->>Forge: apply Edits (batched within aspect)
         Evolve->>Forge: commit chore(forge/evolve/<aspect>): ...
@@ -103,7 +103,16 @@ sequenceDiagram
     Evolve->>User: summary — commits / advisors / versions / follow-ups (Stage 8)
 ```
 
-### A.3 Audit protocol (9 categories + fix-mode)
+### A.3 Audit protocol (derived category set + fix-mode)
+
+> **Re-measured 2026-09-19.** This heading read *"9 categories"*. The protocol's own table
+> lists **15**, and `engine audit --list` returns **18** — the Run loop iterates that CLI output,
+> so all 18 execute and seven of them (`advisor-naming`, `feedback-owners`, `frontmatter`,
+> `output-discipline`, `records`, `routing-targets`, `specs-registry`) simply have no severity
+> row yet. `audit.md` says so itself: the loop is derived and gated by
+> `tests/test_audit_protocol_invokes_every_audit.py`, the hand-written table may lag. A count
+> written here would be a third copy of the same fact and would rot faster than either, so the
+> diagram below names representative categories and the authority is `engine audit --list`.
 
 ```mermaid
 sequenceDiagram
@@ -195,76 +204,59 @@ sequenceDiagram
 
 ### B.1 Concept map
 
+> **Re-measured 2026-09-19.** The previous map named two top-level directories that do not exist
+> (`contracts/`, `scripts/`), placed two more a level too high (`protocols/`, `templates/` are both
+> under `references/`), omitted `roster/` entirely, and carried four file counts and one version
+> number. Counts and versions are caches nobody invalidates, so this map names directories and
+> lets `ls` supply their contents.
+
 ```mermaid
 graph LR
     subgraph forge["skills/forge-operations/"]
-        SKILL[SKILL.md\nrouter + invariants]
+        SKILL[SKILL.md — 32-line pointer: Layout + Resolution]
         CHLG[CHANGELOG.md]
-        ARCH[ARCHITECTURE.md\nthis file]
+        ARCH[ARCHITECTURE.md — this file]
 
-        subgraph prot[protocols/]
-            H[hire.md]
-            E[evolve.md]
-            A[audit.md]
+        subgraph refs["references/"]
+            subgraph prot["protocols/"]
+                H[hire.md]
+                E[evolve.md]
+                A[audit.md]
+                ASK[audit-skills.md]
+                CR[compose-roster.md]
+            end
+            subgraph asp["aspects/ — the evolve unit"]
+                ASPN[11 aspect files, named in evolve.md Stage 2]
+            end
+            subgraph tmpl["templates/"]
+                TMPLN[render targets for advisor, executor, session, handoff, ...]
+            end
+            REFN[agent-model-version.md — the model-version SSOT]
+            REFO[color-palette · commit-conventions · harness-builtins · loop-discipline<br/>obsidian-vault-setup · quality-checks · skill-sources]
         end
 
-        subgraph contr[contracts/]
-            SL[session-lifecycle.md]
-            FP[feedback-protocol.md]
-            GH[github-issues-protocol.md]
-            PV[persona-voice.md]
-            EP[executor-protocol.md]
-            FL[first-launch-protocol.md]
-            DF[decision-framework.md]
-            QL[quality-loop.md]
-            AAP[advisor-anti-patterns.md]
-            ADP[agent-data-policy.md]
+        subgraph rost["roster/ — spec 091 deontic layer"]
+            RN[norms.base.yaml · missions.base.yaml]
+            RS2[schema/ — norm · role · mission · manifest]
+            RT[templates/ — DUTY.md]
         end
 
-        subgraph asp[references/aspects/]
-            ID[identity.md]
-            RF[references.md]
-            FS[engine-scripts.md]
-            LS[lifecycle-skill.md]
-            AF[agent-frontmatter.md]
-            CO[contract-overlays.md]
-            LF[lifecycle.md]
-            MS[memory-structure.md]
-            RS[responsibilities.md]
-            SR[shared-rules.md]
-            TB[toolbox.md]
-        end
-
-        subgraph refs[references/]
-            AMV[agent-model-version.md\nv1.3.0 SSOT]
-            CP[color-palette.md]
-            QC[quality-checks.md]
-            CC[commit-conventions.md]
-            LD[loop-discipline.md]
-            OVS[obsidian-vault-setup.md]
-        end
-
-        subgraph mem[memory/]
-            PERS[personality.md\nForge persona]
-        end
-
-        subgraph tmpl[templates/]
-            TSK[skill-frontmatter.md]
-            TPR[personality.md]
-            TAF[agent-frontmatter.md]
-            TBR[briefing-awaiting.md]
-        end
-
-        subgraph scr[scripts/]
-            SCRLIB[lib/ - 10 library scripts]
-            SCRLC[lifecycle/ - 6 scripts]
-            SCRTOP[top-level - 26 scripts]
-            SCRTST[tests/ - 10 test files]
+        subgraph mem["memory/"]
+            PERS[personality.md — Forge persona]
         end
     end
 
-    subgraph mem2[".ai/agent-memory/advisors/"]
-        BRF[briefings/<a>.md]
+    subgraph contr["skills/advisor-contracts/references/ — NOT under forge"]
+        CTR[advisor-anti-patterns · agent-data-policy · autonomous-pipeline<br/>decision-framework · executor-protocol · feedback-protocol<br/>first-launch-protocol · github-issues-protocol · output-discipline<br/>output-formatting · persona-voice · quality-loop<br/>question-shape · session-lifecycle · spawned-advisor-brief<br/>spec-051-invariants · state-report]
+    end
+
+    subgraph engine["engine/scripts/ — the ported layer"]
+        CLI[engine/cmd/ — argparse adapters]
+        LIB[enginelib/ — the I/O-free core]
+    end
+
+    subgraph mem2[".conclave/agent-memory/advisors/"]
+        BRF[briefings/&lt;a&gt;.md]
         SES[sessions/]
         DEC[decisions/]
         MENT[mentions/]
@@ -273,17 +265,19 @@ graph LR
         HOT[hot.md]
     end
 
-    SKILL --> H
-    SKILL --> E
-    SKILL --> A
+    SKILL --> prot
     H --> contr
     E --> asp
-    A --> scr
-    scr --> mem2
-    SCRLIB --> SCRTOP
-    SCRLIB --> SCRLC
+    A --> CLI
+    CLI --> LIB
+    LIB --> mem2
     contr --> mem2
+    rost --> mem2
 ```
+
+> The contracts moved out of this skill into `skills/advisor-contracts/`, which is why
+> `engine audit architecture-doc` reports `contracts/ directory not found` when pointed at
+> `skills/forge-operations/contracts` — the audit's default path, not a missing file.
 
 ### B.2 Script responsibility table
 
@@ -397,23 +391,27 @@ under `engine/scripts/tests/`, where `tests/cmd/` holds the adapter-level ports.
 
 ### C.1 Reverse-dependency map
 
+> **Re-measured 2026-09-19.** Three nodes of the previous graph — `scripts/*.sh` (26 top-level),
+> `scripts/lib/*.sh` (10) and `scripts/lifecycle/*.sh` (6) — describe files that no longer exist,
+> and four more edges hung off them. The counts on the surviving nodes are removed for the reason
+> given in §B.1: a count in a shipped document is a cache nobody invalidates.
+
 ```mermaid
 graph TD
-    SKILL[SKILL.md\nrouter + invariants]
-    H[protocols/hire.md]
-    E[protocols/evolve.md]
-    A[protocols/audit.md]
-    ASP[references/aspects/*.md\n11 aspects]
-    CON[contracts/*.md\n10 contracts]
-    SCR[scripts/*.sh\n26 top-level]
-    LIB[scripts/lib/*.sh\n10 libraries]
-    LC[scripts/lifecycle/*.sh\n6 scripts]
+    SKILL[SKILL.md — 32-line pointer]
+    H[references/protocols/hire.md]
+    E[references/protocols/evolve.md]
+    A[references/protocols/audit.md]
+    ASP[references/aspects/ — the evolve unit]
+    CON[skills/advisor-contracts/references/]
+    CLI[engine/cmd/ — argparse adapters]
+    LIB[enginelib/ — the I/O-free core]
     PER[memory/personality.md]
     AMV[references/agent-model-version.md]
-    ADV[advisor SKILL.md files\n5 advisors]
-    OVL[advisor contracts/\nper-advisor overlays]
-    MEM[agent-memory/advisors/]
-    LS[team.start / team.done /\nteam.handoff / team.processing]
+    ADV[advisor SKILL.md files]
+    OVL[advisor contracts/ — per-advisor overlays]
+    MEM[.conclave/agent-memory/advisors/]
+    LS[team.start / team.done /<br/>team.handoff / team.processing]
 
     SKILL --> H
     SKILL --> E
@@ -423,21 +421,22 @@ graph TD
     E --> ASP
     E --> CON
     A --> CON
-    ASP --> SCR
+    ASP --> CLI
     CON --> LS
     CON --> ADV
     CON --> OVL
-    SCR --> LIB
-    SCR --> LC
-    SCR --> MEM
-    LC --> LIB
-    LC --> MEM
+    CLI --> LIB
+    LIB --> MEM
     ADV --> AMV
     OVL --> CON
     PER --> SKILL
     AMV --> ADV
-    LS --> SCR
+    LS --> CLI
 ```
+
+> The shape of the old graph survives the port because the port kept it: what used to be
+> `scripts/ -> lib/` is now `engine/cmd/ -> enginelib/`, the same adapter-over-core boundary with
+> the I/O on the outside. That is the one claim in §D.12 that did *not* need a supersession note.
 
 ### C.2 Impact-class table
 
@@ -465,11 +464,11 @@ graph TD
 
 ## §D — Why is it this way?
 
-### D.1 Contracts live inside team.forge, not at repo root
+### D.1 Contracts live in their own skill, not at repo root
 
 **Context**: Early advisor architecture placed contracts at `.ai/.claude/contracts/` (repo-root adjacency). Spec 049 §4 moved them into `${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/`.
 
-**Decision**: Contracts are forge-owned infrastructure. Other advisors load them as @import paths. Ownership follows the producer, not the consumers. If Forge evolves a contract, one PR touches one skill directory.
+**Decision**: Contracts are forge-owned infrastructure, shipped as `skills/advisor-contracts/` — **not** inside `skills/forge-operations/`, which is what this entry's heading claimed until 2026-09-19. Other advisors load them as @import paths. Ownership follows the producer, not the consumers. If Forge evolves a contract, one PR touches one skill directory.
 
 **Anchor**: `CHANGELOG.md [1.0.0] — 2026-04-18`, spec 049 §4 "Contract isolation".
 
@@ -479,6 +478,8 @@ graph TD
 
 **Decision**: Three axes: (1) `agent-model-version.md` is the canonical standard (SSOT), (2) each advisor SKILL.md carries `forge.model-version` stamp auditable via `engine audit versions`, (3) each overlay carries `overrides-base-version` lockable to a specific contract revision. This enables drift detection without forcing lockstep upgrades.
 
+> **Axis 3 is vacuous as of 2026-09-19.** `overrides-base-version` appears in exactly two files — this one and `references/aspects/contract-overlays.md`, which describes it. **No overlay carries it, because no overlay exists**: there is no `contracts/` directory under any advisor skill in either repo. The axis is a design that has never had an instance, which is not the same as a design that failed — and not the same as one in use.
+
 **Anchor**: `CHANGELOG.md [1.0.0]`, `references/agent-model-version.md` §Semver lens.
 
 ### D.3 Discovery-driven advisor inventory (never hardcoded)
@@ -487,13 +488,15 @@ graph TD
 
 **Decision**: Invariant #7: `Glob skills/team.*/SKILL.md minus LIFECYCLE_SKILLS`. Every script that needs the advisor list calls this discovery pattern. Adding an advisor just requires creating the directory.
 
-**Anchor**: `SKILL.md ## Shared invariants` invariant #7, `CHANGELOG.md [1.0.0]` anti-pattern note on phantom skills.
+> **Executed 2026-09-19: that pattern finds 0 of 5 advisors.** The canonical mint is `conclave-<id>` and has been since #48; `team.<id>` is legacy. Against this instance the glob `skills/team.*/SKILL.md` returns **0** and `skills/conclave-*/SKILL.md` returns **5** (`forge-chro`, `helm-ceo`, `keel-coo`, `kosmos-cxo`, `sage-cto`); a bare `*` glob also returns 5, so the instrument is not blind. The engine resolves both prefixes on purpose — `enginelib/paths.py:269` holds `ADVISOR_SKILL_PREFIXES = ("conclave-", "team.")` with a comment warning that *"a `team.`-only scan reject[s] every advisor the moment they migrated"*. The principle of D.3 — discover, never hardcode — is sound and unchanged; the literal pattern quoted for it is the hardcoding it warns against. The invariant lives in `commands/forge.md`, which is forge-chro's file, so it is reported here rather than edited.
+
+**Anchor**: `commands/forge.md ## Shared invariants` invariant #7, `CHANGELOG.md [1.0.0]` anti-pattern note on phantom skills.
 
 ### D.4 Forge persona — first lifecycle skill with personality.md
 
 **Context**: Lifecycle skills (team.start, team.processing, team.done, team.handoff) are infrastructure without personas. Forge interacts directly with Ignat on agent-model design decisions, not just routing.
 
-**Decision**: Forge was given a `memory/personality.md` with full 4-axis voice schema (Domain Vocabulary, Characteristic Questions, Analytical Framework, Metaphor) — identical structure to advisor personas. Commit 945b6c5 approx (2026-05-16 per `personality.md` identity card).
+**Decision**: Forge was given a `memory/personality.md` with full 4-axis voice schema (Domain Vocabulary, Characteristic Questions, Analytical Framework, Metaphor) — identical structure to advisor personas. Commit `945b6c5` (2026-05-16 per the `personality.md` identity card) — **not resolvable in this repository**: the project was re-homed to `ignromanov/conclave` with fresh history on 2026-07-20, so every pre-cutover SHA in this document points into a history that no longer exists. The dated `CHANGELOG.md` entries survive the cutover and are the usable anchor.
 
 **Anchor**: `CHANGELOG.md` "Persona Voice — 2026-05-08", `memory/personality.md` identity card.
 
@@ -511,7 +514,7 @@ graph TD
 
 **Decision**: Invariant #3: each aspect in evolve.md Stage 5 gets its own commit with prefix `chore(forge/evolve/<aspect>): ...`. This enables precise rollback, clear audit attribution, and changelog clarity.
 
-**Anchor**: `SKILL.md ## Shared invariants` invariant #3, `references/commit-conventions.md`.
+**Anchor**: `commands/forge.md ## Shared invariants` invariant #3 — *"Per-aspect commits (never mega-commit)"* — and `references/commit-conventions.md`.
 
 ### D.7 Feedback loop — unified channel (spec 086, supersedes 052)
 
@@ -554,9 +557,17 @@ graph TD
 
 **Context**: As the most powerful lifecycle skill, Forge risks being used as a general-purpose assistant for product work.
 
-**Decision**: Explicit scope guard in `SKILL.md` and `memory/personality.md` §Scope guard. Any product-domain request (features, grants, landing pages) is redirected to the appropriate advisor. Forge's domain is exclusively "how advisors work", not "what advisors work on".
+**Decision**: Explicit scope guard in `agents/forge-chro.md` §Scope guard and `memory/personality.md` §Scope guard. Any product-domain request (features, grants, landing pages) is redirected to the appropriate advisor. Forge's domain is exclusively "how advisors work", not "what advisors work on".
 
-**Anchor**: `SKILL.md` §Identity "Scope guard", `memory/personality.md` §Scope guard.
+**Anchor**: `agents/forge-chro.md:32` §Scope guard, `memory/personality.md` §Scope guard, `commands/forge.md`.
+
+> **Re-measured 2026-09-19.** Four anchors in this document pinned claims to sections of this
+> skill's `SKILL.md`: invariants #1, #3 and #7, and §Identity "Scope guard". `SKILL.md` is 32 lines
+> holding only Layout and Resolution, and contains the word *invariant* zero times. The claims
+> themselves are **true and unchanged** — invariant #1 is *"Diff-preview before every Edit"* and #3
+> is *"Per-aspect commits"*, both in `commands/forge.md`, and the scope guard is in
+> `agents/forge-chro.md`. Only the addresses had rotted, which is the harder failure to notice: a
+> reader who follows the anchor finds nothing and cannot tell whether the rule was repealed or moved.
 
 ### D.12 Library extraction into scripts/lib/ and scripts/lifecycle/
 
