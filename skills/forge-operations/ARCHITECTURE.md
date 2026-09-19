@@ -496,7 +496,7 @@ graph TD
 
 **Context**: Lifecycle skills (team.start, team.processing, team.done, team.handoff) are infrastructure without personas. Forge interacts directly with Ignat on agent-model design decisions, not just routing.
 
-**Decision**: Forge was given a `memory/personality.md` with full 4-axis voice schema (Domain Vocabulary, Characteristic Questions, Analytical Framework, Metaphor) — identical structure to advisor personas. Commit `945b6c5` (2026-05-16 per the `personality.md` identity card) — **not resolvable in this repository**: the project was re-homed to `ignromanov/conclave` with fresh history on 2026-07-20, so every pre-cutover SHA in this document points into a history that no longer exists. The dated `CHANGELOG.md` entries survive the cutover and are the usable anchor.
+**Decision**: Forge was given a `memory/personality.md` with full 4-axis voice schema (Domain Vocabulary, Characteristic Questions, Analytical Framework, Metaphor) — identical structure to advisor personas. Commit `945b6c5` (2026-05-16 per the `personality.md` identity card) — **not resolvable in this repository**: the project was re-homed to its own repository with fresh history on 2026-07-20, so every pre-cutover SHA in this document points into a history that no longer exists. The dated `CHANGELOG.md` entries survive the cutover and are the usable anchor.
 
 **Anchor**: `CHANGELOG.md` "Persona Voice — 2026-05-08", `memory/personality.md` identity card.
 
