@@ -95,3 +95,32 @@ def test_stale_date_is_crit(tmp_path):
     )
     assert r.returncode == 1, f"stdout={r.stdout!r} stderr={r.stderr!r}"
     assert "stale" in r.stdout, f"stdout={r.stdout!r}"
+
+
+def test_an_empty_script_tree_is_reported_not_passed(tmp_path):
+    """Check 1 grades `every shipped .sh appears in the doc`. With no .sh it grades nothing.
+
+    This is the live state of the repository since spec 099 ported the shell layer: the check
+    walks an empty tree, finds no violation, and would pass over any document at all — including
+    one naming sixty-one scripts that no longer exist. A vacuous pass reported as cleanliness is
+    the failure mode this suite keeps finding (#110, spec 116), so the audit states the denominator
+    instead. It is a WARN, not a CRIT: nothing is broken, but nothing was measured either.
+    """
+    today = datetime.date.today().isoformat()
+    arch, scripts_dir, contracts_dir = _make_fixture(tmp_path / "forge", today)
+    for sh in scripts_dir.glob("*.sh"):
+        sh.unlink()
+
+    r = run_engine(
+        "audit", "architecture-doc",
+        "--arch", str(arch),
+        "--scripts-dir", str(scripts_dir),
+        "--contracts-dir", str(contracts_dir),
+    )
+    # 0 clean / 1 crit / 2 warn, per the adapter's own contract — an empty tree is a warning,
+    # not a failure: nothing is broken, and that is exactly what makes the silence dangerous.
+    assert r.returncode == 2, f"expected the WARN exit, got {r.returncode}: stdout={r.stdout!r}"
+    assert "graded 0 scripts" in r.stdout, (
+        "the audit passed check 1 over an empty set without saying so — "
+        f"stdout={r.stdout!r}"
+    )

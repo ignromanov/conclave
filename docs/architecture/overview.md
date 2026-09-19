@@ -31,7 +31,7 @@ violating either breaks memory trustworthiness or auditability.
 
 LLMs write per-template Markdown files. Scripts aggregate, index, and verify. No live `gh`/`git`
 calls happen during reasoning — all external data enters through dedicated snapshot writers
-(`gh-fetch.sh`, `git-fetch.sh`) before a session starts. All mutations flow through
+(`engine lifecycle gh-fetch`, `engine lifecycle git-fetch`) before a session starts. All mutations flow through
 shell/Python scripts that write Markdown.
 
 Consequences:
@@ -64,7 +64,7 @@ Before reaching the self-improvement loop, every session passes through the same
 External sources (GH + git repo)
         │
         ▼
-snapshot writers (gh-fetch.sh · git-fetch.sh)   ← sole gh/git call sites
+snapshot writers (engine lifecycle gh-fetch · git-fetch) ← sole gh/git call sites
         │
         ▼
   gh-cache + git-cache
@@ -253,13 +253,16 @@ Per-module depth (purpose, contracts, scripts, status) belongs to [`engine-modul
 | Signal | C-010 | 094 (design-locked) | new after C-001 |
 | Dashboard | C-011 | 075 (Track B) | deferred |
 
-**Key coupling blockers** identified in R1 research (must patch before Conclave runs independently):
-- `create-advisor.sh:7` + `register-advisor.sh:7` — hardcoded `PROJECT_ROOT=~/code/voidpay`
-- ~~`briefing/paths.py` + `paths.sh` — `VOIDPAY_AI_ROOT` env var~~ — done: the alias is retired
+**Key coupling blockers** identified in R1 research (all cleared as of 2026-09-18, each
+re-measured by execution — see the table in `lifecycle.md` for what was checked):
+- ~~`create-advisor.sh:7` + `register-advisor.sh:7` — hardcoded `PROJECT_ROOT=~/code/voidpay`~~ —
+  both ported to `engine advisor create` / `engine register advisor`; no engine module carries it
+- ~~`briefing/paths.py` + `paths.sh` — `VOIDPAY_AI_ROOT` env var~~ — the alias is retired
   (guard in `enginelib/paths.py`), `paths.sh` is gone with spec 099, and `briefing/paths.py`
   re-exports the single resolver
-- `team.done:109` — absolute path hardcoded
-- `github-issues-protocol.md` — entire file is VoidPay-specific (owner/repo/board IDs)
+- ~~`team.done:109` — absolute path hardcoded~~ — no such skill, and no shipped surface names it
+- ~~`github-issues-protocol.md` — entire file is VoidPay-specific (owner/repo/board IDs)~~ — it
+  reads the three values from `roster.yaml`
 
 Config knobs to introduce: `CONCLAVE_ROOT`, `ENGINE_ROOT` (`.ai/` for VoidPay, empty for Conclave
 native), `roster.yaml`, `${PROJECT_NAME}`, `${PROJECT_CONTEXT_PATH}`, `${TEAM_LANGUAGE}`,

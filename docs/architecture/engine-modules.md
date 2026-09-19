@@ -17,7 +17,7 @@
 | **C-002** | Briefings | C-002 | 084 | `briefing-build` Python; per-advisor `.md` cache; `hot.md`; `_team.md` digest; 3-layer regen triggers | done (code ready) | C-005 (runtime read) |
 | **C-003** | Forge | C-003 | 049, 070; 071+072 as tasks | hire/evolve/audit protocols; facilitation mode; contracts; templates; ARCHITECTURE.md | in-progress (port + absorb) | — |
 | **C-004** | Lifecycle | C-004 | 085; 076-Ph0; 078/079/081 B-criteria as requirements | `team.start / processing / done / handoff` skills; session boundary enforcement | in-progress (port clean) | C-003 (Forge), C-005 (writes) |
-| **C-005** | Memory | C-005 | 051; 080 B39–B43 as requirements | `agent-memory/` tree; session/decision/mention scripts; `gh-fetch.sh` snapshot writer; GH Issues as truth | in-progress (port + gates) | — |
+| **C-005** | Memory | C-005 | 051; 080 B39–B43 as requirements | `agent-memory/` tree; session/decision/mention commands; `engine lifecycle gh-fetch` snapshot writer; GH Issues as truth | in-progress (port + gates) | — |
 | **C-006** | Closing Loop | C-006 | 093 (canonical home: Conclave) | verify/close pipeline; feedback status machine; auto-close resolved items; produce mutation nominations | active | C-001 |
 | **C-007** | Oracle | C-007 | 089 (~30% built, design-locked) | autonomous evaluation pipeline; P6 spine (scout→ranker→critic→judge); external falsification signal | in-progress | C-001, C-006 |
 | **C-008** | Roster/Duties | C-008 | 091 (design-locked, no 089 dep) | deontic duty registry; roles + missions + norms; MOISE+ model; L1 human-gated self-write | design-locked | C-003, C-004, C-005 |
@@ -66,8 +66,8 @@ Additional outputs: `hot.md` (≤500 words, cross-advisor live state, de-duped) 
 `_team.md` (cross-advisor digest for Forge facilitation — ~500 tokens total, avoids loading
 5 full briefings for a meeting start).
 
-Three regen triggers: mutation scripts (any write via `close-session.sh`, `file-decision.sh`,
-`mention.sh`), post-commit hook, and `team.start` build-and-compare (always rebuilds, writes
+Three regen triggers: mutation scripts (any write via `engine session close`, `engine file decision`,
+`engine mention create`), post-commit hook, and `team.start` build-and-compare (always rebuilds, writes
 only if content differs). Editing a briefing directly is always wrong — it is overwritten on
 the next `/team.start`.
 
@@ -117,7 +117,7 @@ that fold into C-004 requirements rather than becoming separate modules.
 ### C-005 — Memory
 
 The append-only source of truth. Five record types, each with a dedicated write script.
-The GH Issues integration (`gh-fetch.sh`) runs as a dedicated snapshot writer so that
+The GH Issues integration (`engine lifecycle gh-fetch`) runs as a dedicated snapshot writer so that
 `briefing-build` has zero live `gh` calls — the file-as-message-bus principle applied to
 the VCS/issues layer.
 

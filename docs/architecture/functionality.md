@@ -51,13 +51,13 @@ Phases in execution order:
 
 | Phase | What happens |
 |-------|-------------|
-| Feedback emission | `feedback_emit.py` scaffolds review; agent fills `items[]`; `--finalize` validates + flips `_draft: false`; emission gate (`emission-gate.sh`) blocks if missing |
-| Study | `study_phase.py`: 6-step wiki graduation (capture-suggest → promote-decision → bridge-rebuild → audit-stale → hot-sync → link-check); P0 exit blocks `close-session.sh` |
-| Infra | `runlog-summary.sh`: surfaces script exit codes from `run-log/`; row omitted if all clean |
+| Feedback emission | `feedback_emit.py` scaffolds review; agent fills `items[]`; `--finalize` validates + flips `_draft: false`; emission gate (`engine session emission-gate`) blocks if missing |
+| Study | `study_phase.py`: 6-step wiki graduation — **no step is implemented; see §Study below** (capture-suggest → promote-decision → bridge-rebuild → audit-stale → hot-sync → link-check); P0 exit blocks `close-session.sh` |
+| Infra | `engine lifecycle runlog-summary`: surfaces script exit codes from `run-log/`; row omitted if all clean |
 | Lifecycle Retrospective | 6 episodic prompts (job / stuck / instead / acted-on / removed-step / unexecuted), answered from the transcript; `nothing` is a valid answer to each; findings filed as `/team.feedback` items; cap 5 per session |
 | Reflexion | One sentence ≤280 chars; persisted to `session.md` frontmatter; read back for 3 sessions |
 | hot.md reconciliation | Resolve `[!contradiction]` markers (Quorum/Forge only, to avoid race conditions) |
-| `close-session.sh` | Files session record + decisions + mentions + optional handoff; single aggregate commit to `agent-memory/advisors/` + `ops/handoffs/` |
+| `engine session close` | Files session record + decisions + mentions + optional handoff; single aggregate commit to `agent-memory/advisors/` + `ops/handoffs/` |
 
 ```
 /team.handoff    # conditional — when session incomplete
@@ -87,10 +87,10 @@ Signal routing:
 
 | Signal | Protocol | Key scripts |
 |--------|----------|------------|
-| "hire" / "create advisor" / "нанять" | `protocols/hire.md` | `create-advisor.sh`, `register-advisor.sh` |
-| Mutation phrase for existing advisor | `protocols/evolve.md` | `apply-overlay.sh`, `bump-model-version.sh`, per-aspect scripts |
-| "audit" / "check drift" | `protocols/audit.md` | `audit-agent-configs.sh`, `audit-overlays.sh`, `audit-versions.sh` |
-| "audit skills" / skill sprawl | `protocols/audit-skills.md` | `audit-skills.sh`, `audit-phantom-skills.sh`, `skill-stocktake.sh` |
+| "hire" / "create advisor" / "нанять" | `protocols/hire.md` | `engine advisor create`, `engine register advisor` |
+| Mutation phrase for existing advisor | `protocols/evolve.md` | `engine overlay apply`, `engine model bump`, per-aspect scripts |
+| "audit" / "check drift" | `protocols/audit.md` | `engine audit agent-configs`, `engine audit overlays`, `engine audit versions` |
+| "audit skills" / skill sprawl | `protocols/audit-skills.md` | `engine audit skills`, `engine audit phantom-skills`, `engine skill stocktake` |
 | Ambiguous | `AskUserQuestion` | — |
 
 Shared invariants across all protocols: diff-preview before every Edit; `AskUserQuestion` at
@@ -121,7 +121,7 @@ agenda; user reads minutes asynchronously).
 2. Sets agenda from user prompt or open GH issues.
 3. Routes turns by advisor lane; Quorum stays neutral on domain (never opines).
 4. Files `ops/meetings/YYYY-MM-DD-<slug>.md` (minutes).
-5. Sends cross-advisor mentions via `mention.sh --from quorum --to <advisor>`.
+5. Sends cross-advisor mentions via `engine mention create --from quorum --to <advisor>`.
 6. Resolves `[!contradiction]` markers in `hot.md` at close.
 
 Autonomous mode: Quorum runs agenda, files minutes, sends mentions — user reads results
@@ -307,7 +307,7 @@ are the cache; sessions/decisions/GH issues are the truth.
 
 | Layer | Storage | Who writes | Freshness |
 |-------|---------|-----------|-----------|
-| Source of truth | `agent-memory/advisors/{sessions,decisions,mentions}/` + GH issues | Scripts via `close-session.sh`, `file-decision.sh`, `mention.sh` | Append-only, never overwritten |
+| Source of truth | `agent-memory/advisors/{sessions,decisions,mentions}/` + GH issues | Written by `engine session close`, `engine file decision`, `engine mention create` | Append-only, never overwritten |
 | Cache (briefings) | `agent-memory/advisors/briefings/<advisor>.md` | `regen.py` | Rebuilt every session; written only when content actually differs (build-and-compare in `session_init.py`) |
 | Cross-agent live | `agent-memory/hot.md` (≤500 words) | Lifecycle scripts; reconciled by Quorum/Forge | Updated per session; four sections: Now / Open threads / Recent decisions / Watch. All append-only except Now, which drains as sessions close |
 
@@ -333,8 +333,21 @@ the long-term knowledge layer. Distinct from memory (records *what happened*); w
 **Invocation:**
 
 ```bash
-python3 .claude/skills/team.forge/scripts/lifecycle/study_phase.py --advisor <advisor>
+python3 engine/scripts/lifecycle/study_phase.py --advisor <advisor>
 ```
+
+> **Measured 2026-09-18: none of the six steps exists.** `engine/scripts/wiki/` is absent, and
+> `study_phase.py` guards every step with `is_file()`, so the phase runs, warns, and exits 2 with
+> nothing done. `commands/done.md` says the scripts moved to the `/wiki:*` plugin; that was checked
+> and is not so — the plugin ships 22 `.sh` files and none of these six, and it sits in
+> `_quarantine/`. The reported figure is also short: the run prints `steps-not-run:3` because steps
+> 2 and 3 are conditional on step 1 producing candidates and are never reached to be counted.
+>
+> The six below are therefore a **design of record, not a description of behaviour**, including the
+> P0-blocking gate in step 4, which blocks nothing — and which is unfounded twice over: the
+> `ADR-0003` cited for `wiki_p0_policy` / `wiki_failure_policy` is `0003-y-script-exit-codes`, and it
+> contains neither key. Whether to retire the phase or rebuild it is
+> open; until it is settled, nothing here should be read as shipped.
 
 Six steps in order:
 

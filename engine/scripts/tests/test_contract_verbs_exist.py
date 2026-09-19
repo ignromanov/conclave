@@ -35,7 +35,14 @@ _CALL = re.compile(r"\bengine\s+([a-z][a-z0-9_-]*)(?:\s+([a-z][a-z0-9_-]*))?")
 # The shipped surface: what an installed instance loads. Working docs and this
 # repository's own CLAUDE.md are deliberately out — they are notes, not contracts, and a
 # gate that fails the suite over a note gets deleted.
-_CONTRACT_DIRS = ("commands", "skills")
+#
+# `docs/architecture` joined them on 2026-09-18, on evidence rather than principle. Rewriting
+# its shell-era invocations by hand left three mangled verbs — `engine audit versions.sh`,
+# `engine model bumpsh`, `engine audit phantom-skillssh` — that survived both a careful read and
+# a regex sweep, and this gate named all three. It is descriptive rather than executable, but an
+# agent orienting itself reads it the same way, and a verb that does not resolve misleads either
+# way.
+_CONTRACT_DIRS = ("commands", "skills", "docs/architecture")
 
 
 def _repo_root() -> Path:
