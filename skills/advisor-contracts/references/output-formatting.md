@@ -2,13 +2,13 @@
 type: contract
 appliers: [all advisors, team.start, team.processing, team.done, team.handoff, team.retro]
 name: output-formatting
-schema_version: 4.1
+schema_version: 4.2
 supersedes: schema_version 1 (Render-B table + 27-glyph palette, 2026-05-18 5e63a34), schema_version 3 (bare-text minimalism — sections блекли), schema_version 3.1 (persona emoji вместе с decorative были излишне удалены), schema_version 3.2 (не покрывал fan-out / batch lists — advisor fan-out скатился к box-drawing), schema_version 3.4 (render grammar only — carried no slot contract, so a report could render perfectly and still omit its evidence)
 stages: [clarify, design, implement, verify, deliver]
 tiers: [quick, work]
 task_types: [dev, content, research, review, advisory]
 binding: required
-last_reviewed: "2026-08-31"
+last_reviewed: "2026-09-19"
 ---
 
 # Output Formatting Contract — Session Summary (▍-framed minimalism)
@@ -124,6 +124,21 @@ problem.
 Pad the key column with plain ASCII spaces only — never HTML entities (`&nbsp;`, `&mdash;`).
 Claude Code renders chat output as monospace markdown and does not interpret entities; they
 appear as literal 6-character strings between key and value.
+
+**A value that runs long continues on the next ▍-line, indented to the value column, with no key
+and no chevron.** The key column is left blank — the absence of a key *is* the mark of a
+continuation, and a reader scanning the key column sees the row as one item. `›` stays reserved
+for list items (Pattern C) so a wrapped value and a second list entry never render alike.
+
+```
+▍ **gh-bind**   #142 (102 чартерит поля, которых нет) — charter names four
+▍               fields the read-model never had
+```
+
+Rule 7's inline gloss and this rule's 14-char key column collide by construction: measured on one
+real run, 11 of 34 value rows overflowed and every advisor was inventing its own continuation.
+The gloss wins and the value wraps. (Ruled 2026-09-19 by kosmos-cxo on forge-chro's item 1 —
+ratifying the form he had already invented, which is what stops it being drift.)
 
 ### 4. Inline sidecars, not parallel lane
 
@@ -276,12 +291,31 @@ alongside an unfavourable outcome rates *worse* than having shown nothing.
 **The report is not the only copy.** Slot 8 carries a stable path. A block that exists only in
 scrollback fails as a record.
 
+**The overflow destination is the session record, not a new tree.** "Moves to a file at a stable
+path" named no path, and `.conclave/ops/` has no directory that fits a report annex — the escape
+hatch had no destination, so it never fired. The annex is the session record `/conclave:done`
+already writes to `agent-memory/advisors/sessions/`: it has a stable path, it is already the
+durable copy this rule points at, and it needs no new convention. Slot 8 cites it by path. An
+advisor that wants an annex before the session closes writes the record early and appends; it
+does not invent a directory. (Ruled 2026-09-19 by kosmos-cxo on forge-chro's item 2 — a
+compliant multi-component report measured 34 ▍-lines at the honest minimum, with `not checked`
+alone at 7 and uncuttable.)
+
+**Numbers may be tabulated.** §3's ban on markdown tables is scoped to rows carrying persona
+emoji or free text, which is where its stated rationale — alignment fragility — actually bites.
+Measured data carries no emoji, and rendering before/after counts or bucket distributions as
+`·`-separated prose makes them harder to scan, not easier. For **≥3 rows sharing the same numeric
+fields** inside slot 4, a table is permitted and preferred. This is the same carve-out
+`state-report.md` rule 9 already makes for its work layer; the two surfaces now agree rather than
+contradicting. One table per report; a table of outcomes, decisions or cross-references is still
+Pattern B/C. (Ruled 2026-09-19 by kosmos-cxo on forge-chro's item 3.)
+
 ## Anti-patterns
 
 | Pattern | Why bad |
 |---|---|
 | Emitting ✅ / 🟢 on a normal-state row | v1 vanity — exception-only emphasis violated |
-| Markdown table for the data block | breaks alignment on emoji + unreliable in chat renderers |
+| Markdown table for the data block | breaks alignment on emoji + unreliable in chat renderers. **Scoped 2026-09-19**: applies to rows carrying persona emoji or free text; ≥3 rows of same-shaped numbers inside slot 4 may tabulate |
 | Per-block semantic emoji (📦 commit, 📜 decision, etc.) | emoji inflation — pushes glyph count past functional 3-4 threshold |
 | Advisor specialty overlay glyphs (🛡️🐛, 🏗️📜) | two glyphs read as two signals, not as modifier |
 | `— sidecar lane —` as parallel block | two visual systems on one screen — kills scannability |
@@ -398,6 +432,7 @@ not just `/conclave:done`. Each skill instantiates with its own header keyword a
 
 | Skill | Header | Required keys |
 |---|---|---|
+| *(none — any run not listed below)* | `{persona-emoji} {advisor} · report · {date}` | the eight slots of §Report slots; this is the **default**, and the nine named rows are its specializations |
 | `/conclave:start` | `{persona-emoji} {advisor} · session-start · {date}` | `focus`, `queue` (open GH issue count), `briefing`, `interrupted` (if any), `tier`, `next →` |
 | `/conclave:processing` | `{persona-emoji} {advisor} · routing · {date}` | `gh-bind` (matched issue or "none"), `mode`, `type`, `tier`, `skills` (chain), `next →` |
 | `/conclave:done` | `{persona-emoji} {advisor} · session-end · {date}` | `committed`, `filed`, `updated`, `changed`, `recorded`, `mention →`/`dispatched` (if any), `study`/`infra` (if NOT clean), `reflexion`, `next →`, `Concepts:` |
@@ -436,6 +471,15 @@ frontmatter and the Changelog, never cited inline, so a reader cannot pick up a 
 
 ## Changelog
 
+- **v4.2** (2026-09-19) — four render-grammar holes closed, all four measured by forge-chro on one
+  real run rather than argued: a wrapped value now has a documented continuation (11 of 34 rows
+  overflowed and every advisor was inventing its own form); the overflow annex has a destination
+  (the session record, not a new tree — the escape hatch had named no path and so never fired);
+  the table ban is scoped to rows carrying emoji or free text, which is where its own stated
+  rationale bites, so ≥3 rows of same-shaped numbers in slot 4 may tabulate as
+  `state-report.md` rule 9 already allows; and `· report ·` is named as the default header for a
+  run matching none of the nine lifecycle rows. Companion rulings on R1 and R3 landed in
+  `output-discipline.md` the same day.
 - **v4.1** (2026-08-31) — closes the three legibility holes the operator named (spec 115): rule 7
   (no bare identifiers — the referent travels with the pointer), rule 8 (the voice is always
   named), a report-body length budget in Report slots (one screen quick / two work, overflow moves
