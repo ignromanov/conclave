@@ -2,7 +2,7 @@
 
 RED (session_init.py): fails before the sys.path shim is added
   (ModuleNotFoundError: No module named 'enginelib') — GH#1 it-8.
-GREEN: passes once the shim is inserted, matching study_phase.py / gh_board_query.py
+GREEN: passes once the shim is inserted, matching gh_board_query.py
   which already carry it.
 
 Each module is imported in a subprocess run with `-S` — which skips site.py, so the
@@ -52,7 +52,7 @@ def _probe(module: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-@pytest.mark.parametrize("module", ["session_init", "study_phase", "gh_board_query"])
+@pytest.mark.parametrize("module", ["session_init", "gh_board_query"])
 def test_lifecycle_script_self_bootstraps_enginelib(module: str) -> None:
     result = _probe(module)
     assert "ModuleNotFoundError" not in result.stderr, result.stderr
@@ -92,7 +92,7 @@ def _second_copy(tmp_path: Path, module: str) -> Path:
     return tmp_path / "engine"
 
 
-@pytest.mark.parametrize("module", ["session_init", "study_phase"])
+@pytest.mark.parametrize("module", ["session_init"])
 def test_engine_root_prefers_own_copy(module: str, tmp_path: Path) -> None:
     """CONCLAVE_ENGINE_ROOT points at another checkout; the script must ignore it."""
     copy_root = _second_copy(tmp_path, module)

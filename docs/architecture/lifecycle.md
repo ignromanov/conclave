@@ -153,7 +153,7 @@ GH issues current. This is the phase that keeps the source of truth trustworthy.
 The skill runs a mandatory-then-conditional checklist. The execution order is fixed:
 
 ```
-Feedback emission → Artifact filing → Study → Infra → Lifecycle Retrospective → Reflexion → hot.md
+Feedback emission → Artifact filing → Infra → Lifecycle Retrospective → Reflexion → hot.md
 ```
 
 ### Phase: Feedback emission (mandatory gate)
@@ -199,13 +199,12 @@ frontmatter and injected into the next 3 sessions via `team.start` step 1c.
 | 7 | Work incomplete | Invoke `team.handoff` | Auto |
 | 8 | Skill gap found | Log for creation via `writing-skills` | Notify |
 
-### Phase: Study
+### Phase: Study — retired 2026-09-19 (spec 121 P1)
 
-Runs `study_phase.py --advisor <advisor>`. Orchestrates 6 wiki health steps:
-capture-suggest → promote-decision → bridge-rebuild → audit-stale → hot-sync → link-check.
-
-Exit 3 (P0 blocking: wiki audit contradictions) must be resolved before `engine session close`.
-All other failures are non-blocking (wiki-failure-policy: defer per ADR-0003).
+Removed. `study_phase.py` orchestrated six wiki-health scripts that this distribution never
+received: the 096/099 extraction carried the orchestrator and not its steps, so every step was
+skipped by an `is_file()` guard for the phase's entire life here. See `commands/done.md` for the
+full record and `.conclave/ops/specs/121-.../wiki-workflow-contract.md` for the founding contract.
 
 ### Phase: Lifecycle Retrospective
 
@@ -352,7 +351,7 @@ Originally filed as feedback item `it-1` in `fb-1781159734-e51973`.
   ├─ feedback_emit.py  (emission gate)           ← self-improvement loop entry
   ├─ artifact filing (decisions, mentions, session, handoff)
   ├─ mandatory checklist (commits, GH sync)      ← constitution III
-  ├─ study phase (wiki health)
+  ├─ (study phase — retired 2026-09-19, spec 121 P1)
   ├─ lifecycle retrospective (6 prompts)         ← self-improvement loop signal
   └─ reflexion → engine session close           ← constitution III
 
