@@ -1,8 +1,8 @@
 ---
 type: contract
+appliers: [all advisors, team.start]
 name: state-report
 schema_version: 1.0
-applies_to: [all advisor SKILL.md, team.start, team.processing]
 stages: [clarify, deliver]
 tiers: [quick, work]
 task_types: [advisory, research, review]

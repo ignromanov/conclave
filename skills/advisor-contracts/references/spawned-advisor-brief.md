@@ -1,8 +1,8 @@
 ---
 contract: spawned-advisor-brief
+appliers: [all advisors]
 version: 1.0.0
 propagation: runtime-inject
-applies-to: advisors in autonomous mode (spec 089)
 stages: [clarify]
 tiers: [work]
 task_types: [dev, content, research, review, advisory]

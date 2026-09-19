@@ -1,4 +1,6 @@
 ---
+contract: feedback-protocol
+appliers: [all advisors]
 stages: [deliver]
 tiers: [quick, work]
 task_types: [dev, content, research, review, advisory]

@@ -1,7 +1,7 @@
 ---
 contract: agent-data-policy
+appliers: [all advisors]
 version: 2.0.0
-appliers: [team.quorum, all advisors]
 propagation: hire-template
 stages: [implement, deliver]
 tiers: [work]

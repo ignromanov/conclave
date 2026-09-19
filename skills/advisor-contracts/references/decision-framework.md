@@ -1,7 +1,7 @@
 ---
 contract: decision-framework
+appliers: [team.start, team.processing]
 version: 1.0.0
-appliers: [team.processing]
 propagation: hire-template
 stages: [design]
 tiers: [quick, work]
