@@ -17,41 +17,6 @@ import argparse
 import sys
 import time
 
-# Engine lifecycle/forge skills are CODE, not advisors — exclude them when deriving
-# the advisor set from the DATA-root skills registry.
-_LIFECYCLE_SKILLS = {
-    "start", "processing", "done", "handoff",
-    "forge", "hire", "retro", "feedback", "feedback-triage",
-}
-
-# Advisor SKILL-dir prefixes tolerated during the #48 migration (conclave- canonical).
-_ADVISOR_PREFIXES = ("conclave-", "team.")
-
-
-def _registry_advisors() -> set[str]:
-    """Advisor ids from the on-disk registry (DATA-root .claude/skills/), tolerating
-    both the canonical conclave-<id> and legacy team.<id> layouts, minus lifecycle
-    skills. Empty when absent → callers degrade to permissive (no enforcement), not
-    reject-all. Generalizes the former hardcoded 5-advisor set."""
-    from briefing import paths  # lightweight (os/pathlib) — keeps --help startup fast
-    try:
-        root = paths.repo_root()
-    except RuntimeError:
-        return set()  # unresolvable root → empty registry → permissive
-    skills_dir = root / ".claude" / "skills"
-    advisors: set[str] = set()
-    if skills_dir.is_dir():
-        for child in skills_dir.iterdir():
-            if not child.is_dir():
-                continue
-            for prefix in _ADVISOR_PREFIXES:
-                if child.name.startswith(prefix):
-                    stem = child.name[len(prefix):]
-                    if stem not in _LIFECYCLE_SKILLS:
-                        advisors.add(stem)
-                    break
-    return advisors
-
 
 def _now_ms() -> int:
     return int(time.monotonic() * 1000)
@@ -70,17 +35,34 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("advisor", help="Canonical advisor name (e.g. nexus-ceo)")
     args = parser.parse_args(argv)
 
-    # META roles ship with the engine and are never hired, so they never appear in the
-    # DATA-root domain roster _registry_advisors() enumerates. Admission asks "may this
-    # advisor hold a briefing", which is roster + META — gating on the enumeration alone
-    # rejected forge, the one advisor guaranteed to exist in every instance (#38).
-    # Same enumerate-vs-gate split as enginelib.advisors.lifecycle_advisors(); routed
-    # through the same with_meta() seam rather than re-open-coding the union.
-    from enginelib.advisors import with_meta
+    # Who may hold a briefing is the same question as who may hold a session, and it is
+    # answered by the AGENT-DEFS (#133 F1). This read the DATA-root SKILL dirs instead,
+    # and a SKILL dir is evidence of identity to nothing else in the engine, so one
+    # instance printed two different "Known advisors" lists and the two gates disagreed
+    # in both directions: a router minted without an agent-def was refused a session and
+    # granted a written briefing, while an advisor with an agent-def and no router was
+    # enumerated by briefing/regen.py (which gates on lifecycle_advisors) and then
+    # refused by the callee it hands the id to.
+    #
+    # META roles ship with the engine and are never hired, so they are in no instance's
+    # roster. Admission asks "may this advisor hold a briefing" = roster + META; gating
+    # on the enumeration alone rejected forge, the one advisor guaranteed to exist in
+    # every instance (#38). Same enumerate-vs-gate split as lifecycle_advisors(),
+    # routed through the same with_meta() seam rather than re-open-coding the union.
+    #
+    # Nothing is imported earlier than it was: enginelib.advisors was already loaded on
+    # this line for with_meta, so the startup cost the private copy was kept for was
+    # being paid anyway. Re-measured cold, enginelib.paths is not dearer than
+    # briefing.paths, and --help still exits at argparse above without reaching either.
+    from briefing import paths
+    from enginelib.advisors import known_advisors, with_meta
 
-    registry = _registry_advisors()
-    if registry and args.advisor not in with_meta(registry):
-        known = ", ".join(sorted(registry))
+    try:
+        roster = known_advisors(paths.repo_root())
+    except RuntimeError:
+        roster = set()   # unresolvable root → no enforcement, never reject-all
+    if roster and args.advisor not in with_meta(roster):
+        known = ", ".join(sorted(roster))
         print(
             f"briefing: advisor '{args.advisor}' is not in the instance registry.\n"
             f"Known advisors: {known}",
@@ -91,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     advisor: str = args.advisor
 
     # Import here so startup is fast for --help / bad advisor names.
-    from briefing import paths, render
+    from briefing import render
     from briefing.render import _generated_at  # noqa: PLC2701
     from briefing.scans import ScanCtx
     from briefing.sections import SECTIONS

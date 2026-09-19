@@ -141,7 +141,12 @@ class TestMainEntrypoint:
     def test_unknown_advisor_exits_nonzero(self, tmp_path, monkeypatch, capsys):
         from briefing.__main__ import main as briefing_main
         # Non-empty registry → an id absent from it is rejected (permissive only when empty).
-        (tmp_path / ".claude" / "skills" / "team.kai-cto").mkdir(parents=True)
+        # The registry is the AGENT-DEFS since #133 F1: this seeded a SKILL dir, which is
+        # the one thing that used to answer "who is an advisor" here and answers it
+        # nowhere else in the engine.
+        agents = tmp_path / ".claude" / "agents"
+        agents.mkdir(parents=True)
+        (agents / "kai-cto.md").write_text("---\nname: kai-cto\n---\nstub\n", encoding="utf-8")
         monkeypatch.setenv("CONCLAVE_AI_ROOT", str(tmp_path))
         rc = briefing_main(["not-an-advisor"])
         assert rc == 1
