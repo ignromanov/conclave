@@ -35,7 +35,7 @@ sequenceDiagram
     User-->>Hire: answers
 
     Hire->>VS: engine skill verify <candidate-1> <candidate-2> ... (Phase 2, one batch call)
-    VS-->>Hire: OK/PHANTOM line per name + exit code (phantom guard)
+    VS-->>Hire: OK/BUILTIN/PHANTOM line per name + exit code (phantom guard)
     Hire->>User: AskUserQuestion — approve verified Toolbox
 
     Hire->>CA: engine advisor create --id --name --role --color --emoji --tone (Phase 3a)

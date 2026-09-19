@@ -106,6 +106,81 @@ def verify(name: str) -> Path | None:
     return None
 
 
+BUILTINS_HEADING = "## Harness built-ins"
+
+_BUILTIN_ENTRY = re.compile(r"^-\s+`([a-z][a-z0-9:.-]*)`")
+
+
+def parse_builtins(text: str) -> list[str]:
+    """Backticked entries under the `## Harness built-ins` heading.
+
+    Only that section counts, exactly as `skill_install.parse_allowlist` does for the
+    install allowlist: a name becomes declared by appearing in one specific list, never
+    by being mentioned in the prose that explains the list.
+    """
+    names: list[str] = []
+    in_section = False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            in_section = line.strip() == BUILTINS_HEADING
+            continue
+        if in_section:
+            m = _BUILTIN_ENTRY.match(line.strip())
+            if m:
+                names.append(m.group(1))
+    return names
+
+
+def builtin_names() -> frozenset[str]:
+    """Skill names the harness provides with no file on disk (#168).
+
+    Declared, not discovered. The names exist only inside the Claude Code binary, behind
+    a registration function the minifier renames on essentially every build (`_o(` in
+    2.1.270, `Po(` in 2.1.273, `Do(` in 2.1.277 and .278). Deriving that identifier from
+    a known anchor does work — `harness-builtins.md` ships the command and it returns the
+    same fourteen names on all four binaries — but running it here would cost a ~1.6s
+    `strings` pass over 226 MB per call, inside a blocking hire gate and inside an audit
+    that resolves one reference at a time, and it would first have to find the binary
+    across several install layouts. A resolver that guesses wrong returns the empty set,
+    and an empty set restores #168 silently.
+
+    So the inventory is hand-kept and the file says so, with its provenance and its
+    re-measure command. What moves is the spelling, not the set.
+
+    A missing file means nothing is declared, so an older consumer checkout keeps the
+    two-verdict behaviour rather than crashing.
+    """
+    try:
+        path = paths.forge_references_dir() / "harness-builtins.md"
+    except RuntimeError:
+        return frozenset()
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return frozenset()
+    return frozenset(parse_builtins(text))
+
+
+def classify(name: str) -> tuple[str, str]:
+    """('OK', path) | ('BUILTIN', declaring file) | ('PHANTOM', '').
+
+    `verify` answers "where is this skill's file". This answers "does this skill exist",
+    which is the question every caller actually had. Conflating the two is #168: five
+    on-disk lookups returning None was printed as PHANTOM, a claim about the world rather
+    than about the search.
+
+    OK outranks BUILTIN deliberately. A declaration must never shadow a real file — the
+    day someone installs a skill named `update-config`, callers need its path, not a
+    reminder that the harness once owned the name.
+    """
+    found = verify(name)
+    if found is not None:
+        return "OK", str(found)
+    if name in builtin_names():
+        return "BUILTIN", str(paths.forge_references_dir() / "harness-builtins.md")
+    return "PHANTOM", ""
+
+
 def stocktake_rows(skills_dir: Path, sessions_dir: Path, now_epoch: int) -> list[dict]:
     """Evaluate every immediate subdir of skills_dir for a quarterly audit.
 

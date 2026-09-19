@@ -48,9 +48,20 @@ Skill(skill="find-skills", args="<domain keywords>")
 
 **Step 2b — G1: BLOCKING phantom-skill pre-gate (spec 089, Cat12).** `engine skill verify` is a
 **blocking pre-scaffold gate**, not advisory. Pass ALL candidate skills as arguments (batch
-mode): it prints a `PHANTOM` line per missing skill and exits non-zero if ANY is absent. Passing
+mode): it prints one verdict line per name and exits non-zero if ANY name is a `PHANTOM`. Passing
 the list as argv avoids the shell word-splitting that made a hand-rolled per-name loop mangle
-every entry after the first (feedback i2). If it exits non-zero, **ABORT the scaffold** — do not
+every entry after the first (feedback i2). The vocabulary is three-valued:
+
+| Verdict | Means | Toolbox |
+|---|---|---|
+| `OK <name> <path>` | resolved on disk | keep |
+| `BUILTIN <name> <declaration>` | the harness compiles it in — no SKILL.md exists anywhere | keep |
+| `PHANTOM <name>` | not on disk and not declared | **drop**, and the gate fails |
+
+`BUILTIN` exists because `PHANTOM` used to mean "five on-disk roots came back empty", which is a
+claim about the search, not about the skill (#168). Built-ins are declared in
+`references/harness-builtins.md`, which carries the harness version it was read from and the
+command that reproduces the reading. If it exits non-zero, **ABORT the scaffold** — do not
 run `engine advisor create`:
 ```
 engine skill verify <candidate-skill-1> <candidate-skill-2> ... \

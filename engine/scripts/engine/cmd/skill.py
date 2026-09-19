@@ -3,7 +3,7 @@ from __future__ import annotations
 
 
 def _verify(args) -> int:
-    from enginelib.skill import verify
+    from enginelib.skill import classify
 
     names = args.names
     args._runlog_verb = "skill-verify"
@@ -11,23 +11,31 @@ def _verify(args) -> int:
 
     # Single-name mode is unchanged (backward-compatible): print the bare resolved
     # path (or nothing) and exit 0 — callers capture $(engine skill verify X).
+    # It has never printed a verdict, so #168 does not reach it; its own defect is that
+    # empty output is the only way it says "no" (#104), which is why every shipped
+    # surface now calls the batch form instead.
     if len(names) == 1:
-        result = verify(names[0])
-        if result is not None:
-            print(result)
+        verdict, where = classify(names[0])
+        if verdict == "OK":
+            print(where)
         return 0
 
     # Batch mode (G1 gate): one status line per name; exit 1 if ANY name is a phantom.
     # Passing the whole candidate list as argv removes the shell word-splitting that
     # made a hand-rolled per-name loop mangle every entry after the first.
+    #
+    # Three verdicts, not two (#168). PHANTOM used to mean "verify() searched five disk
+    # roots and found nothing", which is not the same claim as "this does not exist":
+    # harness built-ins have no SKILL.md anywhere and are invocable regardless, so the
+    # gate refused working skills and exit 1 aborted the whole batch over them.
     missing = 0
     for name in names:
-        result = verify(name)
-        if result is None:
+        verdict, where = classify(name)
+        if verdict == "PHANTOM":
             print(f"PHANTOM\t{name}")
             missing += 1
         else:
-            print(f"OK\t{name}\t{result}")
+            print(f"{verdict}\t{name}\t{where}")
     return 1 if missing else 0
 
 
@@ -183,7 +191,7 @@ def _bind(args) -> int:
     import sys
 
     from enginelib import paths
-    from enginelib.skill import verify
+    from enginelib.skill import classify
     from enginelib.skill_bind import BlockSequenceUnsupported, bind_skill
 
     agent, skill = args.agent, args.skill
@@ -203,7 +211,7 @@ def _bind(args) -> int:
             print(f"  {p}", file=sys.stderr)
         return 2
 
-    if verify(skill) is None:
+    if classify(skill)[0] == "PHANTOM":
         print(
             f"phantom skill: {skill!r} does not resolve — not bound.\n"
             f"  install it first: engine skill install <owner/repo@{skill}>",
@@ -242,12 +250,12 @@ def _adapter(args) -> int:
 
     from enginelib import paths
     from enginelib.adapter import render_adapter
-    from enginelib.skill import verify
+    from enginelib.skill import classify
 
     args._runlog_verb = "skill-adapter"
     args._runlog_args = f"advisor={args.advisor} skill={args.skill}"
 
-    if verify(args.skill) is None:
+    if classify(args.skill)[0] == "PHANTOM":
         print(f"phantom skill: {args.skill!r} does not resolve — no adapter written", file=sys.stderr)
         return 3
 
@@ -286,13 +294,16 @@ def register(sub) -> None:
     p = sub.add_parser("skill", help="Skill resolution and related operations.")
     vsub = p.add_subparsers(dest="skill_verb", required=True)
 
-    v = vsub.add_parser("verify", help="Print resolved path to a skill's SKILL.md, or nothing if not found.")
+    v = vsub.add_parser("verify", help="Classify skill name(s): OK / BUILTIN / PHANTOM.")
     v.add_argument(
         "names",
         nargs="+",
         metavar="name",
         help="Skill name(s) (plain / plugin:skill / team.<advisor>). One name → bare "
-             "path or empty, exit 0. Multiple → batch mode: exit 1 if any is a phantom.",
+             "path or empty, exit 0. Multiple → batch mode: one OK/BUILTIN/PHANTOM line "
+             "per name, exit 1 if any is a PHANTOM. BUILTIN means the harness compiles "
+             "it in and no SKILL.md exists anywhere (skills/forge-operations/references/"
+             "harness-builtins.md).",
     )
     v.set_defaults(func=_verify)
 
