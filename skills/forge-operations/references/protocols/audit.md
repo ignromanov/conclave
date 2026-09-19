@@ -92,8 +92,12 @@ Read-only. On a collision, file a drift entry and delegate to `evolve` to re-sco
 
 The same `engine audit phantom-skills` check `hire.md` G1 runs, enforced post-hoc as a **blocking**
 category (not advisory like Cat 2). Any agent whose Toolbox lists a skill that `engine skill verify`
-cannot resolve → **block register/promote** until fixed. This is the audit-time backstop for the
+calls `PHANTOM` → **block register/promote** until fixed. This is the audit-time backstop for the
 hire-time G1 gate.
+
+A skill the harness compiles in (`BUILTIN`, declared in `references/harness-builtins.md`) is not a
+phantom and does not block. Before #168 it did, and the cost was paid in the other direction: an
+advisor deleted a working entry from its own toolbox rather than fail this category on every run.
 
 ## Cat 13 — Judge incentive + calibration floor (spec 089, D19/D32)
 

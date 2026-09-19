@@ -87,16 +87,21 @@ def _extract_refs(text: str) -> list[str]:
 
 
 def _is_phantom(ref: str, known: frozenset[str]) -> bool:
-    """Resolve a reference: namespaced/bare → skill.verify; prefixed → roster lookup."""
+    """Resolve a reference: namespaced/bare → skill.classify; prefixed → roster lookup.
+
+    `classify`, not `verify` (#168). Cat 12 is BLOCKING, so a false phantom here costs an
+    advisor a real entry in its own toolbox — kosmos-cxo deleted one and wrote the reason
+    into its personality file rather than fail the audit on every run.
+    """
     if ":" in ref:
-        return skill.verify(ref) is None
+        return skill.classify(ref)[0] == "PHANTOM"
     if ref.startswith("team."):
         return ref.split(".", 1)[1] not in known
     if ref.startswith("conclave-"):
         return ref[len("conclave-"):] not in known
     if ref in known:                 # a bare advisor id, not a skill
         return False
-    return skill.verify(ref) is None
+    return skill.classify(ref)[0] == "PHANTOM"
 
 
 def _scan(path: Path, label: str, known: frozenset[str], warn: list[str], seen: set) -> None:

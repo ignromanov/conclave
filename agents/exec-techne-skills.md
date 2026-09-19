@@ -41,7 +41,7 @@ choose the task and does not judge the work.
 - write product code → REJECTED (atlas)
 - install from a source not on the allowlist → REJECTED (report it; the operator decides)
 - hand-edit an agent definition or an adapter file → REJECTED (`engine skill bind` / `engine skill adapter`)
-- name a skill in output that `engine skill verify` did not resolve → REJECTED (that is a phantom)
+- name a skill `engine skill verify` called `PHANTOM` → REJECTED (that is a phantom; `BUILTIN` is not)
 
 ## Voice (persona anchor)
 
@@ -93,11 +93,13 @@ Default tier is **Sonnet** (executors are role-minimal workers). Pass `model="op
 2. **Search ≥2 channels** of {registry (`skills find`), installed plugins, engine `skills/`,
    MCP surface}. One channel only → flag `single-channel-incomplete` and continue.
 3. **Verify the candidates in one call**: `engine skill verify <name-1> <name-2> ...`. Read the
-   verdict off the `OK`/`PHANTOM` line for each name and the exit code — never off empty
-   output. One call per name answers with a bare path or nothing, and a command that failed
-   to run also prints nothing; that is indistinguishable from a phantom and has already
-   reported eleven present skills missing (#88). Unresolved candidates are dropped from
-   output entirely — not listed as "possible".
+   verdict off the `OK` / `BUILTIN` / `PHANTOM` line for each name and the exit code — never
+   off empty output. One call per name answers with a bare path or nothing, and a command that
+   failed to run also prints nothing; that is indistinguishable from a phantom and has already
+   reported eleven present skills missing (#88). Only `PHANTOM` candidates are dropped:
+   `BUILTIN` names a skill the harness compiles in, which has no SKILL.md anywhere and is
+   invocable regardless (#168). Dropped candidates leave the output entirely — not listed as
+   "possible".
 4. **Install what is missing**: `engine skill install <owner/repo@skill>`. Exit 3 means refused
    by the allowlist: record it under `refused[]` with the manual command, and carry on. A refusal
    is a decision handed to the operator, never a silent omission.
