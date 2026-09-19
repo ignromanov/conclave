@@ -38,6 +38,7 @@ def _close(args) -> int:
         handoff_no_issue=args.handoff_no_issue or "",
         duration_estimate=args.duration_estimate or "",
         reflexion=args.reflexion or "",
+        force=bool(getattr(args, "force", False)),
         session_id=os.environ.get("CLAUDE_CODE_SESSION_ID", ""),
     )
     try:
@@ -176,6 +177,10 @@ def register(sub) -> None:
                    help="Why the handoff has no issue to resolve against.")
     c.add_argument("--duration-estimate", dest="duration_estimate", default=None)
     c.add_argument("--reflexion", default=None)
+    c.add_argument("--force", action="store_true",
+                   help="Close although completed units no longer resolve (spec 117 R12). The "
+                        "disagreement is written into the session record — the override records "
+                        "what it overrode, it does not silence it.")
     c.set_defaults(func=_close)
 
     cp = vsub.add_parser(

@@ -52,6 +52,10 @@ Per-advisor overlays live at `skills/team.<id>/contracts/session-lifecycle.md`.
 
 ### 4. Done (team.done)
 - Sync GH Issues (decisions, new actions, closed items).
+- `session close` **re-checks every completed unit before it publishes the count** and exits 1
+  naming the gap when evidence no longer resolves (R12). Fix the evidence, or pass `--force` —
+  which records the disagreement in the session record rather than silencing it. A check that
+  could not be run (stale gh snapshot, unreadable index) is not a refusal.
 - File session artifacts via the engine CLI (`python -m engine session close`,
   `python -m engine file decision`, `python -m engine mention create`); the briefing
   regenerates from them on next `/conclave:start` — never hand-edited.

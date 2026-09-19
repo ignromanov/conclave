@@ -91,8 +91,26 @@ Complete `/conclave:feedback` before continuing. The gate is the
       --handoff-title <title> --handoff-slug <slug> \
       (--handoff-issue <#N|AI#N|owner/repo#N|URL> | --handoff-no-issue "<why>")] \
      [--issues-touched AI#N,AI#N] \
-     [--reflexion "<one-sentence post-mortem; '—' if nothing notable>"]
+     [--reflexion "<one-sentence post-mortem; '—' if nothing notable>"] \
+     [--force]
    ```
+
+   **Close can refuse (spec 117 R12).** Every unit the ledger records as completed is re-checked
+   here, because `shipped M` is written into the record as a claim about the present while the
+   checks behind it ran when the line was appended — possibly days earlier. A commit rebased away,
+   an artefact deleted, a predicate that regressed: close exits 1 and names the unit and the ref.
+
+   Two responses, and only one of them is a shortcut:
+   - **Fix the evidence** — the usual case. Re-commit, restore the artefact, or record the unit
+     again against evidence that resolves.
+   - **`--force`** — when the gap is real and acceptable (the artefact was scratch, the work
+     stands). It does **not** silence: the disagreement is written into the session record as a
+     durable line naming what disagreed. That line is the instrument — if overrides show the gate
+     wrong more often than right, the refusal is demoted and the written line kept.
+
+   A check that could not be *run* is never a refusal. A stale gh snapshot or an unreadable
+   feedback index observed nothing, and a gate that read "cannot tell" as "work lost" would fire
+   on the evidence class rather than on anything that happened.
 
    The `--reflexion` arg is **mandatory**. If genuinely nothing to reflect on, pass `"—"`.
    It is persisted to `session.md` frontmatter and read by `/conclave:start` for the next 3 sessions

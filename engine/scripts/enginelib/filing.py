@@ -17,9 +17,15 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, NamedTuple
 
 from enginelib import advisors, frontmatter, paths
 from enginelib.snapshot import snapshot_write
+
+if TYPE_CHECKING:
+    # Type-only. The checkpoint package is imported inside the functions that use it, matching
+    # this module's existing convention for it; naming the type here costs no import at runtime.
+    from enginelib.checkpoint import record as record_mod
 
 _log = logging.getLogger(__name__)
 
@@ -298,6 +304,11 @@ class CloseSessionOpts:
     handoff_slug: str = ""
     duration_estimate: str = ""
     reflexion: str = ""
+    #: Close although the R12 gate found completed units whose evidence no longer resolves
+    #: (spec 117 T8). The override never silences: the disagreement is written into the record
+    #: as a durable line, because a refusal an operator can only obey is a wall met at the end
+    #: of a session whose work is already done, and a warning goes to scrollback and dies.
+    force: bool = False
     #: The harness's session id, for finding THIS session's checkpoint record (spec 117 T6).
     #: Read from the environment by the adapter, never here: `_checkpoint` in
     #: engine/cmd/session.py already reads it there, and a core that reaches for
@@ -307,7 +318,16 @@ class CloseSessionOpts:
     session_id: str = ""
 
 
-def _fold_checkpoint(advisor: str, session_id: str) -> tuple[str, tuple[Path, ...]]:
+class Folded(NamedTuple):
+    """What the fold yielded. `entries` is here for the R12 gate, which has to re-check the
+    parsed units and cannot read them back out of the rendered text without a second parser."""
+
+    text: str
+    paths: tuple[Path, ...]
+    entries: tuple[record_mod.Entry, ...]
+
+
+def _fold_checkpoint(advisor: str, session_id: str) -> Folded:
     """The in-flight record's lines, rendered for the session record, and the paths folded.
 
     **Every record the session owns, not the one whose name today's date would spell.** The
@@ -333,7 +353,7 @@ def _fold_checkpoint(advisor: str, session_id: str) -> tuple[str, tuple[Path, ..
 
     paths_found = _store.records_for(advisor, session_id)
     if not paths_found:
-        return "", ()
+        return Folded("", (), ())
     entries: list = []
     discarded: list[str] = []
     for path in paths_found:
@@ -341,7 +361,7 @@ def _fold_checkpoint(advisor: str, session_id: str) -> tuple[str, tuple[Path, ..
         entries += list(reading.entries)
         discarded += list(reading.discarded)
     if not entries and not discarded:
-        return "_No units recorded._", paths_found
+        return Folded("_No units recorded._", paths_found, ())
 
     tally = _record.tally(entries)
     lines = [
@@ -367,7 +387,7 @@ def _fold_checkpoint(advisor: str, session_id: str) -> tuple[str, tuple[Path, ..
             *discarded,
             "```",
         ]
-    return "\n".join(lines), paths_found
+    return Folded("\n".join(lines), paths_found, tuple(entries))
 
 
 def close_session(opts: CloseSessionOpts) -> str:
@@ -477,7 +497,34 @@ def close_session(opts: CloseSessionOpts) -> str:
 
     # 9b. Fold the in-flight checkpoint record (spec 117 T6/D3). Read here, unlinked
     # only after the session record is safely on disk — see step 14b.
-    progress_text, checkpoint_paths = _fold_checkpoint(opts.advisor, opts.session_id)
+    folded = _fold_checkpoint(opts.advisor, opts.session_id)
+    progress_text, checkpoint_paths = folded.text, folded.paths
+
+    # 9c. R12 — the close gate (spec 117 T8). `shipped M` is about to be written as a statement
+    # in the present tense, and the checks behind it ran at append time, possibly days ago. Every
+    # completed unit is resolved again; one whose evidence no longer holds is a claim the world
+    # does not currently support. Before the write, so a refusal leaves nothing behind.
+    if folded.entries:
+        from enginelib.checkpoint import gate as _gate
+        from enginelib.checkpoint.evidence import Roots as _Roots
+
+        disagreed = _gate.disagreements(folded.entries, _Roots.current())
+        if disagreed and not opts.force:
+            raise ValueError(
+                f"{len(disagreed)} completed unit(s) no longer resolve — the record would "
+                f"publish a count nothing currently confirms:\n"
+                f"{_gate.render(disagreed)}\n"
+                f"Fix the evidence, or close with --force to record the disagreement instead."
+            )
+        if disagreed:
+            # The same rendering the refusal would have shown. Two wordings of one fact drift,
+            # and the operator who overrode could then not find, in the record, the sentence
+            # they decided against. What this block LOOKS like to a human reader — heading,
+            # placement, emphasis — is the display contract and belongs to kosmos-cxo.
+            progress_text += (
+                f"\n\n**Override — closed with {len(disagreed)} disagreement(s) unresolved:**"
+                f"\n\n{_gate.render(disagreed)}"
+            )
 
     # 10. Build list values. Quoting the elements that need it belongs beside as_block
     # in frontmatter: an id arriving as "#17" made the whole flow sequence a comment.
