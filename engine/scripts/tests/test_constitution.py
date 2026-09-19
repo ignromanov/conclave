@@ -132,3 +132,102 @@ def test_charter_never_uses_shall_outside_quotation():
         if used.search(ln) and not ln.lstrip().startswith(">")
     ]
     assert not offenders, "charter uses 'shall' outside a quotation:\n  " + "\n  ".join(offenders)
+
+
+# §7's ledger is the one part of this charter no test has ever read, and it is the one part that
+# went stale: on 2026-09-15 it still called `re-occurred` unbuilt, 2 months after a writer for it
+# shipped. Prose about code is a cache, and nobody invalidates a cache nobody reads.
+_ABSENT_RE = re.compile(r"\*\*absent from engine code\*\*: (.+)")
+_PRESENT_RE = re.compile(r"\*\*present in engine code\*\*: (.+)")
+_TOKEN_RE = re.compile(r"`([^`]+)`")
+
+
+def _non_test_engine_sources() -> list[pathlib.Path]:
+    """Every shipped Python module — excluding tests, which may name a mechanism to assert it absent."""
+    return [
+        p
+        for p in SCRIPTS_ROOT.rglob("*.py")
+        if ".venv" not in p.parts and "tests" not in p.parts
+    ]
+
+
+def test_the_ledger_absence_claims_are_still_true():
+    """§7 says which mechanisms the engine does not have. This runs the claim instead of trusting it.
+
+    Both directions are graded, and that is the point. An absence claim verified by a scan is only
+    as good as the scan: a broken perimeter, a typo'd root, a glob that matches nothing all return
+    zero hits and *manufacture* the absence they were asked to check. So the ledger also names a
+    mechanism it claims is present, and this gate fails just as loudly when that one is not found.
+    The positive control is what makes the negative result evidence.
+    """
+    text = CHARTER.read_text(encoding="utf-8")
+
+    absent_m, present_m = _ABSENT_RE.search(text), _PRESENT_RE.search(text)
+    assert absent_m and present_m, (
+        "§7 no longer states its absence claims in a form this gate can read — expected a line "
+        "carrying `**absent from engine code**:` and one carrying `**present in engine code**:`, "
+        "each followed by backticked tokens. Without both, this test grades nothing."
+    )
+    absent = _TOKEN_RE.findall(absent_m.group(1))
+    present = _TOKEN_RE.findall(present_m.group(1))
+    assert absent and present, f"§7 named no tokens to check (absent={absent}, present={present})"
+
+    sources = _non_test_engine_sources()
+    assert len(sources) > 50, (
+        f"the scan perimeter collapsed to {len(sources)} files under {SCRIPTS_ROOT} — "
+        "every absence below would be an artefact of an empty scan, not a measurement"
+    )
+    bodies = {p: p.read_text(encoding="utf-8", errors="replace") for p in sources}
+
+    def carriers(token: str) -> list[str]:
+        return sorted(str(p.relative_to(SCRIPTS_ROOT)) for p, b in bodies.items() if token in b)
+
+    problems = []
+    for token in absent:
+        found = carriers(token)
+        if found:
+            problems.append(
+                f"§7 calls `{token}` absent from engine code, and it is in: {', '.join(found)}"
+            )
+    for token in present:
+        if not carriers(token):
+            problems.append(
+                f"§7 calls `{token}` present in engine code and this scan found it nowhere — "
+                "either the mechanism was removed, or this scan is broken and every absence "
+                "asserted above is worthless"
+            )
+    assert not problems, "§7's ledger asserts what the code does not do:\n  " + "\n  ".join(problems)
+
+
+def test_every_path_the_charter_names_resolves():
+    """The charter cites test files as its evidence. A path that has moved is evidence no longer.
+
+    Exactly the defect two shipped surfaces carried until #327: twelve `scripts/…py` references
+    that named nothing on disk, every one of them read by an agent as an instruction. A citation
+    is checked by resolving it, never by reading it.
+
+    Scoped to `.py` on purpose. Every code citation in this document resolves against
+    `engine/scripts/`, while the one `.md` path it names — an instance's own charter, scaffolded
+    per project — is a description of a file that is absent from this repo by design. Narrowing to
+    the extension keeps the rule exception-free, which is why it is the rule.
+    """
+    text = CHARTER.read_text(encoding="utf-8")
+    cited = sorted({
+        tok.split("::", 1)[0]
+        for tok in _TOKEN_RE.findall(text)
+        if "/" in tok and tok.split("::", 1)[0].endswith(".py")
+    })
+    # Anti-vacuity backstop, and stated as one: no mutation reached it. Every way to empty this
+    # list — no `mechanical` principle, a citation format without backticks, a path that lost its
+    # directory — trips test_every_principle_declares_an_honest_tier first, with a clearer message.
+    # It stays because the vacuous pass is the failure mode this suite keeps finding (#110, 116),
+    # and it costs four lines; it is not evidence that the case is covered.
+    assert cited, (
+        "the charter cites no test path at all — either every citation went, or the backtick "
+        "convention did, and the resolution below would pass over nothing"
+    )
+    missing = [t for t in cited if not (SCRIPTS_ROOT / t).is_file()]
+    assert not missing, (
+        "the charter names files that are not there:\n  "
+        + "\n  ".join(f"{t} (expected at {SCRIPTS_ROOT / t})" for t in missing)
+    )
