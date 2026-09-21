@@ -171,9 +171,20 @@ class TestDecisions:
 # ---------------------------------------------------------------------------
 
 def _make_gh_cache(cache_dir: Path, advisor: str, items: list[dict]) -> None:
+    """A snapshot shaped like the one gh-fetch writes — `captured_at` included.
+
+    The stamp used to be omitted here and the omission was invisible: nothing read it.
+    `p0.build` now does (GH#269), because `captured_at` returning None is the only thing
+    separating "this advisor has no open p0" from "nobody ever asked GitHub about this
+    advisor" — `read_items` answers [] to both. A helper that writes a shape the producer
+    never produces turns every test over it into a claim about a file that cannot exist.
+    """
     cache_dir.mkdir(parents=True, exist_ok=True)
     json_str = json.dumps(items)
-    content = f"---\ntype: gh-snapshot\n---\n\n```json\n{json_str}\n```\n"
+    content = (
+        f"---\ntype: gh-snapshot\nadvisor: {advisor}\n"
+        f'captured_at: "2026-01-05T09:00:00Z"\n---\n\n```json\n{json_str}\n```\n'
+    )
     (cache_dir / f"{advisor}.md").write_text(content, encoding="utf-8")
 
 
@@ -231,28 +242,63 @@ class TestQueue:
 # ---------------------------------------------------------------------------
 
 class TestP0:
+    """GH#269 made this section a roster walk, so its unit tests need a roster.
+
+    `make_ctx` builds a bare tmp tree with no `.claude/agents/`, which used to be
+    irrelevant here — the section opened one cache path derived from `ctx.advisor` and
+    never asked who else existed. It now resolves `lifecycle_advisors(repo_root)`, and a
+    tree with no agents dir yields META alone. `_roster` writes the agent files so these
+    cases exercise the walk rather than the not-resolvable guard.
+    """
+
+    @staticmethod
+    def _roster(tmp_path, *advisors):
+        agents = tmp_path / ".claude" / "agents"
+        agents.mkdir(parents=True, exist_ok=True)
+        for advisor in advisors:
+            (agents / f"{advisor}.md").write_text(
+                f"---\nname: {advisor}\n---\nstub\n", encoding="utf-8"
+            )
+
     def test_no_p0_returns_placeholder(self, tmp_path):
         ctx = make_ctx(tmp_path)
+        self._roster(tmp_path, ctx.advisor)
         items = [{"number": 1, "title": "Some issue", "labels": [{"name": "p1"}]}]
         _make_gh_cache(ctx.gh_cache_dir, ctx.advisor, items)
+        # forge-chro is on every lifecycle roster; give it an empty snapshot so the
+        # all-clear is EARNED here rather than merely rendered.
+        _make_gh_cache(ctx.gh_cache_dir, "forge-chro", [])
         result = p0.build(ctx)
-        assert result == "_(no global p0 blockers)_"
+        assert result == p0.NO_BLOCKERS
 
     def test_filters_p0_rows(self, tmp_path):
         ctx = make_ctx(tmp_path)
+        self._roster(tmp_path, ctx.advisor)
         items = [
             {"number": 1, "title": "Blocker", "labels": [{"name": "p0"}, {"name": "advisor:kai"}]},
             {"number": 2, "title": "Nice to have", "labels": [{"name": "p2"}]},
         ]
         _make_gh_cache(ctx.gh_cache_dir, ctx.advisor, items)
+        _make_gh_cache(ctx.gh_cache_dir, "forge-chro", [])
         result = p0.build(ctx)
         assert "- #1 | Blocker |" in result
         assert "#2" not in result
 
-    def test_missing_cache_returns_placeholder(self, tmp_path):
+    def test_a_missing_cache_is_a_gap_not_an_all_clear(self, tmp_path):
+        """Inverted in GH#269 — it used to assert the defect.
+
+        This case previously read `assert result == "_(no global p0 blockers)_"` with a
+        name that called the placeholder correct. Advisor-scoped that was merely wrong
+        about one person's own queue; under a heading that says "Global" it is an
+        all-clear for the whole instance issued by an instrument that opened no files at
+        all. `read_items` answers [] to a missing cache and to an empty one alike, which
+        is why the gap is decided on `captured_at` instead.
+        """
         ctx = make_ctx(tmp_path)
+        self._roster(tmp_path, ctx.advisor)
         result = p0.build(ctx)
-        assert result == "_(no global p0 blockers)_"
+        assert result != p0.NO_BLOCKERS, "no cache was read, yet the instance got an all-clear"
+        assert ctx.advisor in result and "no snapshot" in result
 
     @_NEEDS_INSTANCE
     def test_real_p0(self, live_ctx):

@@ -246,9 +246,10 @@ def test_the_oldest_snapshot_degrades_the_whole_union(roster):
 
 
 def test_p0_is_instance_wide_and_sees_another_advisors_blocker(roster):
-    """The executed defect of plan 057 §2: the section is titled "global p0 blockers"
-    and reads one advisor's cache, so a p0 on forge-chro renders to sage-cto as none.
-    Instance scope means the blocker is visible regardless of whose queue holds it."""
+    """Plan 057 §2: the section was titled "global p0 blockers" and read one advisor's
+    cache, so a p0 on forge-chro rendered to sage-cto as none. This projection was built
+    instance-wide from the start; the briefing section caught up in GH#269, and the two
+    now walk the same roster (`lifecycle_advisors`) from different callers."""
     _write_cache(roster, "forge-chro", _fresh(), [_issue(901, "p0")])
     for advisor in ("sage-cto", "keel-coo", "helm-ceo"):
         _write_cache(roster, advisor, _fresh(), [_issue(10, "p2")])
@@ -259,8 +260,13 @@ def test_p0_is_instance_wide_and_sees_another_advisors_blocker(roster):
 
 
 def test_p0_matches_the_label_not_the_title(roster):
-    """`build()` keeps the bash port's substring predicate; this seam does not, because
-    a title reading "drop the p0 gate" is not a p0 blocker."""
+    """A title reading "drop the p0 gate" is not a p0 blocker.
+
+    `build()` used to keep the bash port's substring predicate while this seam took the
+    label, and that divergence was live: GH#269's own title carries "p0" and its label is
+    `p1`, so on 2026-09-20 the briefing section rendered it and this projection did not.
+    Both now read `p0.select`; this test and its twin in `test_global_p0_is_global.py`
+    hold the two printers to the one predicate from opposite ends."""
     _write_cache(roster, "sage-cto", _fresh(), [_issue(1, "p2")])
     cache = roster / "agent-memory" / "gh-cache" / "sage-cto.md"
     cache.write_text(cache.read_text().replace('"issue 1"', '"retire the p0 gate"'), encoding="utf-8")

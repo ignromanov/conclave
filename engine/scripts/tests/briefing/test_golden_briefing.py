@@ -147,21 +147,25 @@ def test_the_rendered_briefing_is_unchanged(frozen_instance, tmp_path, advisor):
 # the properties the fixture was built to expose, stated so they survive a regeneration.
 
 
-def test_a_p0_on_one_advisor_is_invisible_to_the_other(frozen_instance, tmp_path):
-    """The executed defect of plan 057 §2, captured as output.
+def test_a_p0_on_one_advisor_is_visible_to_the_other(frozen_instance, tmp_path):
+    """The executed defect of plan 057 §2, fixed in GH#269 — and its inversion held here.
 
-    `p0.py`'s section is titled "Global p0 blockers" and reads exactly one advisor's
-    cache. In this tree the only p0 sits on beta, so the same instance at the same
-    moment answers the question two different ways. Asserted as the CURRENT behaviour,
-    not the desired one — when the scan is fixed this test is what must be edited, in
-    the same commit, on purpose.
+    This test used to assert the defect: `p0.py` was titled "Global p0 blockers" and read
+    exactly one advisor's cache, so the only p0 in this tree (beta's) was invisible to
+    alpha and the same instance answered the question two ways at the same instant. It
+    was written as the CURRENT behaviour with a note saying it is what must be edited when
+    the scan is fixed. This is that edit.
+
+    Kept at the RENDERED level rather than deleted in favour of the unit tests in
+    `test_global_p0_is_global.py`: those call `p0.build` directly, and a section that is
+    correct in isolation but unwired from the dispatch table renders nothing at all.
     """
     alpha = _render(frozen_instance, ALPHA, tmp_path)
     beta = _render(frozen_instance, BETA, tmp_path)
     assert "#202" in beta, "beta's own p0 vanished from beta's briefing"
-    assert "#202" not in alpha, (
-        "alpha now sees beta's p0 — if this was fixed deliberately, update this test and "
-        "the goldens together; if not, an advisor filter was widened by accident"
+    assert "#202" in alpha, (
+        "alpha cannot see beta's p0 — the section is titled global and is not; if a "
+        "filter was narrowed deliberately, the heading has to change in the same commit"
     )
 
 
