@@ -32,7 +32,16 @@ python engine/scripts/feedback/feedback_emit.py \
   --skill-version sha256:<12-hex>
 ```
 
-Fill `items[]` (cap 3–5, `evidence` mandatory), then set `_draft: false`.
+Fill `items[]` (cap 3–5, `evidence` mandatory), then **finalize** — which validates the
+review against the schema and flips `_draft` only if it passes:
+
+```bash
+python engine/scripts/feedback/feedback_emit.py --finalize ops/feedback/<today>/<your-file>.md
+```
+
+Do **not** set `_draft` by hand. A hand-set flag reaches the notebook without ever being
+validated, and the cost is paid by somebody else: one such review hard-aborted triage
+Step 0 for three advisors two days after the session that wrote it closed green (GH#310).
 A zero-mutation session may use `--no-op` (empty `items[]` + summary line).
 See `${CLAUDE_PLUGIN_ROOT}/skills/advisor-contracts/references/feedback-protocol.md` §How-to-emit for full schema.
 

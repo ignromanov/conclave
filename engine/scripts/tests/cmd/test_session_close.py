@@ -221,13 +221,33 @@ def test_emission_gate_blocks_when_no_emission(tmp_path):
     assert "Missing or draft" in combined or "conclave:feedback" in combined
 
 
-# 12. Gate PASSES when emission file exists with _draft: false
+# 12. Gate PASSES when emission file exists, is not a draft, AND validates (GH#310)
 def test_emission_gate_passes_when_emission_present(tmp_path):
+    """The fixture grew a real review in GH#310, and that is the point of the change.
+
+    It used to be `---\n_draft: false\nsummary: test\n---\n` — a file `Review` rejects on
+    six required fields — and the gate passed it. The test was not wrong about the code;
+    it recorded exactly what the code did, which is that AC12 was a `re.search` for one
+    line and never looked at the schema. A fixture that only has to carry `_draft: false`
+    IS the defect, stated as a test.
+    """
     bare_root = tmp_path / "ai"
     emission_dir = bare_root / "ops" / "feedback" / "2026-05-25"
     emission_dir.mkdir(parents=True)
     (emission_dir / "atlas-test-session-001.md").write_text(
-        "---\n_draft: false\nsummary: test\n---\n"
+        "---\n"
+        "feedback_id: fb-close-fixture\n"
+        "agent: atlas\n"
+        "agent_type: advisor\n"
+        "session_ref: test-session-001\n"
+        "created: '2026-05-25T09:00:00Z'\n"
+        "updated_at: '2026-05-25T09:00:00Z'\n"
+        "skill_version: sha256:000000000000\n"
+        "summary: test\n"
+        "items: []\n"
+        "below_threshold_count: 0\n"
+        "_draft: false\n"
+        "---\n"
     )
     env = {
         "CONCLAVE_AI_ROOT": str(bare_root),

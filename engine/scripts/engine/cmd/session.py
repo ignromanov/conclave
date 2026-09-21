@@ -122,8 +122,11 @@ def _checkpoint(args) -> int:
 
 
 def _emission_gate(args) -> int:
-    from enginelib.filing import emission_gate
+    # `feedback.emission`, not `enginelib.filing`: the check needs the Review schema, and
+    # `feedback/` already depends on `enginelib/` in nine places. The adapter is the layer
+    # that may reach across — `engine/cmd/{audit,status}.py` do the same.
     from enginelib.paths import check_legacy_data_root_env
+    from feedback.emission import blockers
 
     args._runlog_verb = "session-emission-gate"
 
@@ -143,10 +146,17 @@ def _emission_gate(args) -> int:
         print("emission-gate: SESSION_ID must be set", file=sys.stderr)
         return 1
 
-    blocking_path = emission_gate(ai_root, advisor, session_id, today)
-    if blocking_path is not None:
-        print(f"WARNING: Missing or draft emission: {blocking_path}", file=sys.stderr)
-        print("Run /conclave:feedback before completing /conclave:done.", file=sys.stderr)
+    reasons = blockers(ai_root, advisor, session_id, today)
+    if reasons:
+        print("WARNING: Missing or draft emission — AC12 not satisfied:", file=sys.stderr)
+        for reason in reasons:
+            print(f"  {reason}", file=sys.stderr)
+        print(
+            "Fix the review, then finalize it (this validates, then flips _draft):\n"
+            "  python engine/scripts/feedback/feedback_emit.py --finalize <path>\n"
+            "Do not set _draft by hand — that is the bypass GH#310 closed.",
+            file=sys.stderr,
+        )
         return 1
     return 0
 

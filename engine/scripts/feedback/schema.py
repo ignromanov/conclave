@@ -2,10 +2,17 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 # `positive` added 2026-09-08 (spec 117 lens rewrite, operator-approved). Every other member
 # names a defect, so the corpus could only ever be defects: 244 items, 0 positive. That was
@@ -169,3 +176,46 @@ def fingerprint(location: Location | dict, category: str) -> str:
     if section:
         norm = f"{norm}#{section.strip().lower()}"
     return hashlib.sha256(f"{norm}|{category}".encode()).hexdigest()[:12]
+
+
+def schema_errors(meta: Mapping[str, object]) -> list[str]:
+    """Why `Review.model_validate` would reject this frontmatter, one line per fault.
+
+    THE SINGLE DEFINITION OF "fileable". Before GH#310 there were three: a
+    `re.search(r"^_draft: false")` in `enginelib/filing.py`, `model_validate` over
+    `read_commented` in `feedback_emit._finalize`, and `model_validate` over `fm_read` in
+    `feedback_index` — two YAML engines behind two readers, and a string search in front
+    of the gate every session runs. The regex was the one that decided whether a session
+    could close, and it could not tell a validated review from a hand-edited malformed
+    one because it was not looking at the schema at all.
+
+    Returns [] for a review the indexer would accept. Says nothing about `_draft`: a
+    draft validates clean (the field is an ordinary optional with a default), so "is it
+    finished" is a separate question from "is it well-formed", and a caller that needs
+    both must ask both. Collapsing them is the regression `test_a_valid_draft_still_blocks`
+    exists to catch.
+
+    Item faults are reported against the item's OWN id rather than only its index.
+    Pydantic locates `items.1.location`, and an author looking at a file where the ids
+    read i1, i2, i4, i5 has to count to find it — which is the same "correct but
+    unactionable" failure the bare `exited 1` produced two days downstream.
+    """
+    try:
+        Review.model_validate(dict(meta))
+    except ValidationError as exc:
+        return [_render_error(err, meta) for err in exc.errors()]
+    return []
+
+
+def _render_error(err: Mapping[str, Any], meta: Mapping[str, object]) -> str:
+    loc: tuple[Any, ...] = tuple(err.get("loc") or ())
+    dotted = ".".join(str(part) for part in loc)
+    label = dotted
+    if len(loc) >= 2 and loc[0] == "items" and isinstance(loc[1], int):
+        raw_items = meta.get("items")
+        if isinstance(raw_items, list) and loc[1] < len(raw_items):
+            entry = raw_items[loc[1]]
+            item_id = entry.get("id") if isinstance(entry, Mapping) else None
+            if item_id:
+                label = f"{dotted} ({item_id})"
+    return f"{label}: {err.get('msg', 'invalid')}"

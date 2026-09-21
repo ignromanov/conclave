@@ -262,8 +262,17 @@ python engine/scripts/feedback/feedback_emit.py \
   --skill-version sha256:<12-hex>
 ```
 
-Fill `items[]` (cap 3–5, `evidence` mandatory per tool call or step), then set `_draft: false`.
-A zero-mutation dispatch may use `--no-op`.
+Fill `items[]` (cap 3–5, `evidence` mandatory per tool call or step), then **finalize** —
+never by editing the flag, which skips validation entirely:
+
+```bash
+python engine/scripts/feedback/feedback_emit.py --finalize ops/feedback/<today>/<your-file>.md
+```
+
+It validates against the schema and flips `_draft` only if the review passes; a failure
+leaves the flag untouched and names the offending field. A dispatch ends without a close
+gate to catch a malformed review, so for an executor this is the only check there is
+(GH#310). A zero-mutation dispatch may use `--no-op`.
 
 | Field | Guidance |
 |-------|----------|

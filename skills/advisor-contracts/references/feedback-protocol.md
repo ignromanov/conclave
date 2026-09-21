@@ -100,8 +100,20 @@ python engine/scripts/feedback/feedback_emit.py \
 ```
 
 The script scaffolds `ops/feedback/<today>/<agent>-<session>.md` with `_draft: true`.
-The agent fills `items[]` honestly (cap 3–5, `evidence` mandatory), then sets
-`_draft: false`. A `--no-op` flag marks a genuinely zero-mutation session.
+The agent fills `items[]` honestly (cap 3–5, `evidence` mandatory), then finalizes
+through the validating path — never by editing the flag:
+
+```bash
+python engine/scripts/feedback/feedback_emit.py --finalize ops/feedback/<today>/<agent>-<session>.md
+```
+
+`--finalize` validates against the `Review` schema and flips `_draft` **only** if it
+passes; a failure leaves the flag untouched and names the offending field. `_draft: false`
+set by hand is the one way a malformed review reaches the triage index, where it aborts
+the cadence check for every advisor on the instance (GH#310). The same three conditions —
+file present, not a draft, schema-valid — are what `engine session emission-gate` checks
+before `/conclave:done` may proceed, so a hand edit does not save a step; it defers a
+failure onto a colleague. A `--no-op` flag marks a genuinely zero-mutation session.
 
 ## Cadence triage
 
