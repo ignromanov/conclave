@@ -48,8 +48,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal
 
-from enginelib.status.model import Verdict
-from enginelib.status.reduce import worst_verdict
+from enginelib.status.model import Severity, Verdict
+from enginelib.status.reduce import worst_severity, worst_verdict
 
 # Step 4's tie-breaker for the `no patches, no PR` row: "minutes old = a worktree just
 # created and not yet written in (keep); days old = work that landed by some other route
@@ -92,6 +92,26 @@ _VERDICT_BY_DISPOSITION: dict[Disposition, Verdict] = {
     "landed_elsewhere": "stale_warn",
     "in_flight": "fresh",
     "fresh_start": "fresh",
+}
+
+# The same judgments, on the axis they were always about. Every entry above is a
+# statement about what a branch IS — residue, risk, or a question — and not one of them
+# is about how old a reading is; the table borrowed the freshness vocabulary because
+# until rules 7a/7b there was only one enum to borrow. Reading them off `Verdict` is how
+# a branch slot's real problem ended up sharing a glyph column with a stale gh snapshot.
+#
+# `inspect` maps to `warn` and not to a fourth member: uncertainty is an ORDERING fact
+# (rule 2 ranks it first, and `_VERDICT_BY_DISPOSITION` above still carries it there),
+# while the glyph answers "must a reader act on this?" — and for `inspect` the answer is
+# yes, because the row could be either of two opposite things.
+_SEVERITY_BY_DISPOSITION: dict[Disposition, Severity] = {
+    "inspect": "warn",
+    "beyond_merge": "error",
+    "shipped": "warn",
+    "unproposed": "warn",
+    "landed_elsewhere": "warn",
+    "in_flight": "ok",
+    "fresh_start": "ok",
 }
 
 
@@ -347,3 +367,22 @@ def section_verdict(rows: Sequence[BranchRow]) -> Verdict:
         # push silently acts on.
         verdicts.append("stale_error")
     return worst_verdict(*verdicts)
+
+
+def section_severity(rows: Sequence[BranchRow]) -> Severity:
+    """What the slot says about the branches themselves — the glyph's input (rule 7a).
+
+    An empty branch list is `ok` and not `None`: this slot HAS a defensible threshold
+    (a branch requiring action is by definition a deviation), so "we looked and there
+    was nothing to act on" is a judgment, which is exactly what rule 3 wants stated.
+    `None` is reserved for slots nobody has judged, and this is not one of them.
+
+    A stale tracking ref outranks every disposition, for the reason the sibling above
+    gives: it is not a gradient, it is a false fact in the reader's own repository.
+    """
+    if not rows:
+        return "ok"
+    severities = [_SEVERITY_BY_DISPOSITION[r.disposition] for r in rows]
+    if any(r.stale_tracking_ref for r in rows):
+        severities.append("error")
+    return worst_severity(*severities) or "ok"

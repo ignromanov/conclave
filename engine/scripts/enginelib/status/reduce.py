@@ -17,7 +17,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 
-from enginelib.status.model import Count, SectionResult, Verdict
+from enginelib.status.model import Count, SectionResult, Severity, Verdict
 
 # Rank order, most urgent first. `unknown` leads deliberately — see module docstring.
 _VERDICT_RANK: dict[Verdict, int] = {
@@ -25,6 +25,16 @@ _VERDICT_RANK: dict[Verdict, int] = {
     "stale_error": 1,
     "stale_warn": 2,
     "fresh": 3,
+}
+
+# The content axis's own order. Separate from `_VERDICT_RANK` on purpose: these two
+# were one scale until rules 7a/7b, and a shared rank is how they would become one
+# again. `None` is absent from the table because it is not a rung on this ladder —
+# `worst_severity` handles it as the absence of a judgment.
+_SEVERITY_RANK: dict[Severity, int] = {
+    "error": 0,
+    "warn": 1,
+    "ok": 2,
 }
 
 # Rule 2: at most four deviation clusters in one report.
@@ -57,15 +67,40 @@ def worst_verdict(*verdicts: Verdict) -> Verdict:
     return min(verdicts, key=lambda v: _VERDICT_RANK[v])
 
 
+def worst_severity(*severities: Severity | None) -> Severity | None:
+    """The most severe content judgment among several, or `None` if nobody judged.
+
+    `None` is not a floor and not a winner: it is the absence of a judgment, so it
+    loses to any real one and survives only when there is no other. That asymmetry is
+    the whole reason this is a function rather than a `max()` at each call site —
+    `max()` over a set containing `None` either raises or silently orders it, and both
+    turn "nobody has judged this" into a verdict.
+    """
+    judged = [s for s in severities if s is not None]
+    if not judged:
+        return None
+    return min(judged, key=lambda s: _SEVERITY_RANK[s])
+
+
 def deviations(sections: Iterable[SectionResult]) -> list[SectionResult]:
-    """The sections a reader must act on: anything not `fresh`, ranked.
+    """The sections a reader must act on: `Absent` ∪ content-bad, ranked.
 
     An unmeasured section is a deviation even when nothing is known to be wrong —
     that is rule 6 carried into the ordering. A section that measured cleanly is not
     a deviation, but it is still reported (rule 3: success is stated, never implied);
     the caller renders it, this function just does not rank it as a problem.
+
+    **Staleness is not a deviation** (rule 7b). It is evidence attached to a row, and
+    a report whose every source happens to be a day old has not thereby acquired four
+    findings. This predicate read `verdict != "fresh"` until 2026-09-21, which counted
+    five deviations against a cap of four on the live projection — four of them stale
+    reads of slots with nothing wrong in them. `over_cluster_budget` fired, rule 2
+    named grouping as the remedy, and grouping that set would have produced a tidy
+    surface that was wrong in a new way. The membership test lives on the model
+    (`SectionResult.is_deviation`) so the terminal render, the dashboard and any later
+    printer cannot each answer it differently.
     """
-    return [s for s in rank_sections(sections) if s.verdict != "fresh"]
+    return [s for s in rank_sections(sections) if s.is_deviation]
 
 
 def over_cluster_budget(sections: Iterable[SectionResult]) -> bool:

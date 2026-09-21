@@ -76,6 +76,57 @@ Measurement = Count | Absent
 Verdict = Literal["fresh", "stale_warn", "stale_error", "unknown"]
 
 
+#: What a section says about ITS CONTENT — never about the age of the reading.
+#:
+#: `state-report.md` v1.1 rules 7a/7b exist because these two were one field. `Verdict`
+#: is a statement about time; `render_terminal._MARK` mapped it onto the glyph set
+#: `output-formatting.md` §2 defines as content severity, so the live render printed
+#: `✗ p0 — 0 p0-блокеров по инстансу` — the best state that slot can hold, wearing the
+#: blocking glyph, because a gh snapshot was 19 hours old. Each half read fine alone,
+#: which is how it survived.
+#:
+#: `None` is the default and means **nobody has judged this slot**, which is a third
+#: state and not a synonym for `ok`. A builder sets a value only where it has a
+#: threshold it can defend; a slot with no defensible threshold renders no glyph, and
+#: that silence is honest. The known failure mode is the opposite of the one that
+#: caused this: if most slots stay `None` the glyph column empties and the surface
+#: loses its exception signal. The remedy is thresholds added one at a time with
+#: evidence behind each — never a backfill.
+Severity = Literal["ok", "warn", "error"]
+
+
+@dataclass(frozen=True)
+class Freshness:
+    """How old one reading is, on one named axis. Evidence, never a glyph.
+
+    Rule 7 already said age "renders beside the verdict as evidence"; the render did
+    the opposite and put it *in* the verdict. This type is what the printer words into
+    a suffix — `· снимку 19ч`, `· очередь не двигалась 12д` — so a stale reading loses
+    the glyph and keeps the fact.
+
+    Two axes exist today and they are not interchangeable: `snapshot` is how old the
+    capture is, `movement` is how long since the thing being captured last changed. A
+    queue read every session and moved by nobody is fresh on the first and dead on the
+    second — rule 7's whole point, and the reason this carries the axis rather than a
+    bare age.
+
+    `age is None` iff `verdict == "unknown"`: an axis that could not be evaluated has
+    no age, and inventing `timedelta(0)` for it would be the `Absent`-vs-`Count(0)`
+    conflation one level down.
+    """
+
+    axis: Literal["snapshot", "movement"]
+    verdict: Verdict
+    age: timedelta | None = None
+
+    def __post_init__(self) -> None:
+        if (self.verdict == "unknown") != (self.age is None):
+            raise ValueError(
+                "Freshness.age is present exactly when the axis could be evaluated: "
+                f"verdict={self.verdict!r} with age={self.age!r}"
+            )
+
+
 @dataclass(frozen=True)
 class Staleness:
     """Two thresholds over a queue's last MOVEMENT — never its last read.
@@ -126,7 +177,26 @@ class SectionResult:
     measurement: Measurement
     verdict: Verdict = "fresh"
     rows: tuple[object, ...] = ()
+    severity: Severity | None = None
+    freshness: tuple[Freshness, ...] = ()
 
     @property
     def measured(self) -> bool:
         return isinstance(self.measurement, Count)
+
+    @property
+    def is_deviation(self) -> bool:
+        """Whether a reader must act on this section — rule 7b's set, in one place.
+
+        `Absent` ∪ content-bad, and deliberately not "anything not fresh". Staleness is
+        evidence attached to a row, never a cluster of its own: a report where every
+        source happens to be a day old has not thereby acquired four findings. Measured
+        on the live projection 2026-09-19, the old predicate counted five deviations
+        against a cap of four, and four of the five were stale reads of slots with
+        nothing wrong in them — a breach no grouping could honestly fix, because the
+        remedy was never grouping.
+
+        `severity is None` is not a deviation. A slot nobody has judged is not thereby
+        a finding; see `Severity`.
+        """
+        return isinstance(self.measurement, Absent) or self.severity in ("warn", "error")
