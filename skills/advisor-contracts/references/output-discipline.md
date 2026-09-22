@@ -31,6 +31,13 @@ A run is bounded by the operator's message. Every run ends in exactly one of:
 | blocked | a reason and what is needed | `blocked` |
 | failed | the report, with failure as its verdict | `failed` |
 
+**"One object" counts reports, not blocks, and never outcomes.** A run that merged, closed and
+reopened three separate things still ends in one report; its verdict slot rules on the run, and
+the separable outcomes are rows inside slot 3. The count that matters is how many times the
+reader is told "this is the answer" — once. A report whose evidence forces a continuation
+section is still one object; two attributed blocks each claiming to conclude the run are two.
+(Ruled 2026-09-19 by kosmos-cxo on forge-chro's item 6 — he chose one block and was right.)
+
 ## R2 — the anti-swallow invariant
 
 `completed` with no report is a violation, not a quiet success. `awaiting_input` with no question
@@ -58,6 +65,22 @@ operator asked for.
 
 In the CLI the activity lane is the tool-call chrome the harness already draws. You do not need to
 narrate it. Writing it out in prose is duplication, not transparency.
+
+**Exposition is not a conclusion.** R3 bars a claim about *this run's outcome* — a finding that
+could later be retracted, which the reader cannot tell from a live one. It does not bar a claim
+about the *material*: how this codebase is structured, what a primitive does, why an approach has
+the shape it has. Such a statement is true independently of how the run ends, so abandoning the
+run abandons nothing the reader was told. The test is one question: **could this be retracted by
+what the run finds?** Yes → hold it for the report. No → it is exposition, and R3 is silent.
+
+This settles R3 against a harness output style that mandates mid-work explanation (the
+`★ Insight` block and its equivalents). The two do not collide: such a block is didactic, about
+the code, and carries no verdict on the work. It must still pass R4 — delete every one of them
+and the report stays complete — which it does *because* it carries no run-facts. R5 applies
+unchanged; a visually distinct frame is how the declaration is made. An advisor that smuggles a
+run-conclusion inside such a block has violated R3, not found an exemption from it.
+(Ruled 2026-09-19 by kosmos-cxo on forge-chro's item 5 — a standing non-compliance with one of
+the two rules in every session, in both directions, for 18 days.)
 
 ## R4 — the deletion test
 

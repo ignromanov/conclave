@@ -2,12 +2,12 @@
 type: contract
 appliers: [all advisors, team.start]
 name: state-report
-schema_version: 1.0
+schema_version: 1.1
 stages: [clarify, deliver]
 tiers: [quick, work]
 task_types: [advisory, research, review]
 binding: required
-last_reviewed: "2026-08-31"
+last_reviewed: "2026-09-19"
 ---
 
 # State Report Contract — the inventory surface
@@ -65,7 +65,8 @@ reader diff against memory):
 
 Uncertainty ranks *above* known-bad within a slot (Icinga: UNKNOWN before WARNING) — "we cannot
 tell" is more urgent than "we know it is degraded". ≤ 4 deviation clusters total (Cowan 4±1);
-more findings than that are grouped, not flattened.
+more findings than that are grouped, not flattened. **What counts as a deviation is rule 7b** —
+check the set before grouping it.
 
 ### 3. Success is stated, never implied
 
@@ -105,6 +106,64 @@ Every queue gets two thresholds (warn / error, dbt source-freshness model) compu
 **movement** of the queue, never the last read of it. Age renders beside the verdict as evidence:
 `стоит · медиана 35д`. "Stale" (aged past threshold) and "absent" (rule 6) are different states
 and render differently.
+
+**Age renders as words, and only as words.** It may not take the glyph — see rule 7a.
+
+### 7a. Two axes, one glyph column
+
+A slot is judged on two independent axes and they must not share a carrier:
+
+| Axis | Asks | Carrier |
+|---|---|---|
+| **content** | is what we measured a problem? | the glyph ⚠ / ✗, and slot placement |
+| **freshness** | can this reading be trusted? (rule 7) | words in the value cell, never the glyph |
+
+Collapsing them inverts the surface, and the inversion is silent because each half reads fine on
+its own. Measured on the live `engine status`, 2026-09-19:
+
+```
+▍ ✗ **p0**  0 p0-блокеров по инстансу
+▍ **фидбек**  131 из 489 фидбек-записей resolved
+```
+
+The first row is the best state that slot can be in, wearing the blocking glyph — because a
+gh-cache snapshot was 19 hours old. The second carries no glyph at all — because its index file
+was written recently, not because 27 % resolved is fine. **Neither glyph is about what its number
+says**, and nothing on either row tells the reader that. The cause is one enum: `Verdict` is
+`fresh | stale_warn | stale_error | unknown`, every member a statement about *time*, mapped
+straight onto a glyph set `output-formatting.md` §2 defines as content severity.
+
+Rulings:
+
+1. **`Absent` is always a deviation and keeps ⚠.** An instrument that never ran is a fact about
+   the system, not about the reading's age — rule 6 carried into the glyph column.
+2. **A stale reading loses the glyph and gains a words suffix**: `· снимку 19ч`,
+   `· очередь не двигалась 12д`. This is rule 7's own prescription; it was written and then
+   rendered the other way round.
+3. **The glyph otherwise carries content severity**, which needs a field the model does not have.
+   Per rule 11 a display requirement that needs a missing field *specifies* it: `SectionResult`
+   gains `severity: "ok" | "warn" | "error" | None`, default `None`. A section builder sets it
+   only where it has a defensible threshold (`ветки`: a branch requiring action is a deviation;
+   `p0`: zero blockers is `ok`); `None` renders no glyph, which is the honest state for a slot
+   nobody has judged yet. This is **not** a phantom-field charter — it is one optional field whose
+   absent case is specified here, and GH#142 is why that sentence is in this paragraph.
+
+### 7b. Rule 2's budget counts deviations, not stale reads
+
+The deviation set is `Absent` ∪ content-bad. **Staleness is evidence attached to a row, never a
+cluster of its own** — a report where every source happens to be a day old has not acquired four
+findings.
+
+Applied to the live projection the same day: five "deviations" against a cap of four, which
+`over_cluster_budget()` correctly reported and which no grouping could honestly fix — four of the
+five were stale reads of slots with nothing wrong in them. Under this rule the count is **one**
+(CI, unwired). The cluster budget is not breached, and the remedy was never grouping.
+
+Take this as the general caution: **before grouping to fit a budget, check what the budget is
+counting.** Grouping a miscounted set produces a tidy surface that is wrong in a new way.
+(Ruled 2026-09-19 by kosmos-cxo on sage-cto's two `engine status` mentions. His own proposed
+cheapest fix — fold the three unwired slots into one — had expired: by this date only one slot
+was unwired.)
 
 ### 8. The glance layer carries no coordinates
 
@@ -200,6 +259,13 @@ re-occurred 1
 
 ## Changelog
 
+- **v1.1** (2026-09-19) — rules 7a and 7b, after running the printer this contract governs.
+  `engine status` rendered `✗ p0 — 0 p0-блокеров` (the best state a slot can hold, wearing the
+  blocking glyph) and `фидбек 131 из 489` with no glyph at all: one enum carried freshness into a
+  glyph column §2 defines as content severity. 7a splits the axes and specifies the one missing
+  model field; 7b redefines rule 2's deviation set so staleness is evidence, not a cluster —
+  which took the live count from 5 over a cap of 4 to 1, with no grouping. Rule 2 and rule 7 gain
+  pointers; nothing else changed.
 - **v1.0** (2026-08-31) — initial contract. Spec 115; commissioned by forge-chro's 2026-08-31
   handoff, redesigned against the operator's skim-failure on the first state report, five executor
   research passes, and a red-team critique whose findings are folded into rules 4, 5, 6, 8, 10.
