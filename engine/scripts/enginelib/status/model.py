@@ -16,12 +16,40 @@ the distinction, and printers are exactly where this contract has already failed
 
 So absence is a separate type, and `Absent` cannot be constructed without its reason.
 A printer that wants to conflate them has to work at it.
+
+**Nothing here holds a finished sentence.** Every human-readable field is a `Phrase` —
+a catalog key and its parameters — because rule 10 makes the language a property of the
+*surface* while rule 11 makes this model shared by three of them. Those two are
+compatible only if the model states facts and the printer states them in words; when
+`noun` was a `str` the gathering adapter assembled Russian prose, and "the language of
+the surface" was a property of the read-model that no printer could have overridden.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Literal
+
+
+@dataclass(frozen=True)
+class Phrase:
+    """Something to say, not yet said: a catalog key plus what to fill it with.
+
+    The key is resolved by `enginelib.status.words.say` against the operator's
+    catalog. A parameter may itself be a `Phrase`, which is how an optional clause
+    stays translatable instead of arriving pre-worded from the builder.
+
+    `params` is never mutated; it is a plain dict so a template can be filled with
+    `str.format(**params)` without a conversion at every call site.
+    """
+
+    key: str
+    params: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.key.strip():
+            raise ValueError("Phrase.key is mandatory — an empty key words nothing")
 
 
 @dataclass(frozen=True)
@@ -32,21 +60,17 @@ class Count:
     "0 of 237 feedback records resolved", and the work section behind it names the
     file or command that reproduces the number.
 
-    Both fields are required because both were missing from the report that failed.
+    Both phrases are required because both were missing from the report that failed.
     """
 
     value: int
-    noun: str
-    proof: str
+    noun: Phrase
+    proof: Phrase
     of: int | None = None
 
     def __post_init__(self) -> None:
         if self.value < 0:
             raise ValueError(f"Count.value is a cardinality, got {self.value}")
-        if not self.noun.strip():
-            raise ValueError("Count.noun is mandatory — a bare number is rule-5 noise")
-        if not self.proof.strip():
-            raise ValueError("Count.proof is mandatory — every count is one hop from its source")
         if self.of is not None and self.value > self.of:
             raise ValueError(f"Count {self.value} exceeds its denominator {self.of}")
 
@@ -56,16 +80,11 @@ class Absent:
     """The instrument did not run. Distinct from a measured zero, by type.
 
     `reason` is mandatory and is prose for a human: rule 6 rejects a bare em dash as
-    "the greyed-out chart in a new costume".
+    "the greyed-out chart in a new costume". It is a `Phrase` rather than that prose,
+    so the reason a slot is empty is worded on the surface that shows it.
     """
 
-    reason: str
-
-    def __post_init__(self) -> None:
-        if not self.reason.strip():
-            raise ValueError(
-                "Absent.reason is mandatory — '—' with no reason clause is rule-6 forbidden"
-            )
+    reason: Phrase
 
 
 # A slot either measured something or did not. There is no third value, and no
@@ -81,7 +100,7 @@ Verdict = Literal["fresh", "stale_warn", "stale_error", "unknown"]
 #: `state-report.md` v1.1 rules 7a/7b exist because these two were one field. `Verdict`
 #: is a statement about time; `render_terminal._MARK` mapped it onto the glyph set
 #: `output-formatting.md` §2 defines as content severity, so the live render printed
-#: `✗ p0 — 0 p0-блокеров по инстансу` — the best state that slot can hold, wearing the
+#: `✗ p0 — 0 p0 blockers instance-wide` — the best state that slot can hold, wearing the
 #: blocking glyph, because a gh snapshot was 19 hours old. Each half read fine alone,
 #: which is how it survived.
 #:
@@ -101,7 +120,7 @@ class Freshness:
 
     Rule 7 already said age "renders beside the verdict as evidence"; the render did
     the opposite and put it *in* the verdict. This type is what the printer words into
-    a suffix — `· снимку 19ч`, `· очередь не двигалась 12д` — so a stale reading loses
+    a suffix — `· snapshot 19h old`, `· queue has not moved for 12d` — so a stale reading loses
     the glyph and keeps the fact.
 
     Two axes exist today and they are not interchangeable: `snapshot` is how old the
@@ -171,9 +190,13 @@ class SectionResult:
     `name` is the join between the two layers of the render — the glance row and the
     work section carry the same name, in the same order, so the glance block is the
     table of contents (state-report.md §Shape).
+
+    It is a `Phrase`, so the two layers join on the KEY rather than on the worded
+    label: the order of the report is then the same in every language, which is what
+    rule 2's "fixed positions, so a repeat reader can diff against memory" asks for.
     """
 
-    name: str
+    name: Phrase
     measurement: Measurement
     verdict: Verdict = "fresh"
     rows: tuple[object, ...] = ()

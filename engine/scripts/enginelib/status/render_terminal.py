@@ -22,13 +22,21 @@ enum whose every member is a statement about time — onto the glyph set
 best state a slot can hold wore the blocking glyph because a snapshot had aged, while a
 slot at 27 % carried no glyph at all because its index was current. Neither glyph was
 about what its number said, and each row read fine on its own.
+
+**One language, chosen here** (rule 10). Every word this module emits comes from a
+catalog passed in by the caller, defaulting to the canonical English one. Nothing in
+the model is already worded, so a second printer over the same projection can render a
+different language without re-deriving a single phrase — which was impossible while the
+gathering adapter handed over finished prose.
 """
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import timedelta
 
-from enginelib.status.model import Absent, Freshness, Measurement, SectionResult, Severity
+from enginelib.status.model import Absent, Freshness, Measurement, Phrase, SectionResult, Severity
 from enginelib.status.reduce import rank_sections
+from enginelib.status.words import EN, Catalog, say
 
 GLANCE_MAX_CONTENT_LINES = 12
 
@@ -48,17 +56,9 @@ _MARK: dict[Severity, str] = {
 # the split — and it is the one case where the glyph does not come from `severity`.
 _ABSENT_MARK = "⚠ "
 
-# Rule 7's own prescription, rendered the way it was written: age beside the verdict as
-# EVIDENCE. One phrase per axis, because the axis is what makes the two readable as
-# different facts rather than as one number printed twice.
-_STALE_WORDS: dict[str, str] = {
-    "snapshot": "снимку",
-    "movement": "очередь не двигалась",
-}
-_UNKNOWN_WORDS: dict[str, str] = {
-    "snapshot": "снимок не датирован",
-    "movement": "движение не зафиксировано",
-}
+# The separator between a value and each freshness clause. Punctuation, not language:
+# it is the same mark in every catalog, so it stays a constant rather than a phrase.
+_FRESHNESS_SEP = " · "
 
 
 def _row(text: str = "") -> str:
@@ -75,61 +75,89 @@ def mark(section: SectionResult) -> str:
     return _MARK[section.severity]
 
 
-def _age_words(age) -> str:
+def _age_words(age: timedelta, words: Catalog = EN) -> str:
     """An age a human reads at a glance: hours under a day, whole days above it.
 
     Deliberately coarse. The suffix exists so a reader can discount a reading, and
-    `19ч` and `19ч 43м` support that decision identically while the second costs a
+    `19h` and `19h 43m` support that decision identically while the second costs a
     column the glance layer does not have (rule 8: twelve lines, and the gloss wins).
-    Anything under an hour still renders `1ч` rather than `0ч`, because a zero here
+    Anything under an hour still renders `1h` rather than `0h`, because a zero here
     would read as "no age" — the conflation rule 6 forbids, in miniature.
     """
     hours = int(age.total_seconds() // 3600)
     if hours < 24:
-        return f"{max(hours, 1)}ч"
-    return f"{hours // 24}д"
+        return say(Phrase("age.hours", {"count": max(hours, 1)}), words)
+    return say(Phrase("age.days", {"count": hours // 24}), words)
 
 
-def freshness_suffix(freshness: Sequence[Freshness]) -> str:
+def freshness_suffix(freshness: Sequence[Freshness], words: Catalog = EN) -> str:
     """The words a stale reading carries instead of a glyph. Empty when every axis is fresh.
 
     Only non-fresh axes render. A suffix on a current reading is noise: the reader is
     being handed a reason to discount the number, not a timestamp.
+
+    The catalog key carries the axis (`freshness.snapshot.stale`), so a language that
+    needs a different construction per axis gets one, and an axis added to the model
+    fails loudly on a missing key rather than rendering as the other one.
     """
     parts: list[str] = []
     for f in freshness:
         if f.verdict == "fresh":
             continue
         if f.verdict == "unknown":
-            parts.append(_UNKNOWN_WORDS[f.axis])
+            parts.append(say(Phrase(f"freshness.{f.axis}.unknown"), words))
         else:
-            parts.append(f"{_STALE_WORDS[f.axis]} {_age_words(f.age)}")
-    return "".join(f" · {p}" for p in parts)
+            assert f.age is not None  # enforced by Freshness.__post_init__
+            parts.append(
+                say(
+                    Phrase(f"freshness.{f.axis}.stale", {"age": _age_words(f.age, words)}),
+                    words,
+                )
+            )
+    return "".join(f"{_FRESHNESS_SEP}{p}" for p in parts)
 
 
-def quantity(m: Measurement, freshness: Sequence[Freshness] = ()) -> str:
+def quantity(
+    m: Measurement, freshness: Sequence[Freshness] = (), words: Catalog = EN
+) -> str:
     """One measurement as the operator reads it — the ONLY place it is worded.
 
-    It lives in the printer and not in `reduce.py` because a connective ("of" vs
-    "из") is presentation, and rule 10 makes the language a property of the surface.
-    A reduction that returned this string would force every other printer to either
-    re-parse it or re-derive it, which is the exact defect this projection was written
-    to retire: `spec_progress._process_spec` computes four numbers and hands back a
-    formatted row, so no second consumer can reach them.
+    That claim used to be false. `Count.noun` was a `str` assembled in the gathering
+    adapter, so half of every value cell arrived pre-worded and this function only
+    supplied the connective; a second printer could not have changed the language
+    without re-deriving the noun. The model now carries `Phrase`, and the whole cell —
+    connective, noun, denominator, freshness clause — is worded here and nowhere else.
 
-    The freshness suffix is appended here for the same reason (rule 7a, B3): this is
-    already the one function where wording lives, so a second printer inherits the
-    split instead of re-deriving it — and a builder that handed over a finished phrase
-    would put presentation back in the gathering layer.
+    The assembly itself is a template rather than an f-string because word order is
+    not universal: a catalog that needs the denominator elsewhere in the cell moves it
+    in `quantity.measured`, without a second printer being rewritten.
     """
     if isinstance(m, Absent):
-        return f"— {m.reason}"
-    denom = f" из {m.of}" if m.of is not None else ""
-    return f"{m.value}{denom} {m.noun}{freshness_suffix(freshness)}"
+        return say(Phrase("quantity.absent", {"reason": m.reason}), words)
+    denominator = (
+        "" if m.of is None else say(Phrase("quantity.denominator", {"of": m.of}), words)
+    )
+    return say(
+        Phrase(
+            "quantity.measured",
+            {
+                "value": m.value,
+                "denominator": denominator,
+                "noun": m.noun,
+                "freshness": freshness_suffix(freshness, words),
+            },
+        ),
+        words,
+    )
 
 
 def glance(
-    speaker: str, emoji: str, surface: str, date: str, sections: Sequence[SectionResult]
+    speaker: str,
+    emoji: str,
+    surface: Phrase,
+    date: str,
+    sections: Sequence[SectionResult],
+    words: Catalog = EN,
 ) -> str:
     """The ≤12-line block. Ranked by urgency, never by input order.
 
@@ -142,9 +170,10 @@ def glance(
     body: list[str] = []
     for s in ranked:
         glyph = mark(s)
-        body.append(f"{glyph}**{s.name}**  {quantity(s.measurement, s.freshness)}".rstrip())
+        name = say(s.name, words)
+        body.append(f"{glyph}**{name}**  {quantity(s.measurement, s.freshness, words)}".rstrip())
 
-    head = f"{emoji} **{speaker} · {surface} · {date}**"
+    head = f"{emoji} **{speaker} · {say(surface, words)} · {date}**"
     lines = [_row(head), _row()] + [_row(b) for b in body]
     return "\n".join(lines)
 
@@ -159,7 +188,7 @@ def glance_overflows(sections: Sequence[SectionResult]) -> bool:
     return len(sections) > GLANCE_MAX_CONTENT_LINES
 
 
-def work(sections: Sequence[SectionResult]) -> str:
+def work(sections: Sequence[SectionResult], words: Catalog = EN) -> str:
     """The full layer: one section per glance row, same names, same order.
 
     Every measured section ends in its one-hop proof path (rule 5); every unmeasured
@@ -168,11 +197,11 @@ def work(sections: Sequence[SectionResult]) -> str:
     """
     out: list[str] = []
     for s in rank_sections(sections):
-        out.append(f"## {s.name}")
+        out.append(f"## {say(s.name, words)}")
         m = s.measurement
-        out.append(quantity(m, s.freshness))
+        out.append(quantity(m, s.freshness, words))
         if not isinstance(m, Absent):
             out.append("")
-            out.append(f"→ пруф: {m.proof}")
+            out.append(say(Phrase("work.proof", {"proof": m.proof}), words))
         out.append("")
     return "\n".join(out).rstrip() + "\n"

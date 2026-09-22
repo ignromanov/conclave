@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from enginelib.status.model import Phrase
 from enginelib.status.reduce import (
     MissingShard,
     Shard,
@@ -33,7 +34,7 @@ def test_a_key_that_saw_nothing_is_not_a_key_that_never_looked():
     tell them apart, "the queue is empty" and "we never looked" print identically.
     """
     looked = combine_shards([_shard("a")])
-    never = combine_shards([MissingShard(key="a", reason="снимок не снят")])
+    never = combine_shards([MissingShard(key="a", reason=Phrase("shard.no_snapshot"))])
 
     assert looked.total == 0 and not looked.nothing_reported
     assert never.total == 0 and never.nothing_reported
@@ -65,7 +66,7 @@ def test_freshness_is_the_oldest_member_never_the_newest():
 
 
 def test_any_missing_key_makes_the_total_a_floor():
-    m = combine_shards([_shard("a", "r#1"), MissingShard(key="b", reason="нет снимка")])
+    m = combine_shards([_shard("a", "r#1"), MissingShard(key="b", reason=Phrase("shard.no_snapshot"))])
     assert m.is_floor
     assert m.total == 1
     assert [s.key for s in m.missing] == ["b"]
@@ -82,9 +83,13 @@ def test_an_empty_mosaic_reports_nothing_rather_than_zero():
 
 
 def test_missing_shard_refuses_a_blank_reason():
-    """Same contract as Absent.reason: a gap with no words is rule-6 forbidden."""
-    with pytest.raises(ValueError, match="reason is mandatory"):
-        MissingShard(key="a", reason="  ")
+    """Same contract as Absent.reason: a gap with no words is rule-6 forbidden.
+
+    The mandate moved into `Phrase` when the reason stopped being prose: a key that
+    words nothing cannot be constructed, so no shard, section or count can carry one.
+    """
+    with pytest.raises(ValueError, match="key is mandatory"):
+        MissingShard(key="a", reason=Phrase("  "))
 
 
 @pytest.mark.parametrize(

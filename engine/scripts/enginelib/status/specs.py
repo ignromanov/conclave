@@ -50,14 +50,16 @@ AcceptanceClass = Literal["measured", "no_checkboxes", "no_acceptance", "unowned
 #: briefing's plan render is the same idea spelled a second time, and it drifted.
 UNCOMPUTABLE: frozenset[str] = frozenset({"no_checkboxes", "no_acceptance", "unowned"})
 
-#: Human wording per class, for the one-hop proof string. Russian per rule 10: these
-#: are prose, and the identifiers beside them (`spec_id`) stay as written.
-CLASS_NOUN: dict[str, str] = {
-    "measured": "вычислимо",
-    "no_checkboxes": "без чекбоксов",
-    "no_acceptance": "без блока приёмки",
-    "unowned": "без поля владельца",
-}
+#: The partition's classes in reading order, for a printer that renders every one of
+#: them. Wording used to live here as a Russian `CLASS_NOUN` map, which put display
+#: prose in the pure core and fixed the language of every surface downstream; the words
+#: are now in `status.words` under `proof.specs`, and this module hands over counts.
+CLASS_ORDER: tuple[AcceptanceClass, ...] = (
+    "measured",
+    "no_checkboxes",
+    "no_acceptance",
+    "unowned",
+)
 
 
 @dataclass(frozen=True)
@@ -149,17 +151,20 @@ class SpecTally:
     def uncomputable(self) -> int:
         return sum(n for k, n in self.by_class.items() if k in UNCOMPUTABLE)
 
-    def proof_breakdown(self) -> str:
-        """The partition in words, for `Count.proof` — every class, zeros included.
+    def proof_breakdown(self) -> dict[str, int]:
+        """The partition as numbers, for `Count.proof` — every class, zeros included.
 
-        Zeros render because this is an inventory surface: rule 3 states success in
-        words, and "0 без блока приёмки" is the sentence that tells a reader the
-        instrument looked and found none, rather than that it did not look.
+        Zeros are present because this is an inventory surface: rule 3 states success
+        in words, and "0 without an acceptance block" is the sentence that tells a
+        reader the instrument looked and found none, rather than that it did not look.
+        A class omitted here cannot be stated by any printer, so the omission would be
+        silent on every surface at once.
+
+        Returns counts rather than a finished clause: the clause is one phrase in the
+        catalog (`proof.specs`), which is what lets its wording, its separators and its
+        order change per language without this module knowing any of them.
         """
-        return " · ".join(
-            f"{self.by_class.get(k, 0)} {CLASS_NOUN[k]}"
-            for k in ("measured", "no_checkboxes", "no_acceptance", "unowned")
-        )
+        return {k: self.by_class.get(k, 0) for k in CLASS_ORDER}
 
 
 def tally(rows: Iterable[SpecAcceptance]) -> SpecTally:

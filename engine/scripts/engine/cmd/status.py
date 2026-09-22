@@ -43,13 +43,15 @@ def _freshness(axis, policy, last_movement, now):
 def _handoffs_section(repo_root):
     """Open handoffs, instance-wide, with staleness from the newest MOVEMENT."""
     from briefing.scans import interrupted
-    from enginelib.status.model import Absent, Count, SectionResult, Staleness
+    from enginelib.status.model import Absent, Count, Phrase, SectionResult, Staleness
 
     handoffs_dir = repo_root / "ops" / "handoffs"
     if not handoffs_dir.is_dir():
         return SectionResult(
-            name="хендофы",
-            measurement=Absent(reason=f"каталога нет: {handoffs_dir.name}/"),
+            name=Phrase("slot.handoffs"),
+            measurement=Absent(
+                reason=Phrase("absent.handoffs_dir", {"dir": handoffs_dir.name})
+            ),
             verdict="unknown",
         )
 
@@ -64,11 +66,11 @@ def _handoffs_section(repo_root):
     policy = Staleness(warn_after=timedelta(days=7), error_after=timedelta(days=30))
     fresh = _freshness("movement", policy, newest, datetime.now(UTC))
     return SectionResult(
-        name="хендофы",
+        name=Phrase("slot.handoffs"),
         measurement=Count(
             value=len(rows),
-            noun="хендофов открыто",
-            proof="ops/handoffs/*.md — frontmatter status не в терминальном наборе",
+            noun=Phrase("noun.handoffs"),
+            proof=Phrase("proof.handoffs"),
         ),
         verdict=fresh.verdict,
         # No `severity`: how many handoffs are open is not a number this projection has
@@ -88,24 +90,26 @@ def _feedback_section(repo_root):
     `resolved` inside the index asks for the one status that register cannot hold.
     `feedback.census` owns the ledger's three row shapes; this adapter only renders.
     """
-    from enginelib.status.model import Absent, Count, SectionResult
+    from enginelib.status.model import Absent, Count, Phrase, SectionResult
     from feedback.census import PROOF, read_intake
 
     feedback_root = repo_root / "ops" / "feedback"
     if not (feedback_root / "_index" / "index.jsonl").is_file():
         return SectionResult(
-            name="фидбек",
-            measurement=Absent(reason="индекс не собран (ops/feedback/_index/index.jsonl нет)"),
+            name=Phrase("slot.feedback"),
+            measurement=Absent(reason=Phrase("absent.feedback_index")),
             verdict="unknown",
         )
 
     intake = read_intake(feedback_root)
     return SectionResult(
-        name="фидбек",
+        name=Phrase("slot.feedback"),
         measurement=Count(
             value=intake.resolved, of=intake.total,
-            noun="фидбек-записей resolved",
-            proof=PROOF,
+            noun=Phrase("noun.feedback"),
+            # `census.PROOF` is two paths and a set operator — nothing to translate,
+            # and copying it into each catalog is how it would drift from its producer.
+            proof=Phrase("proof.literal", {"text": PROOF}),
         ),
         # A real zero over a real population is news; the old `resolved == 0` trigger
         # fired on the defect itself and so warned every single run.
@@ -113,7 +117,7 @@ def _feedback_section(repo_root):
         # This condition has always been about the CONTENT — nothing resolved, out of a
         # real population — and it was expressed as `stale_warn` only because until
         # rules 7a/7b there was one enum for both axes. Moving it is a re-typing of an
-        # existing, already-defended judgment, not a new threshold: what `131 из 489`
+        # existing, already-defended judgment, not a new threshold: what `131 of 489`
         # should be is genuinely unknown and stays `None`, per the ruling's own
         # "add thresholds one at a time with evidence; do not backfill".
         severity="warn" if intake.total and intake.resolved == 0 else None,
@@ -154,6 +158,7 @@ def _gh_sections(repo_root):
     from briefing.scans import p0, queue
     from briefing.scans._gh_cache import captured_at
     from enginelib.advisors import lifecycle_advisors
+    from enginelib.status.model import Phrase
     from enginelib.status.reduce import MissingShard, Shard
 
     queue_shards: list = []
@@ -168,7 +173,7 @@ def _gh_sections(repo_root):
             # missing cache and a cache holding zero items, so the file's own stamp is
             # what separates them — which is why this branch reads the stamp first and
             # does not call collect() at all.
-            reason = f"снимок не снят: agent-memory/gh-cache/{advisor}.md"
+            reason = Phrase("shard.no_snapshot", {"advisor": advisor})
             queue_shards.append(MissingShard(key=advisor, reason=reason))
             p0_shards.append(MissingShard(key=advisor, reason=reason))
             continue
@@ -193,7 +198,7 @@ def _gh_sections(repo_root):
 
     return (
         _mosaic_section(
-            name="очередь", noun="issue открыто по инстансу",
+            name=Phrase("slot.queue"), noun=Phrase("noun.queue", {"floor": ""}),
             shards=queue_shards, newest_move=newest_move,
             # No threshold. How many issues are open is a number, not a judgment, and
             # inventing a line above which it becomes a warning would be the same error
@@ -201,12 +206,12 @@ def _gh_sections(repo_root):
             judge=lambda _total: None,
         ),
         _mosaic_section(
-            name="p0", noun="p0-блокеров по инстансу",
+            name=Phrase("slot.p0"), noun=Phrase("noun.p0", {"floor": ""}),
             shards=p0_shards, newest_move=newest_move,
             # The one threshold this slot self-evidently has: a p0 is by definition a
             # blocker, so any is `error` and none is `ok`. Stating the zero rather than
             # leaving it `None` is rule 3 — success in words — and it is the row that
-            # rendered `✗ 0 p0-блокеров` for as long as freshness owned the glyph.
+            # rendered `✗ 0 p0 blockers` for as long as freshness owned the glyph.
             judge=lambda total: "error" if total else "ok",
         ),
     )
@@ -231,21 +236,23 @@ def _mosaic_section(*, name, noun, shards, newest_move, judge):
     else, and a `if name == "p0"` here would put a display judgment inside the
     assembler where no printer could see it.
     """
-    from enginelib.status.model import Absent, Count, SectionResult, Staleness
+    from enginelib.status.model import Absent, Count, Phrase, SectionResult, Staleness
     from enginelib.status.reduce import combine_shards, worst_verdict
 
     mosaic = combine_shards(shards)
     if mosaic.nothing_reported:
-        missing = ", ".join(s.key for s in mosaic.missing) or "ростер пуст"
+        keys: object = ", ".join(s.key for s in mosaic.missing)
+        if not keys:
+            keys = Phrase("absent.roster_empty")
         return SectionResult(
             name=name,
-            measurement=Absent(reason=f"ни один снимок не снят ({missing})"),
+            measurement=Absent(reason=Phrase("absent.mosaic_none", {"keys": keys})),
             verdict="unknown",
         )
 
     now = datetime.now(UTC)
     # Both axes, kept as evidence rather than collapsed into the glyph. This is the pair
-    # that produced `✗ p0 — 0 p0-блокеров`: `worst_verdict` over two STALENESS readings,
+    # that produced `✗ p0 — 0 p0 blockers`: `worst_verdict` over two STALENESS readings,
     # mapped onto a glyph set that means content severity.
     freshness = (
         _freshness(
@@ -267,18 +274,33 @@ def _mosaic_section(*, name, noun, shards, newest_move, judge):
         # the glyph would be saying it a second time, and it is not a content verdict.
         verdicts.append("unknown")
 
-    floor = " (пол, не итог)" if mosaic.is_floor else ""
-    stamp = mosaic.oldest.strftime("%H:%MZ") if mosaic.oldest else "—"
-    proof = (
-        f"union agent-memory/gh-cache/{{{','.join(mosaic.reporting)}}}.md — "
-        f"{len(mosaic.reporting)} снимков, старейший {stamp}"
+    # The floor is stated where the number is READ, so it is a parameter of the noun
+    # rather than a string concatenated onto it: a catalog that needs the clause
+    # elsewhere in the cell — or a different clause entirely — moves it in `suffix.floor`.
+    noun = Phrase(
+        noun.key,
+        {**noun.params, "floor": Phrase("suffix.floor") if mosaic.is_floor else ""},
     )
+    stamp = mosaic.oldest.strftime("%H:%MZ") if mosaic.oldest else "—"
+    tail: object = ""
     if mosaic.missing:
-        proof += "; без снимка: " + ", ".join(s.key for s in mosaic.missing)
+        tail = Phrase(
+            "proof.mosaic_missing",
+            {"keys": ", ".join(s.key for s in mosaic.missing)},
+        )
+    proof = Phrase(
+        "proof.mosaic",
+        {
+            "keys": ",".join(mosaic.reporting),
+            "count": len(mosaic.reporting),
+            "stamp": stamp,
+            "tail": tail,
+        },
+    )
 
     return SectionResult(
         name=name,
-        measurement=Count(value=mosaic.total, noun=noun + floor, proof=proof),
+        measurement=Count(value=mosaic.total, noun=noun, proof=proof),
         verdict=worst_verdict(*verdicts),
         severity=judge(mosaic.total),
         freshness=freshness,
@@ -527,19 +549,14 @@ def _branch_facts(root, prs, remote_heads):
 def _branches_section(root):
     """The branch slot: local branches joined against PR state, ruled on, counted."""
     from enginelib.status.branches import join, needs_action, section_severity, section_verdict
-    from enginelib.status.model import Absent, Count, SectionResult
+    from enginelib.status.model import Absent, Count, Phrase, SectionResult
 
-    name = "ветки"
+    name = Phrase("slot.branches")
     prs = _gh_pull_requests(root)
     if prs is None:
         return SectionResult(
             name=name,
-            measurement=Absent(
-                reason=(
-                    "gh не ответил — без состояния PR join не существует, а каждый "
-                    "оставшийся сигнал Step 4 называет неверным поодиночке"
-                )
-            ),
+            measurement=Absent(reason=Phrase("absent.branches_gh")),
             verdict="unknown",
         )
 
@@ -548,23 +565,24 @@ def _branches_section(root):
     if facts is None:
         return SectionResult(
             name=name,
-            measurement=Absent(reason=f"не git-репозиторий или нет дефолтной ветки: {root}"),
+            measurement=Absent(reason=Phrase("absent.branches_git", {"root": root})),
             verdict="unknown",
         )
 
     rows = join(facts, datetime.now(UTC))
-    proof = (
-        f"git for-each-ref refs/heads × gh pr list --state all --limit {_GH_PR_LIMIT} "
-        "× git ls-remote --heads origin"
+    proof = Phrase(
+        "proof.branches",
+        {
+            "limit": _GH_PR_LIMIT,
+            "tail": "" if remote_heads is not None else Phrase("proof.branches_no_remote"),
+        },
     )
-    if remote_heads is None:
-        proof += " (ls-remote не ответил — состояние веток на сервере не снято)"
 
     return SectionResult(
         name=name,
         measurement=Count(
             value=len(needs_action(rows)), of=len(rows),
-            noun="веток требуют действия", proof=proof,
+            noun=Phrase("noun.branches"), proof=proof,
         ),
         verdict=section_verdict(rows),
         # The slot rule 7a names as having a defensible threshold: a branch requiring
@@ -602,15 +620,15 @@ def _specs_section(repo_root):
     reason naming the gap, never a `0` that reads like an empty corpus.
     """
     from briefing.scans import spec_progress
-    from enginelib.status.model import Absent, Count, SectionResult
+    from enginelib.status.model import Absent, Count, Phrase, SectionResult
     from enginelib.status.specs import tally
 
-    name = "спеки"
+    name = Phrase("slot.specs")
     specs_root = repo_root / "ops" / "specs"
     if not specs_root.is_dir():
         return SectionResult(
             name=name,
-            measurement=Absent(reason=f"каталога нет: ops/{specs_root.name}/"),
+            measurement=Absent(reason=Phrase("absent.specs_dir", {"dir": specs_root.name})),
             verdict="unknown",
         )
 
@@ -625,9 +643,9 @@ def _specs_section(repo_root):
         return SectionResult(
             name=name,
             measurement=Absent(
-                reason=(
-                    f"сканер вернул {counted.total} из {on_disk} спек на диске — "
-                    "доля считалась бы по необъявленному подмножеству"
+                reason=Phrase(
+                    "absent.specs_short_scan",
+                    {"scanned": counted.total, "on_disk": on_disk},
                 )
             ),
             verdict="unknown",
@@ -638,8 +656,10 @@ def _specs_section(repo_root):
         measurement=Count(
             value=counted.measured,
             of=counted.total,
-            noun="спек с вычислимой приёмкой",
-            proof=f"{spec_progress.PROOF}: {counted.proof_breakdown()}",
+            noun=Phrase("noun.specs"),
+            # The partition arrives as counts; `proof.specs` is where it becomes a
+            # clause, so its wording, separators and order are the surface's to choose.
+            proof=Phrase("proof.specs", counted.proof_breakdown()),
         ),
         # No staleness axis, on purpose. Rule 7's thresholds are for a QUEUE, and a
         # spec that has not moved in a month is usually one that is finished; a
@@ -653,9 +673,9 @@ def _specs_section(repo_root):
 # Slots the projection owes and does not yet gather. Named, with the reason a human
 # can act on — an unwired slot that renders `0` is the lie rule 6 forbids, and one
 # that renders nothing at all is worse.
-_NOT_YET_WIRED = {
-    "CI": "не подключено — statusCheckRollup, ничего его не проецирует (plan 057 T11)",
-}
+_NOT_YET_WIRED: tuple[tuple[str, str], ...] = (
+    ("slot.ci", "absent.ci"),
+)
 
 
 def _status(args) -> int:
@@ -663,9 +683,17 @@ def _status(args) -> int:
 
     from enginelib.paths import consumer_git_cwd, project_root
     from enginelib.paths import repo_root as data_root
-    from enginelib.status.model import Absent, SectionResult
+    from enginelib.roster import roster_get
+    from enginelib.status.model import Absent, Phrase, SectionResult
     from enginelib.status.reduce import MAX_DEVIATION_CLUSTERS, deviations, over_cluster_budget
     from enginelib.status.render_terminal import glance, glance_overflows, work
+    from enginelib.status.words import catalog_for, say
+
+    # Rule 10: the language is instance configuration, and English is what an instance
+    # that has not configured one gets. The read happens HERE, in the adapter, because
+    # it is a file read — and it happens once, so every printed phrase in one run comes
+    # from one catalog rather than from wherever each builder happened to look.
+    words = catalog_for(roster_get("project.language", "English"))
 
     args._runlog_verb = "status"
     args._runlog_args = f"scope={'advisor' if args.advisor else 'instance'}"
@@ -682,16 +710,17 @@ def _status(args) -> int:
         _branches_section(Path(consumer_git_cwd() or project_root())),
     ]
     sections += [
-        SectionResult(name=n, measurement=Absent(reason=r), verdict="unknown")
-        for n, r in _NOT_YET_WIRED.items()
+        SectionResult(
+            name=Phrase(slot), measurement=Absent(reason=Phrase(reason)), verdict="unknown"
+        )
+        for slot, reason in _NOT_YET_WIRED
     ]
 
     today = datetime.now().strftime("%d.%m")
-    print(glance("engine", "🦉", "состояние", today, sections))
+    print(glance("engine", "🦉", Phrase("surface.state"), today, sections, words))
     if glance_overflows(sections):
         print(
-            f"[status] WARNING: {len(sections)} секций при потолке в 12 строк — "
-            "их надо группировать, а не резать",
+            say(Phrase("warn.glance_overflow", {"count": len(sections)}), words),
             file=sys.stderr,
         )
     if over_cluster_budget(sections):
@@ -700,13 +729,18 @@ def _status(args) -> int:
         # projection is the surface it was written for. Wiring it reports a violation
         # that predates T7: five deviations were already over the cap of four.
         print(
-            f"[status] WARNING: {len(deviations(sections))} отклонений при кластерном "
-            f"бюджете {MAX_DEVIATION_CLUSTERS} (rule 2) — их надо группировать",
+            say(
+                Phrase(
+                    "warn.cluster_budget",
+                    {"count": len(deviations(sections)), "cap": MAX_DEVIATION_CLUSTERS},
+                ),
+                words,
+            ),
             file=sys.stderr,
         )
     if not args.glance:
         print()
-        print(work(sections))
+        print(work(sections, words))
     return 0
 
 

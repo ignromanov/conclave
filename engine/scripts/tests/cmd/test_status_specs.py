@@ -11,9 +11,12 @@ import pytest
 
 from briefing.scans import ScanCtx, spec_progress
 from engine.cmd import status as status_cmd
-from enginelib.status.model import Absent, Count
+from enginelib.status.model import Absent, Count, Phrase
 from enginelib.status.render_terminal import glance, quantity, work
-from enginelib.status.specs import SpecAcceptance, SpecTally, classify, tally
+from enginelib.status.specs import CLASS_ORDER, SpecAcceptance, SpecTally, classify, tally
+from enginelib.status.words import say
+
+SURFACE = Phrase("surface.state")
 
 # --- the pure partition -----------------------------------------------------------
 
@@ -63,18 +66,27 @@ def test_a_spec_in_no_class_is_refused_rather_than_lost():
 
 
 def test_the_proof_breakdown_renders_zero_classes_rather_than_omitting_them():
-    """Rule 3 on an inventory surface: `0 без блока приёмки` is the answer, not silence.
+    """Rule 3 on an inventory surface: `0 without an acceptance block` is the answer,
+    not silence.
 
-    Mutation: filter the zero classes out of `proof_breakdown` and this reddens.
+    Mutation: filter the zero classes out of `proof_breakdown` and this reddens — a
+    class the partition omits cannot be stated by any printer, so the omission would
+    be silent on every surface at once rather than on this one.
     """
     counted = tally([
         SpecAcceptance(spec_id="1", title="a", klass="measured",
                        owner_field="owner", done=1, total=2),
     ])
     breakdown = counted.proof_breakdown()
-    assert "1 вычислимо" in breakdown
-    assert "0 без блока приёмки" in breakdown
-    assert "0 без поля владельца" in breakdown
+    assert set(breakdown) == set(CLASS_ORDER), "a class dropped out of the partition"
+    assert breakdown["measured"] == 1
+    assert breakdown["no_acceptance"] == 0
+    assert breakdown["unowned"] == 0
+    # ...and the zeros survive the trip to the surface, which is where rule 3 applies.
+    clause = say(Phrase("proof.specs", breakdown))
+    assert "1 computable" in clause
+    assert "0 without an acceptance block" in clause
+    assert "0 without an owner field" in clause
 
 
 def test_only_measured_specs_contribute_checkboxes():
@@ -166,10 +178,11 @@ def test_the_row_reports_reach_not_completion(corpus):
     m = section.measurement
     assert isinstance(m, Count)
     assert (m.value, m.of) == (1, 4)
-    assert "1 вычислимо" in m.proof
-    assert "1 без чекбоксов" in m.proof
-    assert "1 без блока приёмки" in m.proof
-    assert "1 без поля владельца" in m.proof
+    clause = say(m.proof)
+    assert "1 computable" in clause
+    assert "1 without checkboxes" in clause
+    assert "1 without an acceptance block" in clause
+    assert "1 without an owner field" in clause
 
 
 def test_an_uncomputable_spec_makes_the_verdict_unknown(corpus):
@@ -192,18 +205,18 @@ def _assert_reads_as_absent(section):
 
     Asserted on the rendered QUANTITY rather than by grepping the block for a zero.
     A substring search over the whole render cannot tell the row's value from prose
-    inside the reason — "сканер вернул 0 из 4" legitimately contains a zero, and the
+    inside the reason — "the scanner returned 0 of 4" legitimately contains a zero, and the
     grep version of this check failed on a correct render. An instrument that reddens
     on the sentence explaining the gap is not measuring the gap.
     """
     assert isinstance(section.measurement, Absent), "the slot rendered a number"
-    assert section.measurement.reason.strip()
+    assert say(section.measurement.reason).strip()
     assert section.verdict == "unknown"
     rendered = quantity(section.measurement)
     assert rendered.startswith("— "), rendered
-    assert "спек с вычислимой приёмкой" not in rendered, "a Count's noun reached an Absent row"
-    assert f"**{section.name}**  {rendered}" in glance(
-        "engine", "🦉", "состояние", "15.09", [section]
+    assert say(Phrase("noun.specs")) not in rendered, "a Count's noun reached an Absent row"
+    assert f"**{say(section.name)}**  {rendered}" in glance(
+        "engine", "🦉", SURFACE, "15.09", [section]
     )
 
 
@@ -237,7 +250,9 @@ def test_a_scan_that_reaches_fewer_specs_than_the_disk_holds_refuses_to_report_a
     monkeypatch.setattr(spec_progress, "collect", lambda ctx: [])
     section = status_cmd._specs_section(corpus)
     _assert_reads_as_absent(section)
-    assert "0 из 4" in section.measurement.reason, "the reason must name the gap it found"
+    assert "0 of 4" in say(section.measurement.reason), (
+        "the reason must name the gap it found"
+    )
 
 
 def test_a_partial_scan_is_refused_too_not_silently_scaled(corpus, monkeypatch):
@@ -247,18 +262,18 @@ def test_a_partial_scan_is_refused_too_not_silently_scaled(corpus, monkeypatch):
     monkeypatch.setattr(spec_progress, "collect", lambda ctx: real(ctx)[:3])
     section = status_cmd._specs_section(corpus)
     assert isinstance(section.measurement, Absent)
-    assert "3 из 4" in section.measurement.reason
+    assert "3 of 4" in say(section.measurement.reason)
 
 
 def test_the_wired_specs_slot_left_the_unwired_map():
     """A slot cannot be both wired and declared unwired; the pair would drift."""
-    assert "спеки" not in status_cmd._NOT_YET_WIRED
+    assert "slot.specs" not in [slot for slot, _ in status_cmd._NOT_YET_WIRED]
 
 
 def test_the_work_layer_carries_the_partition_one_hop_from_the_glance(corpus):
     """Rule 5: every count names the file or command that reproduces it."""
     section = status_cmd._specs_section(corpus)
     body = work([section])
-    assert "## спеки" in body
+    assert f"## {say(Phrase('slot.specs'))}" in body
     assert "ops/specs/*/spec.md" in body
-    assert "без поля владельца" in body
+    assert "without an owner field" in body
