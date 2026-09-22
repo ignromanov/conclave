@@ -88,6 +88,55 @@ Each executor agent-def (`agents/exec-<chosen-name>-<role>.md`) must:
 
 Every executor response MUST start with `<!-- exec:<chosen-name> v1 -->` HTML comment for tracing.
 
+### Delivery is a file, and the caller names it
+
+A long final message is not a delivery mechanism. Four consecutive dispatches returned reports
+truncated mid-sentence, each costing a round-trip to recover the tail, and the one that worked
+was the one told to put its result on disk (#185). Six agents in a separate run returned empty
+and all six recovered the moment an output path was named for them.
+
+So, per dispatch:
+
+- **The caller names the output path in the brief.** Not "write it somewhere" — the exact path.
+  A destination the executor invents is a destination the caller has to go looking for.
+- **The executor writes the artefact there and returns a path plus a one-line verdict**, not the
+  artefact. Anything over roughly two thousand words belongs in the file in every case.
+- **Create the file with whatever tool the dispatch actually granted.** Five of the seven shipped
+  executors are granted neither `Write` nor `Edit`; the only tools all seven share are `Read`,
+  `Grep` and `Bash`, and none of those three is a file-writing tool by name. A rule written
+  as "use `Write`" is a rule most executors cannot follow. Check the granted set, do not assume
+  it. `test_a_contract_prescribes_tools_the_agent_has.py` fails this contract if it ever
+  prescribes a tool the agent definitions withhold.
+
+**There is no message channel out of an executor.** No shipped executor definition grants
+`SendMessage`, `ListAgents` or any other messaging tool — measured across all seven `tools:`
+lists — so an executor cannot message its caller, and a caller cannot recover a lost tail by
+asking for it. That asymmetry is why the file is not a convenience: it is the only durable
+return path an executor has. Messaging is the *caller's* capability and belongs to the peer
+protocol in `session-lifecycle.md`, never to the dispatch.
+
+### Wait or own the file — never both
+
+If the caller is going to read a file the executor writes, the caller does not also write it,
+and does not poll for it while the executor is still running. Pick one owner per path for the
+duration of the dispatch. A poll-then-write pattern races, and the loser is silent: the file
+exists, is the wrong version, and nothing reports a conflict.
+
+### A dispatch that may run long checkpoints to disk
+
+The harness terminates a dispatch that exceeds its ceiling, and a terminated dispatch returns
+nothing at all — not a partial result, not an explanation. Work whose length is uncertain writes
+its partial state to the named output path as it goes, so that a termination costs the tail
+rather than the whole run. Do not discover the ceiling by hitting it; assume it exists and
+write early.
+
+### DONE means the tree says so
+
+An executor reporting DONE states the commit, or states plainly what it left uncommitted.
+`git status --short` is the check, and it is cheap. A report of completion over a dirty tree is
+the single failure mode that survives every other rule here, because the caller has no way to
+see it and the next session inherits the mess without knowing it was left.
+
 ## Anti-patterns
 
 - Executor participating in meetings → REJECTED (it's an advisor if it does)
