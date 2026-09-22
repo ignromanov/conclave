@@ -272,13 +272,19 @@ fi
 gh pr list --state all --limit 300 --json number,state,headRefName \
   --jq '.[] | "\(.headRefName)\t#\(.number):\(.state)"' | sort -u > /tmp/pr-by-branch.tsv
 
-# Which branches have a worktree checked out
-git worktree list --porcelain | awk '/^branch /{sub("refs/heads/","",$2); print $2}' | sort > /tmp/wt-branches.txt
+# Which branches have a worktree checked out.
+# The awk field references below are written in the parenthesised form `$(1)`, `$(2)`. A command
+# body is a template: before it reaches the session, a dollar sign followed by a bare digit is
+# replaced by an argument of the invocation, so `/conclave:start --advisor <id>` rewrote the
+# comparison below into `<id>==b` — always false, and awk accepts it without complaint (GH#313).
+# The parenthesised form is the identical field reference to awk and carries no token the
+# expander recognises. This comment avoids the bare form for the same reason.
+git worktree list --porcelain | awk '/^branch /{sub("refs/heads/","",$(2)); print $(2)}' | sort > /tmp/wt-branches.txt
 
 git for-each-ref --format='%(refname:short)' refs/heads | while read -r BRANCH; do
   [ "$BRANCH" = "$DEFAULT_BRANCH" ] && continue
   LEFT=$(git cherry "$BASE" "$BRANCH" 2>/dev/null | grep -c '^+')
-  PR=$(awk -F'\t' -v b="$BRANCH" '$1==b{printf "%s%s", sep, $2; sep=","}' /tmp/pr-by-branch.tsv)
+  PR=$(awk -F'\t' -v b="$BRANCH" '$(1)==b{printf "%s%s", sep, $(2); sep=","}' /tmp/pr-by-branch.tsv)
   WT=$(grep -qxF "$BRANCH" /tmp/wt-branches.txt && echo worktree || echo bare)
   AGE=$(git log -1 --format=%cr "$BRANCH" 2>/dev/null)
   printf '%-46s %-9s unshipped=%-4s pr=%-22s %s\n' "$BRANCH" "$WT" "$LEFT" "${PR:-none}" "$AGE"
