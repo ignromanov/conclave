@@ -69,7 +69,23 @@ def is_shipped(target: Path) -> tuple[bool, str]:
     """(shipped, snapshot) for one absolute target path.
 
     shipped=False means the working tree disagrees with the ref about this file, so a
-    verdict read off disk is evidence about unshipped work."""
+    verdict read off disk is evidence about unshipped work.
+
+    The target is resolved before anything else. Under the blessed deployment shape #1
+    `.claude` is a symlink into `.conclave/`, so a predicate path spelled through it sits
+    under the product checkout while the file itself lives in the DATA repo. `repo_of`
+    correctly named the DATA repo — that part was never wrong — but git was then handed the
+    logical path and refused it outright, `fatal: ... is outside repository`, rc=128. Any
+    non-zero return code below is folded into this function's domain answer, so a call that
+    could not run reported "this did not ship": six landed items were HELD forever, each
+    sweep telling the operator to land work already in `origin/master` (#323).
+
+    A repo-relative pathspec was tried here as the stronger form — one cannot be outside its
+    own repository — and mutation testing showed it changes nothing that any execution can
+    reach: `repo_of` derives the repo from this very path, so after the resolve the toplevel
+    is always an ancestor and the two spellings are the same spelling. It was removed rather
+    than kept as protection against a case that cannot occur."""
+    target = target.resolve()
     repo = repo_of(target.parent if target.parent.is_dir() else target.parent.parent)
     if repo is None:
         return True, UNTRACKED_TREE
