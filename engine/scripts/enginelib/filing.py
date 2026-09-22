@@ -9,7 +9,8 @@ Contracts:
     file_decision(opts: DecisionOpts) -> str
     file_handoff(opts: HandoffOpts) -> str
     close_session(opts: CloseSessionOpts) -> str
-    emission_gate(ai_root, advisor, session_id, today) -> str | None
+    (emission_gate moved to feedback/emission.py:blockers in GH#310 — it needs the
+     Review schema, and a string search was the third definition of 'fileable')
 """
 from __future__ import annotations
 
@@ -649,24 +650,6 @@ def close_session(opts: CloseSessionOpts) -> str:
 
     # 18. Return session file path
     return str(out_file)
-
-
-def emission_gate(ai_root, advisor: str, session_id: str, today: str) -> str | None:
-    """Check mandatory emission for /team.done (spec 086 AC12/G1).
-
-    Port of emission-gate.sh. Pure check — no stdout, no exit.
-
-    Returns:
-        str  — the expected emission path when the gate BLOCKS (file missing or still draft).
-        None — when the gate PASSES (file present and _draft: false).
-    """
-    emission_path = Path(ai_root) / "ops" / "feedback" / today / f"{advisor}-{session_id}.md"
-    if not emission_path.is_file():
-        return str(emission_path)
-    text = emission_path.read_text(encoding="utf-8")
-    if not re.search(r"^_draft: false", text, re.M):
-        return str(emission_path)
-    return None
 
 
 def _append_xref(target: Path, rel_path: str, date: str, by: str, slug: str) -> None:
