@@ -79,7 +79,7 @@ _(no agent-infra closeability hints)_
 
 ## Code-repo awareness
 
-_(no code repo in cwd — running from .ai/ or non-git directory)_
+_(no code repo — the DATA root is not inside a git repository)_
 
 <!-- LIVE:BEGIN -->
 ## Live (Dataview)

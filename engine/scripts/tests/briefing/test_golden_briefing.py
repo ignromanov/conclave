@@ -53,9 +53,12 @@ def frozen_instance(tmp_path, monkeypatch):
     `CLAUDE_PROJECT_DIR` is popped because `_agents_dir_for` consults it first and an
     ambient export would point a roster walk at the operator's live tree.
 
-    The chdir is load-bearing, not tidiness: `code_repo` runs `git rev-parse` against the
-    PROCESS cwd, and `current_work` runs `git log` against `repo_root`. Left alone, both
-    would shell into the real checkout and the golden would carry its commit log.
+    The chdir is load-bearing, not tidiness: `current_work` runs `git log` against
+    `repo_root`, and left alone it would shell into the real checkout and put its commit
+    log in the golden. It no longer covers `code_repo`, which since #314 derives the code
+    repo from the DATA root instead of the process cwd — that section renders the
+    placeholder here because `tmp_path` is not inside a git repository, which is a
+    property of the frozen tree rather than of where the test happens to stand.
     """
     instance = build_instance(tmp_path / "instance")
     # parents: [0]=tests/briefing [1]=tests [2]=scripts [3]=engine. The var names the
