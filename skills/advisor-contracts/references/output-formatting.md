@@ -149,7 +149,7 @@ problem into one block.
 ### 5. `next →` is required, machine-readable
 
 Single line inside the ▍-block, leading `**next →**`, dot-separated actions. Used by
-`briefing-build.sh` to seed the next session's open queue. Format:
+`engine briefing build` to seed the next session's open queue. Format:
 
 ```
 ▍ **next →** {imperative-action} · {optional-second-action}
@@ -341,7 +341,7 @@ Pattern B/C. (Ruled 2026-09-19 by kosmos-cxo on forge-chro's item 3.)
 
 ## What v3 kept from v1
 
-- Mandatory `--reflexion` arg on `close-session.sh` → `session.md` frontmatter field
+- Mandatory `--reflexion` arg on `engine session close` → `session.md` frontmatter field
 - `/conclave:start` Step 1c reads last-3 reflexion for buffer context
 - `engine lifecycle runlog-summary` as Infra sidecar producer (output reformatted to one inline row)
 - Study phase wiki-script sequence (output reformatted to one inline row, omitted when clean)

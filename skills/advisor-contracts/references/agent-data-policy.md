@@ -24,9 +24,9 @@ last_reviewed: "2026-08-12"
 | Data | Home | Access |
 |------|------|--------|
 | Dev tasks, bugs, features, strategy, grants, ops | GitHub Issues (both repos) | per `github-issues-protocol.md` |
-| Advisor briefings | `agent-memory/advisors/briefings/<id>.md` | **auto-generated** by `briefing-build.sh` — read-only, never hand-edited (spec 051) |
+| Advisor briefings | `agent-memory/advisors/briefings/<id>.md` | **auto-generated** by `engine briefing build` — read-only, never hand-edited (spec 051) |
 | Sessions / decisions / mentions | `agent-memory/advisors/{sessions,decisions,mentions}/` | written only via `engine session close` / `engine file decision` / `engine mention create` |
-| Cross-agent live state | `agent-memory/hot.md` | `hot-md-append.sh` / `wiki-hot-sync.sh` |
+| Cross-agent live state | `agent-memory/hot.md` | `engine memory hot-append` (the wiki mirror was retired with spec 099 and has no replacement) |
 | Architecture registries | `.ai/architecture/*.md` | code-coupled — edited directly after code changes |
 | Process artifacts | `.ai/ops/` (specs, meetings, decisions, handoffs) | edited directly |
 | Domain knowledge (architecture trade-offs, strategy, security findings, competitive analysis) | **wiki** (the knowledge wiki, `knowledge.wiki_path` in roster.yaml) | `/wiki:capture`, `/wiki:browse`, `/wiki:query` |
@@ -90,3 +90,41 @@ section tagging the responsible advisor:
 
 On the next session, the tagged advisor executes the update — architecture registries
 directly, domain knowledge via `/wiki:capture`. The operator confirms via commit.
+
+---
+
+## Rules that fire on a command, not on a file
+
+Every lane above routes a piece of knowledge to a **file** — a registry, an issue, the wiki.
+All of them are reached by opening something. A rule about how to *run a command* has no such
+moment: nobody opens a file before typing `gh issue create`, so a rule that lives in a document
+arrives only for the sessions that happened to read the document.
+
+The only carrier that fires on a command is a **`PreToolUse` hook**. What follows is measured
+against the installed CLI (2.1.280) with a scratch hook on `Bash`, because a contract that
+asserts a mechanism it has not executed is the defect GH#315 exists to close — and the fix
+first proposed for it prescribed exactly such an assertion.
+
+| what the hook returns | what reaches the agent |
+|---|---|
+| plain text on stdout, exit 0 | **nothing** |
+| `hookSpecificOutput.additionalContext`, exit 0 | **nothing** |
+| `hookSpecificOutput.permissionDecision: "deny"` + `permissionDecisionReason` | the command does **not** run, and the reason is delivered verbatim: `PreToolUse:Bash hook error: <reason>` |
+
+The hook itself ran in all three cases — it wrote the payload it received to disk — so the two
+empty rows are about delivery, not about firing. The payload carries the command as
+`tool_input.command`.
+
+**Consequence for anyone building one:** the enforcing channel is the only channel. There is no
+measured way to whisper a note to an agent from a `PreToolUse` hook; a rule worth a hook is a
+rule worth denying on, and one not worth denying on belongs in a contract with **no** claim of
+enforcement attached. Both halves of that were got wrong at once in
+`github-issues-protocol.md`, which claimed a blocking hook that no generation ever shipped.
+
+**The matcher is the hard part, and command text is not a command.** The one hook of this kind
+that has been in service anywhere logged three false positives, each paid for by a wasted run:
+the word it was matching appeared as a path segment, as a filename being `cat`-ed, and inside a
+`grep` pattern — where an escaped `\|` in a BRE alternation was read as a shell pipe, which is
+how that last one survived its own first repair. Match on invocation shape (command position,
+after `npm run`, and so on), never on vocabulary, and keep the scenarios in a test beside the
+hook.
