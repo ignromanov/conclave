@@ -29,7 +29,8 @@ Alpha owns the core.
 
 ## Global p0 blockers
 
-_(no global p0 blockers)_
+- synthetic#202 | Delivery is on fire | bug p0 advisor:beta-coo
+- _(no snapshot for forge-chro — this list is a floor, not the instance; run: python -m engine lifecycle gh-fetch --advisor forge-chro)_
 
 ## Last sessions
 

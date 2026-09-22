@@ -136,7 +136,7 @@ def test_the_star_flag_is_not_universal_under_instance_scope(two_owners: Path) -
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("module", [queue, p0, closeability, mentions, owed],
+@pytest.mark.parametrize("module", [queue, closeability, mentions, owed],
                          ids=lambda m: m.__name__.rsplit(".", 1)[-1])
 def test_an_advisor_keyed_scan_refuses_instance_scope(two_owners: Path, module) -> None:
     """No file holds the union of five per-advisor caches, so there is nothing to read.
@@ -147,6 +147,33 @@ def test_an_advisor_keyed_scan_refuses_instance_scope(two_owners: Path, module) 
     """
     with pytest.raises(AdvisorScopeRequired):
         module.build(_ctx(two_owners, None))
+
+
+def test_the_global_p0_section_answers_under_instance_scope(two_owners: Path) -> None:
+    """`p0` left the KEY class in GH#269: it iterates the roster instead of being keyed.
+
+    It is the one module in this file whose classification CHANGED rather than having
+    been measured wrong. The section is titled "Global p0 blockers", so reading one
+    advisor's cache was never the right shape for it; `advisor_key` was the correct
+    accessor for the question the code asked and the wrong one for the question the
+    heading asked.
+
+    This is the positive half, and it is the half that matters. Dropping `p0` from the
+    parametrize list above only stops asserting that it raises — which is also what
+    deleting the module would do. A genuinely instance-wide scan must RETURN something
+    under instance scope, and a section that renders identically for every reader has no
+    reason to refuse the reader-less ctx at all.
+    """
+    rendered = p0.build(_ctx(two_owners, None))
+    assert "forge-chro" in rendered, (
+        f"the roster walk did not run under instance scope:\n{rendered}"
+    )
+
+    # This tree carries no `.claude/agents/`, so its roster is META alone and the named
+    # owners are genuinely not on it — the reader-guard fires for them, correctly. The
+    # per-reader equality invariant therefore belongs where a real roster exists, in
+    # `test_global_p0_is_global.py`; asserting it here would only pin the guard.
+    assert "not resolvable" in p0.build(_ctx(two_owners, "advisor-one"))
 
 
 def test_the_named_error_says_what_to_do_instead() -> None:

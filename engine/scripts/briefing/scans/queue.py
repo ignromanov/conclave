@@ -41,10 +41,16 @@ def _age_label(updated_at: str) -> str:
         return ""
 
 
-def _read_raw_items(cache_path: Path, advisor: str) -> list[dict]:
-    """Parse gh-cache and return the raw JSON items list.
+def read_items(cache_path: Path, advisor: str) -> list[dict]:
+    """Parse ONE gh-cache snapshot at an explicit path and return its raw items.
 
-    Missing/corrupt cache → WARN to stderr + return [].
+    Public because the instance-wide sections are roster walks over N caches, and a
+    walk needs a per-PATH read: `collect()` below resolves the path from the ctx's own
+    advisor, which is precisely the thing an iteration is replacing (GH#269).
+
+    Missing/corrupt cache → WARN to stderr + return []. That [] is indistinguishable
+    from a snapshot holding zero items, so a caller that must tell the two apart reads
+    `_gh_cache.captured_at` first and does not call this at all.
     """
     if not cache_path.is_file():
         print(
@@ -72,8 +78,13 @@ def _snapshot_truncated(cache_path: Path) -> bool:
     return len(header) > 1 and "truncated: true" in header[1]
 
 
-def _format_row(item: dict) -> str | None:
+def format_row(item: dict) -> str | None:
     """Format a single gh-cache item as an enriched queue line.
+
+    Public for the same reason as `read_items`: `p0.py` renders rows from the same
+    snapshots and used to build its own, shorter line from `read_gh_cache` strings —
+    so the identical issue appeared as `synthetic#202` in one section of a briefing
+    and as a bare `#202` two sections below it.
 
     Format: <repo>#<num> | <title> | <labels> | updated <age>
     The age and repo prefix are omitted gracefully when data is absent.
@@ -118,7 +129,7 @@ def collect(ctx: ScanCtx) -> list[dict]:
     data rather than as a joined string.
     """
     key = ctx.advisor_key
-    return _read_raw_items(ctx.gh_cache_dir / f"{key}.md", advisor=key)
+    return read_items(ctx.gh_cache_dir / f"{key}.md", advisor=key)
 
 
 def issue_identity(item: dict) -> str:
@@ -140,11 +151,11 @@ def build(ctx: ScanCtx) -> str:
     """
     key = ctx.advisor_key
     cache_path = ctx.gh_cache_dir / f"{key}.md"
-    items = _read_raw_items(cache_path, advisor=key)
+    items = read_items(cache_path, advisor=key)
 
     lines = []
     for item in items:
-        row = _format_row(item)
+        row = format_row(item)
         if row:
             lines.append(f"- {row}")
 
