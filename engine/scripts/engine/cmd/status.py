@@ -21,6 +21,25 @@ import sys
 from datetime import UTC, datetime, timedelta
 
 
+def _freshness(axis, policy, last_movement, now):
+    """One axis's freshness as EVIDENCE: its verdict and, when it has one, its age.
+
+    Rule 7a, B3. Built here rather than in the printer because the age is a measurement
+    and the printer may only word it; built here rather than inside `Staleness` because
+    that type is pure policy and has no business holding a clock reading. The invariant
+    `age is present iff the axis could be evaluated` is enforced by `Freshness` itself,
+    so a caller that assesses one timestamp and reports another cannot construct it.
+    """
+    from enginelib.status.model import Freshness
+
+    verdict = policy.assess(last_movement, now)
+    return Freshness(
+        axis=axis,
+        verdict=verdict,
+        age=None if last_movement is None else now - last_movement,
+    )
+
+
 def _handoffs_section(repo_root):
     """Open handoffs, instance-wide, with staleness from the newest MOVEMENT."""
     from briefing.scans import interrupted
@@ -43,6 +62,7 @@ def _handoffs_section(repo_root):
             for _, mtime, _ in rows
         )
     policy = Staleness(warn_after=timedelta(days=7), error_after=timedelta(days=30))
+    fresh = _freshness("movement", policy, newest, datetime.now(UTC))
     return SectionResult(
         name="хендофы",
         measurement=Count(
@@ -50,7 +70,11 @@ def _handoffs_section(repo_root):
             noun="хендофов открыто",
             proof="ops/handoffs/*.md — frontmatter status не в терминальном наборе",
         ),
-        verdict=policy.assess(newest, datetime.now(UTC)),
+        verdict=fresh.verdict,
+        # No `severity`: how many handoffs are open is not a number this projection has
+        # a threshold for, and rule 7a's escape hatch is for exactly that. What the slot
+        # DOES know is how long the queue has sat, and that now travels as words.
+        freshness=(fresh,),
         rows=tuple(rows),
     )
 
@@ -85,7 +109,14 @@ def _feedback_section(repo_root):
         ),
         # A real zero over a real population is news; the old `resolved == 0` trigger
         # fired on the defect itself and so warned every single run.
-        verdict="stale_warn" if intake.total and intake.resolved == 0 else "fresh",
+        #
+        # This condition has always been about the CONTENT — nothing resolved, out of a
+        # real population — and it was expressed as `stale_warn` only because until
+        # rules 7a/7b there was one enum for both axes. Moving it is a re-typing of an
+        # existing, already-defended judgment, not a new threshold: what `131 из 489`
+        # should be is genuinely unknown and stays `None`, per the ruling's own
+        # "add thresholds one at a time with evidence; do not backfill".
+        severity="warn" if intake.total and intake.resolved == 0 else None,
     )
 
 
@@ -164,10 +195,19 @@ def _gh_sections(repo_root):
         _mosaic_section(
             name="очередь", noun="issue открыто по инстансу",
             shards=queue_shards, newest_move=newest_move,
+            # No threshold. How many issues are open is a number, not a judgment, and
+            # inventing a line above which it becomes a warning would be the same error
+            # one layer up from the one rules 7a/7b were written against.
+            judge=lambda _total: None,
         ),
         _mosaic_section(
             name="p0", noun="p0-блокеров по инстансу",
             shards=p0_shards, newest_move=newest_move,
+            # The one threshold this slot self-evidently has: a p0 is by definition a
+            # blocker, so any is `error` and none is `ok`. Stating the zero rather than
+            # leaving it `None` is rule 3 — success in words — and it is the row that
+            # rendered `✗ 0 p0-блокеров` for as long as freshness owned the glyph.
+            judge=lambda total: "error" if total else "ok",
         ),
     )
 
@@ -182,8 +222,15 @@ def _parse_gh_time(value: str) -> datetime | None:
         return None
 
 
-def _mosaic_section(*, name, noun, shards, newest_move):
-    """One section over a mosaic, judged on both of its axes at once."""
+def _mosaic_section(*, name, noun, shards, newest_move, judge):
+    """One section over a mosaic, judged on both of its axes — separately (rule 7a).
+
+    `judge` takes the mosaic's total and returns this slot's content severity, or
+    `None` where the slot has no threshold it can defend. It is a parameter rather than
+    a branch on `name` because the two mosaics differ in exactly this and in nothing
+    else, and a `if name == "p0"` here would put a display judgment inside the
+    assembler where no printer could see it.
+    """
     from enginelib.status.model import Absent, Count, SectionResult, Staleness
     from enginelib.status.reduce import combine_shards, worst_verdict
 
@@ -197,13 +244,27 @@ def _mosaic_section(*, name, noun, shards, newest_move):
         )
 
     now = datetime.now(UTC)
-    verdicts = [
-        Staleness(warn_after=_SNAPSHOT_WARN, error_after=_SNAPSHOT_ERROR).assess(mosaic.oldest, now),
-        Staleness(warn_after=_MOVEMENT_WARN, error_after=_MOVEMENT_ERROR).assess(newest_move, now),
-    ]
+    # Both axes, kept as evidence rather than collapsed into the glyph. This is the pair
+    # that produced `✗ p0 — 0 p0-блокеров`: `worst_verdict` over two STALENESS readings,
+    # mapped onto a glyph set that means content severity.
+    freshness = (
+        _freshness(
+            "snapshot",
+            Staleness(warn_after=_SNAPSHOT_WARN, error_after=_SNAPSHOT_ERROR),
+            mosaic.oldest, now,
+        ),
+        _freshness(
+            "movement",
+            Staleness(warn_after=_MOVEMENT_WARN, error_after=_MOVEMENT_ERROR),
+            newest_move, now,
+        ),
+    )
+    verdicts = [f.verdict for f in freshness]
     if mosaic.is_floor:
         # An incomplete union is uncertainty, not a smaller number. Rule 2 ranks
         # uncertainty above known-bad, and `worst_verdict` makes that the outcome.
+        # It stays on the ORDERING axis: the floor is already stated in the noun, so
+        # the glyph would be saying it a second time, and it is not a content verdict.
         verdicts.append("unknown")
 
     floor = " (пол, не итог)" if mosaic.is_floor else ""
@@ -219,6 +280,8 @@ def _mosaic_section(*, name, noun, shards, newest_move):
         name=name,
         measurement=Count(value=mosaic.total, noun=noun + floor, proof=proof),
         verdict=worst_verdict(*verdicts),
+        severity=judge(mosaic.total),
+        freshness=freshness,
     )
 
 
@@ -463,7 +526,7 @@ def _branch_facts(root, prs, remote_heads):
 
 def _branches_section(root):
     """The branch slot: local branches joined against PR state, ruled on, counted."""
-    from enginelib.status.branches import join, needs_action, section_verdict
+    from enginelib.status.branches import join, needs_action, section_severity, section_verdict
     from enginelib.status.model import Absent, Count, SectionResult
 
     name = "ветки"
@@ -504,6 +567,10 @@ def _branches_section(root):
             noun="веток требуют действия", proof=proof,
         ),
         verdict=section_verdict(rows),
+        # The slot rule 7a names as having a defensible threshold: a branch requiring
+        # action IS a deviation. No freshness axis — `git for-each-ref` and `ls-remote`
+        # are read live, so there is no snapshot whose age a reader would discount.
+        severity=section_severity(rows),
         rows=tuple(rows),
     )
 

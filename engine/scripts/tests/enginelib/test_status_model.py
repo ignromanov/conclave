@@ -156,7 +156,42 @@ def test_clean_sections_are_not_deviations() -> None:
 
 def test_cluster_budget_fires_above_four() -> None:
     def dev(n: int) -> SectionResult:
-        return SectionResult(f"s{n}", Count(1, "x", "p"), verdict="stale_warn")
+        return SectionResult(f"s{n}", Count(1, "x", "p"), severity="warn")
 
     assert not over_cluster_budget([dev(i) for i in range(MAX_DEVIATION_CLUSTERS)])
     assert over_cluster_budget([dev(i) for i in range(MAX_DEVIATION_CLUSTERS + 1)])
+
+
+# --------------------------------------------------------------------------
+# Rule 7b — the deviation set is `Absent` ∪ content-bad, never staleness
+# --------------------------------------------------------------------------
+
+
+def test_stale_reading_is_not_a_deviation() -> None:
+    """The measurement that took the budget from 1 to 5 on the live projection.
+
+    Four of the five 'deviations' on 2026-09-19 were stale reads of slots with nothing
+    wrong in them. Grouping them — which rule 2 prescribes on a breach — would have
+    produced a tidy surface that was wrong in a new way, so the remedy was the set,
+    not the grouping.
+    """
+    stale = [
+        SectionResult(f"s{n}", Count(1, "x", "p"), verdict="stale_error")
+        for n in range(MAX_DEVIATION_CLUSTERS + 3)
+    ]
+    assert deviations(stale) == []
+    assert not over_cluster_budget(stale)
+
+
+def test_absent_is_always_a_deviation() -> None:
+    """Ruling 1: an instrument that never ran is a fact about the system, not about
+    the reading's age — so it survives the split even with no severity set."""
+    section = SectionResult("ci", Absent(reason="не подключено"), verdict="unknown")
+    assert section.severity is None
+    assert deviations([section]) == [section]
+
+
+def test_unjudged_section_is_not_a_deviation() -> None:
+    """`severity is None` means nobody judged the slot. That is a third state, and
+    reading it as a finding would manufacture deviations out of silence."""
+    assert deviations([SectionResult("очередь", Count(162, "issue", "p"))]) == []
