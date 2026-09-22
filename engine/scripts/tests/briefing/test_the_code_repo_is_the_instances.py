@@ -2,39 +2,38 @@
 
 An advisor on safe-unfollow opened a session and read ten commits under "Recent commits" that
 belong to the *engine* repository. The reporter shipped a control with the probe, which is why
-this is a measurement and not an impression: `git cat-file -e cb605ff` fails in safe-unfollow and
-succeeds in `~/code/conclave`. The section is not stale and not empty — it is reading a different
+this is a measurement and not an impression: `git cat-file -e cb605ff` fails in the product repo
+and succeeds in the engine's. The section is not stale and not empty — it is reading a different
 repository and labelling the result as this project's recent work.
 
-Re-measured on master before changing anything, by calling `_detect_code_root` against the live
-safe-unfollow DATA root from five working directories:
+Re-measured on master before changing anything, by calling `_detect_code_root` against the
+reporting instance's live DATA root from five working directories:
 
-    cwd = the product checkout   -> /Users/ignat/code/safe-unfollow   6280380 feat(seo): ...
-    cwd = the engine checkout    -> /Users/ignat/code/conclave        cbaf1e6 docs(contracts): ...
-    cwd = an engine worktree     -> .../worktrees/314-...             b9a9fc2 fix(status): ...
-    cwd = an unrelated repo      -> /Users/ignat/code/big-decimal     04a1130 fix(types): ...
+    cwd = the product checkout   -> the product repo    feat(seo): publish the IndexNow key ...
+    cwd = the engine checkout    -> the ENGINE repo     docs(contracts): the glyph carries ...
+    cwd = an engine worktree     -> the WORKTREE        fix(status): the glyph carries ...
+    cwd = an unrelated library   -> that LIBRARY        fix(types): emit resolution-correct ...
     cwd = the DATA repo itself   -> None
 
-The second line is the live briefing: all four of safe-unfollow's advisors currently carry
-`docs(contracts): the glyph carries severity` at the head of their "Recent commits", and one of
-them additionally reports `docs/architecture/lifecycle.md` — a file that exists only in the engine.
-The fourth line is the part the issue's title states and its mechanism section under-sells: the
-guard rejects exactly one wrong answer, so *any* repository on the machine can be reported, not
-just the engine.
+The second line is the live briefing: all four of the reporting instance's advisors carried the
+engine's HEAD subject at the head of their "Recent commits", and one additionally reported
+`docs/architecture/lifecycle.md` — a file that exists only in the engine. The fourth line is the
+part the issue's title states and its mechanism section under-sells: the guard rejects exactly one
+wrong answer, so *any* repository on the machine can be reported, not just the engine.
 
 WHY THE FIX IS NOT THE ONE THE ISSUE PROPOSES. The issue says to resolve from "the DATA root's
 parent, the same derivation `CONCLAVE_AI_ROOT` already uses". The parent is the right *place* but
 the wrong *rule*: `project_root()` derives it with a name test (`root.name == ".conclave"`) while
 `repo_root()` identifies a DATA root by a marker — `roster.yaml` beside a real `ops/` and a
-`.claude/` — precisely because the name is not the invariant. VoidPay's DATA root is `ai/`, and a
+`.claude/` — precisely because the name is not the invariant. The pre-split layout's is `ai/`, and a
 name test answers with the DATA root itself for it.
 
 So the derivation here is name-free and positive: **the instance's code repo is the git repository
 that contains the DATA root**. `git rev-parse --show-toplevel` from the DATA root's parent answers
 that for every layout including deeper nesting, needs no name, and cannot be moved by the process
-cwd. Measured on the four live instances on this machine — conclave-self, safe-unfollow,
-big-decimal and vl — the DATA root is a real directory (no symlinks) inside its project repo in
-4 of 4 cases.
+cwd. Measured on the four live instances reachable from this checkout, the DATA root is a real
+directory (no symlinks) inside its project repo in 4 of 4 cases; after the change, three of them
+resolve to their own repository from all five working directories above — 15 of 15 cells.
 
 WHY THE EXISTING TESTS WERE GREEN THROUGHOUT. `tests/briefing/test_scans_2_4.py` builds
 `ai_root = tmp/ai` and `code_root = tmp/code` as **siblings** and chdirs into the second. That is

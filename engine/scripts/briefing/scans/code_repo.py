@@ -84,9 +84,9 @@ def _detect_code_root(ai_root: Path) -> Path | None:
 
     Derived from the DATA root rather than from its *name*: `repo_root()` identifies an
     instance root by the `roster.yaml` marker precisely because the directory is not
-    always called `.conclave` (VoidPay's is `ai/`), so the name test in `project_root()`
-    is not a rule this can borrow. Asking git from the parent also handles a DATA root
-    nested deeper than one level, which a bare `.parent` would not.
+    always called `.conclave` — the pre-split layout puts it at `ai/` — so the name test
+    in `project_root()` is not a rule this can borrow. Asking git from the parent also
+    handles a DATA root nested deeper than one level, which a bare `.parent` would not.
 
     Returns None when the DATA root is not inside a git repo, or when git is unavailable.
 
