@@ -21,6 +21,7 @@ import pytest
 from engine.cmd import status as status_cmd
 from enginelib.status.branches import PullRequest
 from enginelib.status.model import Absent, Count
+from enginelib.status.words import say
 
 GIT = ["git", "-c", "user.email=t@conclave", "-c", "user.name=t"]
 
@@ -201,7 +202,7 @@ def test_gh_unreachable_makes_the_slot_absent_never_a_zero(repo, monkeypatch):
     monkeypatch.setattr(status_cmd, "_remote_heads", lambda root: {"master"})
     section = status_cmd._branches_section(work)
     assert isinstance(section.measurement, Absent)
-    assert "gh" in section.measurement.reason
+    assert "gh" in say(section.measurement.reason)
     assert section.verdict == "unknown"
 
 
@@ -218,7 +219,10 @@ def test_ls_remote_unreachable_still_measures_but_admits_the_gap(repo, monkeypat
     rows = {r.name: r for r in section.rows}
     assert rows["shipped"].disposition == "shipped"
     assert rows["shipped"].stale_tracking_ref is None
-    assert "ls-remote" in section.measurement.proof
+    # Not `"ls-remote" in proof`: that substring is in the command line this proof
+    # always names, so the assertion held whether or not the gap was admitted. The
+    # clause is the thing the test's own name promises.
+    assert "ls-remote did not answer" in say(section.measurement.proof)
 
 
 def test_the_count_is_branches_needing_action_over_all_of_them(repo, monkeypatch):

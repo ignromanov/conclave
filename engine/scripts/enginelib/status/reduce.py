@@ -17,7 +17,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 
-from enginelib.status.model import Count, SectionResult, Severity, Verdict
+from enginelib.status.model import Count, Phrase, SectionResult, Severity, Verdict
 
 # Rank order, most urgent first. `unknown` leads deliberately — see module docstring.
 _VERDICT_RANK: dict[Verdict, int] = {
@@ -47,8 +47,17 @@ def rank_sections(sections: Iterable[SectionResult]) -> list[SectionResult]:
     Stability matters more than it looks: rule 2 wants fixed positions so a repeat
     reader can diff against memory. A sort that reorders equal-verdict rows between
     runs destroys that, and it does it invisibly.
+
+    The tie-break is the name's catalog KEY, never its worded label, so the report
+    keeps one order across languages. Sorting the words would make the row order a
+    property of the operator's locale — a reader who switched language would see a
+    reshuffled report and no change in any fact.
+
+    That is a structural guarantee rather than a convention: this function is never
+    handed a catalog, so it cannot order by a word even deliberately. The defect is
+    expressible only in a printer, which is where the mutation that proves it lives.
     """
-    return sorted(sections, key=lambda s: (_VERDICT_RANK[s.verdict], s.name))
+    return sorted(sections, key=lambda s: (_VERDICT_RANK[s.verdict], s.name.key))
 
 
 def worst_verdict(*verdicts: Verdict) -> Verdict:
@@ -120,8 +129,8 @@ def measured_total(sections: Iterable[SectionResult]) -> Count | None:
         return None
     return Count(
         value=sum(c.value for c in counts),
-        noun="across measured sections",
-        proof="derived: sum of this projection's measured sections",
+        noun=Phrase("noun.measured_total"),
+        proof=Phrase("proof.measured_total"),
     )
 
 
@@ -172,11 +181,7 @@ class MissingShard:
     """
 
     key: str
-    reason: str
-
-    def __post_init__(self) -> None:
-        if not self.reason.strip():
-            raise ValueError("MissingShard.reason is mandatory — see Absent.reason")
+    reason: Phrase
 
 
 @dataclass(frozen=True)

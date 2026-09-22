@@ -13,8 +13,11 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from engine.cmd import status as status_cmd
-from enginelib.status.model import Absent, Count, SectionResult
+from enginelib.status.model import Absent, Count, Phrase, SectionResult
 from enginelib.status.render_terminal import GLANCE_MAX_CONTENT_LINES, glance, glance_overflows
+from enginelib.status.words import EN, say
+
+SURFACE = Phrase("surface.state")
 
 
 @pytest.fixture
@@ -57,35 +60,38 @@ def test_feedback_carries_its_denominator_and_its_proof(instance):
     m = section.measurement
     assert isinstance(m, Count)
     assert (m.value, m.of) == (0, 3)
-    assert "index.jsonl" in m.proof
+    assert "index.jsonl" in say(m.proof)
 
 
 def test_a_missing_source_is_absent_with_a_reason_never_zero(tmp_path):
     """Rule 6 at the surface: the two states must not render alike."""
     for section in (status_cmd._handoffs_section(tmp_path), status_cmd._feedback_section(tmp_path)):
-        assert isinstance(section.measurement, Absent), f"{section.name} rendered a number"
-        assert section.measurement.reason.strip()
+        slot = say(section.name)
+        assert isinstance(section.measurement, Absent), f"{slot} rendered a number"
+        assert say(section.measurement.reason).strip()
         assert section.verdict == "unknown"
-        rendered = glance("engine", "🦉", "состояние", "09.09", [section])
-        assert " 0 " not in rendered, f"{section.name} rendered a zero for a missing source"
+        rendered = glance("engine", "🦉", SURFACE, "09.09", [section])
+        assert " 0 " not in rendered, f"{slot} rendered a zero for a missing source"
 
 
 def test_every_unwired_slot_states_a_reason():
     """An unwired slot with an empty reason is rule 6's forbidden bare em dash."""
-    assert status_cmd._NOT_YET_WIRED, "the map may empty only when every slot is wired"
-    for name, reason in status_cmd._NOT_YET_WIRED.items():
-        assert reason.strip(), f"{name} declares no reason"
-        assert Absent(reason=reason)
+    assert status_cmd._NOT_YET_WIRED, "the list may empty only when every slot is wired"
+    for slot, reason in status_cmd._NOT_YET_WIRED:
+        assert say(Phrase(slot)).strip(), f"{slot} has no name"
+        assert say(Phrase(reason)).strip(), f"{slot} declares no reason"
+        assert Absent(reason=Phrase(reason))
 
 
 def test_glance_budget_is_reported_not_silently_trimmed():
     """Twelve is a cap on what the block may CARRY, not a licence to drop rows."""
     many = [
-        SectionResult(f"s{i}", Count(1, "x", "p"))
+        SectionResult(Phrase(f"s{i}"), Count(1, Phrase("noun.feedback"), Phrase("proof.literal")))
         for i in range(GLANCE_MAX_CONTENT_LINES + 1)
     ]
+    catalog = {**EN, **{f"s{i}": f"s{i}" for i in range(len(many))}}
     assert glance_overflows(many)
-    block = glance("engine", "🦉", "состояние", "09.09", many)
+    block = glance("engine", "🦉", SURFACE, "09.09", many, catalog)
     assert all(f"**s{i}**" in block for i in range(len(many))), "a row was dropped to fit"
 
 
@@ -162,7 +168,7 @@ def test_the_meta_advisors_queue_is_counted_not_excluded(roster):
     queue, _p0 = status_cmd._gh_sections(roster)
     assert isinstance(queue.measurement, Count)
     assert queue.measurement.value == 2, "the META advisor's queue was dropped"
-    assert "forge-chro" in queue.measurement.proof
+    assert "forge-chro" in say(queue.measurement.proof)
 
 
 def test_an_issue_in_two_caches_is_counted_once(roster):
@@ -204,8 +210,10 @@ def test_a_missing_snapshot_makes_the_count_a_floor_and_the_verdict_unknown(rost
 
     queue, _ = status_cmd._gh_sections(roster)
     assert queue.measurement.value == 1
-    assert "пол" in queue.measurement.noun, "an incomplete union presented itself as a total"
-    assert "forge-chro" in queue.measurement.proof
+    assert "floor" in say(queue.measurement.noun), (
+        "an incomplete union presented itself as a total"
+    )
+    assert "forge-chro" in say(queue.measurement.proof)
     assert queue.verdict == "unknown"
 
 
@@ -216,19 +224,20 @@ def test_an_empty_cache_is_a_measured_zero_not_an_absence(roster):
 
     queue, p0 = status_cmd._gh_sections(roster)
     for section in (queue, p0):
-        assert isinstance(section.measurement, Count), f"{section.name} claimed absence"
+        assert isinstance(section.measurement, Count), f"{say(section.name)} claimed absence"
         assert section.measurement.value == 0
-        assert not section.measurement.proof.count("без снимка")
+        assert "without a snapshot" not in say(section.measurement.proof)
 
 
 def test_no_snapshot_anywhere_is_absent_and_never_zero(roster):
     """No cache for any advisor: rule 6 forbids this rendering as 0."""
     queue, p0 = status_cmd._gh_sections(roster)
     for section in (queue, p0):
-        assert isinstance(section.measurement, Absent), f"{section.name} rendered a number"
-        assert section.measurement.reason.strip()
+        slot = say(section.name)
+        assert isinstance(section.measurement, Absent), f"{slot} rendered a number"
+        assert say(section.measurement.reason).strip()
         assert section.verdict == "unknown"
-        assert " 0 " not in glance("engine", "🦉", "состояние", "09.09", [section])
+        assert " 0 " not in glance("engine", "🦉", SURFACE, "09.09", [section])
 
 
 def test_the_oldest_snapshot_degrades_the_whole_union(roster):
@@ -242,7 +251,7 @@ def test_the_oldest_snapshot_degrades_the_whole_union(roster):
 
     queue, _ = status_cmd._gh_sections(roster)
     assert queue.verdict == "stale_error", "a stale member was hidden by its fresh siblings"
-    assert "старейший" in queue.measurement.proof
+    assert "oldest" in say(queue.measurement.proof)
 
 
 def test_p0_is_instance_wide_and_sees_another_advisors_blocker(roster):
@@ -321,7 +330,7 @@ def test_resolved_items_reach_the_numerator_from_the_archive(tmp_path):
     m = status_cmd._feedback_section(tree).measurement
     assert isinstance(m, Count)
     assert (m.value, m.of) == (2, 6), "resolved items archived out of the index must still count"
-    assert "_archive" in m.proof, "the proof line must name both registers it summed"
+    assert "_archive" in say(m.proof), "the proof line must name both registers it summed"
 
 
 def test_a_whole_review_archived_as_a_husk_keeps_its_items_in_the_denominator(tmp_path):
