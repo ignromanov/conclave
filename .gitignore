@@ -42,3 +42,11 @@ worktrees/
 
 # Conclave Self instance-state — tracked in its own git tree at .conclave/.git
 .conclave/
+
+# operator-local tooling in the checkout root: an Obsidian vault opened on it, a cmux dock,
+# skills.sh installs (.agents/skills/ + its lock; .claude/skills/ symlinks into it). The repo
+# is public, and none of these is engine code.
+/.obsidian/
+/.cmux/
+/.agents/
+/skills-lock.json
