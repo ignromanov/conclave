@@ -310,6 +310,45 @@ fields** inside slot 4, a table is permitted and preferred. This is the same car
 contradicting. One table per report; a table of outcomes, decisions or cross-references is still
 Pattern B/C. (Ruled 2026-09-19 by kosmos-cxo on forge-chro's item 3.)
 
+**Slot 4 records what was established; it must also record how.** Between slot 4 (`evidence`)
+and slot 6 (`not checked`) sits the case neither covers: a claim that *was* checked, by an
+instrument that could not have detected the opposite. Eight such findings were reported
+confidently across three instances in one cycle, and every one was caught afterwards, by
+accident, by its own author (#316). Three rules, all of them qualifications on slot 4 rather
+than new slots:
+
+1. **An absence needs a control probe.** An entry asserting that something is *not* there —
+   zero mentions, no occurrences, no divergence — carries beside it the same instrument run
+   against a case whose answer is known to be non-zero. Without that probe the entry renders as
+   `unmeasured`, never as zero. A silent tool and an empty world produce identical output, and
+   the probe is the only thing that separates them. In the measured cycle the one negative
+   finding that did *not* become an error was the single one issued alongside a control request
+   for a nonsense slug. This is not hypothetical here: the proxy wrapping shell commands has
+   been measured under-reporting `grep` and `git diff` at exit 0 (#104), which makes a
+   `/usr/bin/grep` run beside a proxied one a control probe in the plainest sense.
+
+2. **A relayed fact carries its source, and is re-derived before it acts.** A fact asserted in
+   another agent's prose — or in your own earlier message — is not a measurement, and slot 4 as
+   written cannot tell the two apart. Render it as `relayed ← <source>` and re-derive it before
+   it drives an action or reaches the operator. Three of one session's five real findings that
+   cycle were corrections to relayed facts, including a nine-call-site count that was eight and
+   a line number read out of a diff-hunk header.
+
+3. **Quote fidelity is not finding correctness.** Confirming that every quoted `file:line`
+   exists verbatim establishes that the quotation is faithful and nothing whatever about
+   whether the finding built on it is true. Measured: four audits at 100% quote fidelity, two
+   of their findings refuted and one downgraded on re-measurement. A fidelity pass may never be
+   reported as if it were a verification; a report that states the one states the other beside
+   it.
+
+**Nothing enforces these three.** No instrument reads a ▍-block before it reaches the operator,
+and a rule that must fire on an action rather than on a file has exactly one carrier in this
+system (see `agent-data-policy.md` §"Rules that fire on a command, not on a file"). They are
+upheld by whoever writes the block. What *is* enforced is the numbering they attach to: they
+are qualifications on slot 4 rather than new rows precisely because five documents point into
+this table by number, and `test_the_slot_numbering_is_load_bearing.py` now fails if a
+renumbering leaves one of those pointers behind.
+
 ## Anti-patterns
 
 | Pattern | Why bad |
@@ -326,6 +365,9 @@ Pattern B/C. (Ruled 2026-09-19 by kosmos-cxo on forge-chro's item 3.)
 | Bare identifiers (`#142`, `spec 109`, naked SHA) in any row the operator reads | violates rule 7 — a pointer without its referent reads as noise to anyone not holding the registry |
 | Box-drawing tables (┌┬┐, ╔╦╗) for batch ops | Same reasons v3 rejected markdown tables: alignment fragility, ASCII-art noise. Use Pattern B/C instead |
 | Mixing patterns within one ▍-block (B for one row, D for next) | One pattern per block; switch blocks if context truly changes |
+| A zero reported from one instrument, with no control probe | an absence and a broken instrument render identically; slot 4 must carry the known-non-zero control or read `unmeasured` |
+| A fact relayed from another agent rendered as a measurement | slot 4 claims "established"; prose from a colleague is not established. Render `relayed ← <source>` and re-derive before acting |
+| A quote-fidelity pass reported as verification | 100% fidelity is compatible with a refuted finding — it checks the quotation, never the inference |
 | HTML entities (`&nbsp;`, `&mdash;`) for column alignment | Chat output is monospace markdown — entities render as literal 6-char strings, not spaces. Use plain ASCII spaces |
 
 ## What v3 removed from v1
