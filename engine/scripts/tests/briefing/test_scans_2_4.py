@@ -143,39 +143,52 @@ class TestDecisionsOpsDir:
 # ---------------------------------------------------------------------------
 
 class TestCodeRepoEmptyState:
-    def test_placeholder_when_cwd_is_ai_root(self, tmp_path, monkeypatch):
-        """Returns placeholder when cwd is the .ai/ repo itself."""
-        # Build a minimal git repo at tmp_path to act as the .ai/ root.
-        _init_git_repo(tmp_path)
-        ctx = make_ctx(tmp_path)
+    """The placeholder is a fact about the INSTANCE, not about the process (#314).
 
-        # cwd == ai_root → must return placeholder.
+    Both tests here used to assert the cwd model — "cwd is the .ai/ repo" and "cwd is not
+    inside any git repo". Each was true of a session that had simply walked somewhere else,
+    while the project it was briefing had a code repo the whole time. Re-based on the DATA
+    root, the same two empty states remain: no repository above it, and none it is inside.
+    """
+
+    def test_a_data_root_with_no_repository_above_it_gets_the_placeholder(
+        self, tmp_path, monkeypatch
+    ):
+        ai_root = tmp_path / "loose" / ".conclave"
+        ai_root.mkdir(parents=True)
+        monkeypatch.chdir(ai_root)
+        assert code_repo.build(make_ctx(ai_root)) == "_(no code repo — the DATA root is not inside a git repository)_"
+
+    def test_a_git_repo_in_the_cwd_does_not_rescue_a_rootless_instance(
+        self, tmp_path, monkeypatch
+    ):
+        """The cwd is a perfectly good repo — and that is precisely what must not count."""
+        ai_root = tmp_path / "loose" / ".conclave"
+        ai_root.mkdir(parents=True)
+        code_root = tmp_path / "unrelated"
+        _init_git_repo(code_root)
+
         monkeypatch.chdir(tmp_path)
-        result = code_repo.build(ctx)
-        assert result == "_(no code repo in cwd — running from .ai/ or non-git directory)_"
-
-    def test_placeholder_when_cwd_is_non_git(self, tmp_path, monkeypatch):
-        """Returns placeholder when cwd is not inside any git repo."""
-        # tmp_path/non_git is a plain dir, not a git repo.
-        non_git = tmp_path / "non_git"
-        non_git.mkdir()
-        ctx = make_ctx(tmp_path)
-
-        monkeypatch.chdir(non_git)
-        result = code_repo.build(ctx)
-        assert result == "_(no code repo in cwd — running from .ai/ or non-git directory)_"
+        assert code_repo.build(make_ctx(ai_root)) == "_(no code repo — the DATA root is not inside a git repository)_"
 
 
 class TestCodeRepoRealCase:
+    """The DATA root is NESTED in the code repo here, which is the shape every instance has.
+
+    These fixtures used to make `ai/` and `code/` siblings under tmp_path and chdir into the
+    second, so the only thing relating them was the cwd the fixture itself supplied. Each
+    test now chdirs to a directory that is neither, so passing requires the derivation to
+    reach the code repo from the DATA root.
+    """
     def test_returns_git_log_section(self, tmp_path, monkeypatch):
         """When cwd is a code repo distinct from ai_root, git log is included."""
-        ai_root = tmp_path / "ai"
-        ai_root.mkdir()
         code_root = tmp_path / "code"
         _init_git_repo(code_root)
+        ai_root = code_root / ".conclave"
+        ai_root.mkdir()
 
         ctx = make_ctx(ai_root)
-        monkeypatch.chdir(code_root)
+        monkeypatch.chdir(tmp_path)
 
         result = code_repo.build(ctx)
         # Should contain the init commit from _init_git_repo.
@@ -185,10 +198,10 @@ class TestCodeRepoRealCase:
     def test_docs_newer_than_session_included(self, tmp_path, monkeypatch):
         """docs/ files created after the last session appear in output."""
 
-        ai_root = tmp_path / "ai"
-        ai_root.mkdir()
         code_root = tmp_path / "code"
         _init_git_repo(code_root)
+        ai_root = code_root / ".conclave"
+        ai_root.mkdir()
 
         # Create a session file with an old mtime (in the past).
         ctx = make_ctx(ai_root)
@@ -205,7 +218,7 @@ class TestCodeRepoRealCase:
         docs_dir.mkdir()
         (docs_dir / "architecture.md").write_text("arch\n")
 
-        monkeypatch.chdir(code_root)
+        monkeypatch.chdir(tmp_path)
         result = code_repo.build(ctx)
         assert "docs/architecture.md" in result
 
@@ -214,10 +227,10 @@ class TestCodeRepoRealCase:
         import os
         import time
 
-        ai_root = tmp_path / "ai"
-        ai_root.mkdir()
         code_root = tmp_path / "code"
         _init_git_repo(code_root)
+        ai_root = code_root / ".conclave"
+        ai_root.mkdir()
 
         ctx = make_ctx(ai_root)
         sess_dir = ctx.sessions_dir
@@ -233,20 +246,20 @@ class TestCodeRepoRealCase:
         docs_dir.mkdir()
         (docs_dir / "old-doc.md").write_text("old\n")
 
-        monkeypatch.chdir(code_root)
+        monkeypatch.chdir(tmp_path)
         result = code_repo.build(ctx)
         # docs/old-doc.md is older than the (future-dated) session → not shown.
         assert "old-doc.md" not in result
 
     def test_no_docs_dir_returns_log_only(self, tmp_path, monkeypatch):
         """When the code repo has no docs/ dir, only the git log section renders."""
-        ai_root = tmp_path / "ai"
-        ai_root.mkdir()
         code_root = tmp_path / "code"
         _init_git_repo(code_root)
+        ai_root = code_root / ".conclave"
+        ai_root.mkdir()
 
         ctx = make_ctx(ai_root)
-        monkeypatch.chdir(code_root)
+        monkeypatch.chdir(tmp_path)
 
         result = code_repo.build(ctx)
         assert "**Recent commits:**" in result
@@ -256,10 +269,10 @@ class TestCodeRepoRealCase:
         """README.md and other meta-stems in docs/ are not reported."""
         import os
 
-        ai_root = tmp_path / "ai"
-        ai_root.mkdir()
         code_root = tmp_path / "code"
         _init_git_repo(code_root)
+        ai_root = code_root / ".conclave"
+        ai_root.mkdir()
 
         ctx = make_ctx(ai_root)
         # Session at epoch so all files are "newer".
@@ -275,7 +288,7 @@ class TestCodeRepoRealCase:
         (docs_dir / "CHANGELOG.md").write_text("change\n")
         (docs_dir / "api-reference.md").write_text("api\n")
 
-        monkeypatch.chdir(code_root)
+        monkeypatch.chdir(tmp_path)
         result = code_repo.build(ctx)
         assert "README.md" not in result
         assert "CHANGELOG.md" not in result
