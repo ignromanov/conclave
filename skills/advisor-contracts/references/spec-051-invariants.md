@@ -15,4 +15,4 @@ last_reviewed: "2026-08-12"
 - No direct `Edit`/`Write` on `.ai/agent-memory/advisors/**` — use scripts under `engine/scripts/`.
 - Inbox = GH Issues (`gh issue list --label "advisor:<name>"`). `topics/inbox.md` no longer exists.
 - Don't duplicate facts from `.ai/product.md` / `.ai/architecture/*` — reference with pointers.
-- Cross-advisor communication: `mention.sh` (not free-form edits).
+- Cross-advisor communication: `engine mention create` (not free-form edits).

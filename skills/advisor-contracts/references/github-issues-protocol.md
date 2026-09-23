@@ -38,7 +38,12 @@ gh issue create -R ${OWNER}/${MAIN_REPO} --title "[bug] ..."   --label "bug,p1,a
 gh issue create --title "[strategy] ..." --label "strategy,advisor:${ADVISOR}"
 ```
 
-A `PreToolUse` hook (`.claude/hooks/gh-issue-repo-guard.sh`) blocks `gh issue create` without `-R` and rejects label-vs-repo mismatches.
+**Nothing enforces this.** `-R` is upheld by you, on every single `gh` invocation. This
+paragraph used to claim a `PreToolUse` hook blocked bare `gh issue create` and rejected
+label-vs-repo mismatches; the file it named has never existed in any generation of the
+distribution (GH#315). Read the claim and the rule looks redundant — which is how
+conclave#47 came to duplicate conclave#46. It is not redundant. It is the only thing
+standing between a private task and a public repository.
 
 ---
 
@@ -229,7 +234,9 @@ gh issue create -R ${OWNER}/${AI_REPO} \
 
 **Required labels**: type + priority + `advisor:name`. GH Actions sets Project fields from labels automatically.
 
-**Required flag**: `-R ${OWNER}/<repo>` — enforced by `gh-issue-repo-guard.sh` PreToolUse hook. Commands without `-R` are blocked.
+**Required flag**: `-R ${OWNER}/<repo>` — on every invocation, typed by you. Unenforced:
+no hook inspects it, and a command without `-R` runs and silently resolves against the
+current git remote.
 
 ### Transfer issue (when one was created in the wrong repo)
 
@@ -295,7 +302,7 @@ When doing Board triage, agents MUST check and fill ALL 5 fields for their assig
 
 Briefings and session records reference issues **by number only** (`GH#N` / `AI#N`) —
 never duplicate issue title/body content. The briefing is auto-generated (spec 051);
-`briefing-build.sh` pulls the open-issue list from the gh-cache snapshot.
+`engine briefing build` pulls the open-issue list from the gh-cache snapshot.
 
 ---
 
