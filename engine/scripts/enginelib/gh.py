@@ -147,6 +147,12 @@ def list_labels(repo: str) -> list[str]:
     return [row["name"] for row in json.loads(raw)]
 
 
+def create_label(repo: str, name: str) -> None:
+    """Create label *name* on *repo*. Raises RuntimeError if gh refuses (including 'already exists')."""
+    owner = name.split(":", 1)[-1]
+    _run_gh(["label", "create", name, "-R", repo, "--description", f"Issues owned by {owner}"])
+
+
 def open_issue_label_counts(repo: str) -> tuple[dict[str, int], bool]:
     """(label → open-issue count, page-cap-reached) for *repo*, counted client-side.
 

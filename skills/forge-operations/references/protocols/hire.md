@@ -229,6 +229,16 @@ Review the diff. Apply edits to `.claude/CLAUDE.md` and `team.quorum/SKILL.md` v
 
 `engine register advisor` globs all agents and skills; never hardcodes advisor lists.
 
+**GH label (#153).** Without it the first issue routed to the new advisor aborts with
+`could not add label: "advisor:<id>" not found`.
+
+```bash
+python -m engine advisor label --id <id>
+```
+
+One line per repo in the roster's scope: `created` or `exists` is done; `FAILED` means gh never
+answered for that repo — fix auth and re-run (idempotent) before Phase 5.
+
 ## Phase 5 — First Launch Delegation
 
 Tell user: "Run `/conclave-<id>` then `/conclave:start`."
