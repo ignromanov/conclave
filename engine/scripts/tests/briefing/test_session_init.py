@@ -1837,3 +1837,76 @@ class TestCheckpointRecordExistsFromTheStart:
         assert rc == 0, f"an unwritable checkpoints dir failed the session start (rc={rc})"
         assert "degraded: checkpoint-record-not-created" in capsys.readouterr().err
         assert not (advisors_dir / "checkpoints").exists()
+
+
+class TestMemorySize:
+    """GH#191: an auto-loaded file past its declared ceiling is reported at session start."""
+
+    def _project(self, tmp_path, monkeypatch, ceilings: str, progress_bytes: int):
+        data = tmp_path / ".conclave"
+        data.mkdir()
+        (data / "roster.yaml").write_text(
+            f"knowledge:\n  autoload_ceilings:\n{ceilings}", encoding="utf-8")
+        claude = tmp_path / ".claude"
+        claude.mkdir()
+        (claude / "CLAUDE.md").write_text("@progress.md\n", encoding="utf-8")
+        (claude / "progress.md").write_bytes(b"x" * progress_bytes)
+        monkeypatch.setenv("CONCLAVE_AI_ROOT", str(data))
+        monkeypatch.delenv("ROSTER_FILE", raising=False)
+        monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
+
+    def test_over_ceiling_prints_one_memory_line(self, tmp_path, monkeypatch):
+        self._project(tmp_path, monkeypatch, "    .claude/progress.md: 40000\n", 43238)
+        lines = session_init._step_memory_size()
+        assert lines == [
+            "  memory: .claude/progress.md is 43 238 B, 8% over its 40 000 B ceiling — rotate it "
+            "(worklist: engine knowledge rotation-worklist .claude/progress.md)"]
+
+    def test_under_ceiling_is_silent(self, tmp_path, monkeypatch):
+        self._project(tmp_path, monkeypatch, "    .claude/progress.md: 40000\n", 100)
+        assert session_init._step_memory_size() == []
+
+    def test_no_ceilings_declared_is_silent(self, tmp_path, monkeypatch):
+        self._project(tmp_path, monkeypatch, "", 99999)
+        assert session_init._step_memory_size() == []
+
+    def test_bad_value_and_unloaded_file_both_warn(self, tmp_path, monkeypatch):
+        self._project(tmp_path, monkeypatch,
+                      "    .claude/progress.md: 40k\n    .claude/gone.md: 10\n", 100)
+        lines = session_init._step_memory_size()
+        assert any("'40k'" in ln for ln in lines)
+        assert any(".claude/gone.md" in ln and "no session loads it" in ln for ln in lines)
+        assert all(ln.startswith("  memory: warning — ") for ln in lines)
+
+    def test_a_crash_is_a_warning_not_an_exception(self, tmp_path, monkeypatch):
+        self._project(tmp_path, monkeypatch, "    .claude/progress.md: 1\n", 5)
+        from enginelib.knowledge import autoload
+        monkeypatch.setattr(autoload, "autoload_set",
+                            lambda root: (_ for _ in ()).throw(OSError("boom")))
+        assert session_init._step_memory_size() == [
+            "  memory: warning — size check could not run (boom)"]
+
+    def test_a_non_mapping_ceiling_block_warns(self, tmp_path, monkeypatch):
+        # Review finding I2: a scalar where a mapping belongs must not read as "no ceilings".
+        self._project(tmp_path, monkeypatch, "", 50000)
+        (tmp_path / ".conclave" / "roster.yaml").write_text(
+            "knowledge:\n  autoload_ceilings: 40000\n", encoding="utf-8")
+        lines = session_init._step_memory_size()
+        assert len(lines) == 1 and lines[0].startswith("  memory: warning — ")
+        assert "knowledge.autoload_ceilings" in lines[0]
+
+    def test_advisor_summary_carries_the_line(self, tmp_path, monkeypatch):
+        # Same arrangement as TestMainArgValidation.test_registry_advisor_not_rejected.
+        root = _make_root(tmp_path)
+        _write(root / ".claude" / "agents" / "privacy-trust.md", "# advisor\n")
+        monkeypatch.setenv("CONCLAVE_AI_ROOT", str(root))
+        monkeypatch.setenv("CONCLAVE_ENGINE_ROOT", str(root))
+        monkeypatch.setattr(session_init, "_step1_load_briefing", lambda a, r: (0, []))
+        monkeypatch.setattr(session_init, "_step1b_resume_scan", lambda a, r: ([], []))
+        monkeypatch.setattr(session_init, "_step1c_reflexion", lambda a, r: [])
+        monkeypatch.setattr(session_init, "_scan_overlays", lambda a, r: [])
+        monkeypatch.setattr(session_init, "_step_cadence_guard",
+                            lambda: session_init.CadenceGuard([]))
+        monkeypatch.setattr(session_init, "_step_memory_size", lambda: ["  memory: SENTINEL"])
+        _, lines = session_init._advisor_summary("privacy-trust", root)
+        assert "  memory: SENTINEL" in lines

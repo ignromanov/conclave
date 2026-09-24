@@ -104,6 +104,8 @@ def _build_parser() -> argparse.ArgumentParser:
     session.register(sub)
     from engine.cmd import memory
     memory.register(sub)
+    from engine.cmd import knowledge
+    knowledge.register(sub)
     from engine.cmd import briefing
     briefing.register(sub)
     from engine.cmd import status
