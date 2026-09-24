@@ -81,9 +81,23 @@ Frontmatter holds structured fields; the body holds optional `notes`.
 
 ### Routing (set by triage)
 
-`layer` → fix owner: `skill` / `contract` / `memory` / `infra` → **Forge**;
-`workflow` → **the facilitator role** (the `quorum` slot, if the instance hired one).
-`category: idea` → reviewed by both.
+The owner is **whoever decides the shape of the fix** — not the `layer` the defect surfaced in.
+An `infra` defect fixed in engine code and one fixed in contract text have different owners.
+Keyed on `layer`, this rule sent 99 of 172 open issues to the meta-advisor on the instance
+that measured it (2026-09-23).
+
+1. Name the artefact the fix changes — a file, or the verb that writes it.
+2. The owner is the advisor whose declared scope covers it: the `description` in its agent
+   definition, the text the harness itself routes on. Owners are read from the roster, never
+   listed here — a shipped contract knows only the meta-role.
+3. Two scopes cover it → the one whose `Not for …` clause does not exclude it. None covers
+   it → Forge, with the gap named in the triage note: work no scope covers is a roster gap
+   (a hire, or an amended description), not meta-work.
+
+Forge's own fence, for the tie-break: agent text (skills, contracts, commands, templates), the
+roster, and the hire / evolve / audit protocols.
+
+`category: idea` → routed the same way: the owner is whoever would decide the idea's shape.
 `category: positive` / `near-miss` → **no owner**. Neither names a fix, so neither is
 assigned or issued; triage reads it and sets `acknowledged`, which is terminal.
 
