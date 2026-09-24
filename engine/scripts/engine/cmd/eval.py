@@ -162,6 +162,9 @@ RATE_LIMIT_STREAK = 3  # consecutive rate-limited trials that mean the session b
 # terminates.
 RATE_LIMIT_WAIT_S = 900
 MAX_RATE_LIMIT_WAITS = 24
+# The one sleep this module makes, bound to a name of its own so a test can observe it. Patching
+# `time.sleep` instead rebinds it for the whole process, and `subprocess` polls with it (GH#355).
+_sleep = time.sleep
 # Ordinary harness failures — a dropped connection, the turn cap, a timeout — get bounded IMMEDIATE
 # re-attempts instead, no sleep. They are transient and cell-local, and the alternative is losing
 # the cell outright: scored-002's t06 trials died at 274 s and 81 s on "Connection closed
@@ -443,7 +446,7 @@ def _run(args) -> int:
                     f"({waits}/{MAX_RATE_LIMIT_WAITS} waits used).",
                     flush=True,
                 )
-                time.sleep(RATE_LIMIT_WAIT_S)
+                _sleep(RATE_LIMIT_WAIT_S)
                 continue  # same cell — `i` deliberately not advanced
 
             # An ordinary harness failure: re-attempt immediately, up to MAX_CELL_ATTEMPTS. No
