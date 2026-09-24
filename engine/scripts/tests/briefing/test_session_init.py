@@ -1886,6 +1886,15 @@ class TestMemorySize:
         assert session_init._step_memory_size() == [
             "  memory: warning — size check could not run (boom)"]
 
+    def test_a_non_mapping_ceiling_block_warns(self, tmp_path, monkeypatch):
+        # Review finding I2: a scalar where a mapping belongs must not read as "no ceilings".
+        self._project(tmp_path, monkeypatch, "", 50000)
+        (tmp_path / ".conclave" / "roster.yaml").write_text(
+            "knowledge:\n  autoload_ceilings: 40000\n", encoding="utf-8")
+        lines = session_init._step_memory_size()
+        assert len(lines) == 1 and lines[0].startswith("  memory: warning — ")
+        assert "knowledge.autoload_ceilings" in lines[0]
+
     def test_advisor_summary_carries_the_line(self, tmp_path, monkeypatch):
         # Same arrangement as TestMainArgValidation.test_registry_advisor_not_rejected.
         root = _make_root(tmp_path)

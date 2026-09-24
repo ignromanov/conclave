@@ -74,3 +74,13 @@ def test_roster_get_mapping_returns_stringified_pairs(tmp_path, monkeypatch):
         ".claude/progress.md": "40000"}
     assert roster.roster_get_mapping("knowledge.absent") == {}
     assert roster.roster_get_mapping("knowledge") != {}  # a mapping node is returned whole
+
+
+def test_roster_get_mapping_refuses_a_present_non_mapping(tmp_path, monkeypatch):
+    # Review finding I2: `autoload_ceilings: 40000` is a typo, not an absence.
+    (tmp_path / "roster.yaml").write_text(
+        "knowledge:\n  autoload_ceilings: 40000\n", encoding="utf-8")
+    monkeypatch.setenv("ROSTER_FILE", str(tmp_path / "roster.yaml"))
+    from enginelib import roster
+    with pytest.raises(ValueError, match="knowledge.autoload_ceilings"):
+        roster.roster_get_mapping("knowledge.autoload_ceilings")

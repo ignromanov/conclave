@@ -43,3 +43,12 @@ def test_worklist_refuses_a_file_that_is_not_auto_loaded(tmp_path):
     (tmp_path / "other.md").write_text("## x\n", encoding="utf-8")
     r = run_engine("knowledge", "rotation-worklist", "other.md", "--offline", env=env)
     assert r.returncode == 2 and "not auto-loaded" in r.stderr
+
+
+def test_autoload_check_names_a_non_mapping_ceiling_block(tmp_path):
+    env = _proj(tmp_path)
+    (tmp_path / ".conclave" / "roster.yaml").write_text(
+        "knowledge:\n  autoload_ceilings: 40000\n", encoding="utf-8")
+    r = run_engine("knowledge", "autoload", "--check", env=env)
+    assert r.returncode == 1 and "knowledge.autoload_ceilings" in r.stderr
+    assert "Traceback" not in r.stderr

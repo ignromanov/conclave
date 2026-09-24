@@ -52,3 +52,13 @@ def test_worklist_orders_candidates_first_and_never_offers_the_preamble():
     rows = rotation.worklist(DOC, {102: "CLOSED", 150: "OPEN", 224: "CLOSED", 300: "OPEN"})
     assert rows[0].verdict == "candidate"
     assert all(r.block.heading != "(preamble)" or r.verdict == "no-signal" for r in rows)
+
+
+def test_a_closed_heading_with_an_unreadable_ref_is_unknown_not_candidate():
+    # Review finding I1: the remainder (#150) may be open; a reading that did not happen
+    # must not let the heading's own claim send it to the archive.
+    b = rotation.blocks("## x\n### 5. Wizard — GH#102 closed; remainder tracked in #150\n")[1]
+    offline = rotation.classify(b, None)
+    partial = rotation.classify(b, {102: "CLOSED"})
+    assert offline.verdict == "unknown" and "heading says closed" in offline.reason
+    assert partial.verdict == "unknown"

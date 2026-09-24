@@ -68,8 +68,11 @@ def classify(block: Block, states: dict[int, str] | None) -> Row:
     if open_refs:
         return Row(block, "keep", "cites open work: " + ", ".join(f"#{n} OPEN" for n in open_refs))
     self_closed = bool(_CLOSED.search(block.heading))
-    if block.refs and (states is None or any(s is None for s in known.values())) and not self_closed:
-        return Row(block, "unknown", "cites refs whose state could not be read")
+    # An unread ref may be the open remainder a "closed" heading still carries, so a heading's
+    # own claim never outranks a reading that did not happen.
+    if block.refs and (states is None or any(s is None for s in known.values())):
+        claim = "heading says closed, but " if self_closed else ""
+        return Row(block, "unknown", claim + "cites refs whose state could not be read")
     all_closed = bool(block.refs) and all(s in ("CLOSED", "MERGED") for s in known.values())
     if self_closed or all_closed:
         why = "heading says closed" if self_closed else f"all {len(block.refs)} cited refs closed"

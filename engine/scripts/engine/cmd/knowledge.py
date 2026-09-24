@@ -17,7 +17,11 @@ def _num(n: int) -> str:
 def _ceilings() -> tuple[dict[str, int], list[str]]:
     from enginelib import roster
     from enginelib.knowledge import autoload
-    return autoload.parse_ceilings(roster.roster_get_mapping("knowledge.autoload_ceilings"))
+    try:
+        raw = roster.roster_get_mapping("knowledge.autoload_ceilings")
+    except ValueError as exc:
+        return {}, [str(exc)]
+    return autoload.parse_ceilings(raw)
 
 
 def _cmd_autoload(args) -> int:

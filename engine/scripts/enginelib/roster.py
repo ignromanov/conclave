@@ -62,10 +62,13 @@ def roster_get_list(key: str, default: list[str] | None = None) -> list[str]:
 def roster_get_mapping(key: str) -> dict[str, str]:
     """Return the roster mapping at dotted `key` with keys and values stringified.
 
-    Absent, null or non-mapping → {}. Values are left as strings so the caller validates
-    them and can name a bad one; coercing here would drop a typo silently (GH#292).
+    Absent or null → {}. Present but not a mapping (a scalar, a list) raises ValueError naming
+    the key: that is a typo, and reading it as "nothing declared" would hide it. Values are left
+    as strings so the caller validates them and can name a bad one (GH#292).
     """
     node = _resolve(key)
-    if not isinstance(node, dict):
+    if node is None or node is _MISSING:
         return {}
+    if not isinstance(node, dict):
+        raise ValueError(f"{key} is a {type(node).__name__}, not a mapping of path: bytes")
     return {str(k): str(v) for k, v in node.items()}
