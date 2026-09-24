@@ -52,6 +52,7 @@ CONSUMED_BY_PROTOCOL = frozenset({
     "overlay",
     "feedback",
     "degraded",
+    "memory",
 })
 
 

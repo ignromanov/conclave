@@ -705,6 +705,47 @@ def _step_cadence_guard() -> CadenceGuard:
     return CadenceGuard(lines, critical_open)
 
 
+def _step_memory_size() -> list[str]:
+    """GH#191: report an auto-loaded memory file that has passed its declared ceiling.
+
+    The ceiling lives in roster.yaml (`knowledge.autoload_ceilings`, bytes, paths relative to
+    the project root) because the file it guards is auto-loaded: a trigger written inside the
+    file, with the command that measures it, is read every session and run by nothing. That is
+    the shape the feedback cadence had before `_step_cadence_guard` existed.
+
+    Best-effort by contract. Every failure is a `memory: warning` line; nothing here may block
+    or crash a session start. No ceiling declared => no line, since no claim was made.
+    """
+    try:
+        from enginelib import paths, roster
+        from enginelib.knowledge import autoload
+
+        raw = roster.roster_get_mapping("knowledge.autoload_ceilings")
+        if not raw:
+            return []
+        ceilings, errors = autoload.parse_ceilings(raw)
+        root = paths.project_root()
+        breaches = autoload.check_ceilings(autoload.autoload_set(root), root, ceilings)
+    except Exception as exc:  # noqa: BLE001 — a size check must never cost a session start
+        return [f"  memory: warning — size check could not run ({exc})"]
+
+    def num(n: int) -> str:
+        return f"{n:,}".replace(",", " ")
+
+    lines = [f"  memory: warning — {e}" for e in errors]
+    for b in breaches:
+        if b.kind == "not-loaded":
+            lines.append(f"  memory: warning — a ceiling is set for {b.rel}, but no session "
+                         f"loads it (renamed or un-imported?)")
+        else:
+            assert b.size is not None
+            pct = round((b.size - b.ceiling) * 100 / b.ceiling)
+            lines.append(f"  memory: {b.rel} is {num(b.size)} B, {pct}% over its "
+                         f"{num(b.ceiling)} B ceiling — rotate it "
+                         f"(worklist: engine knowledge rotation-worklist {b.rel})")
+    return lines
+
+
 # ---------------------------------------------------------------------------
 # Per-advisor summary builder (shared by main and render_dashboard)
 # ---------------------------------------------------------------------------
@@ -761,6 +802,9 @@ def _advisor_summary(advisor: str, root: Path) -> tuple[int, list[str]]:
     # Cadence guard
     cadence = _step_cadence_guard()
     lines.extend(cadence.lines)
+
+    # Auto-loaded memory past its declared ceiling (GH#191)
+    lines.extend(_step_memory_size())
 
     # Resolved findings (G2)
     resolved = _load_resolved_findings(advisor, root)

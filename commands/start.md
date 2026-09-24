@@ -69,6 +69,11 @@ session start.
    reflexion extract (last-3 sessions), overlay scan, and feedback cadence check.
    If a line starting with `  feedback:` appears in the output, triage is due — include it in
    the session-start summary and suggest running `/conclave:triage` this session.
+   If a line starting with `  memory:` appears, an auto-loaded project file has passed the
+   ceiling the instance declared for it (`knowledge.autoload_ceilings` in `roster.yaml`).
+   Include it in the session-start summary. The rotation itself is judgement work under the
+   project's own rules. `engine knowledge rotation-worklist <file>` lists the blocks that are
+   closed. It moves nothing.
    A `WARNING: CONCLAVE_ENGINE_ROOT points at …` line on stderr means the environment named a
    different checkout than the one the script lives in; it runs its own copy's helpers and
    tells you so (GH#187). Treat it as a signal that the hook and the tree have drifted apart.
