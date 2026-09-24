@@ -6,7 +6,10 @@ Exit codes: 1 validation error, 2 collision, 0 success (JSON to stdout).
 from __future__ import annotations
 
 import json
+import re
 import sys
+
+_ID_RE = re.compile(r"^[a-z0-9-]+$")
 
 
 def _create(args) -> int:
@@ -71,6 +74,45 @@ def _rename(args) -> int:
     return 0
 
 
+def _label(args) -> int:
+    """Ensure `advisor:<id>` exists on every repo in scope (#153). Idempotent.
+
+    Scope is the resolver `audit advisor-labels` measures with, so hire creates the label on
+    exactly the boards the audit checks. Exit 0 all present, 1 a repo failed or bad id,
+    2 no repo scope (refused, never widened — #50).
+    """
+    from enginelib import gh
+    from enginelib.advisors import advisor_label
+    from enginelib.lifecycle.gh_fetch import resolve_repos
+    from enginelib.roster import roster_get
+
+    args._runlog_verb = "advisor-label"
+    args._runlog_args = f"id={args.id or ''}"
+    if not _ID_RE.match(args.id or ""):
+        print(f"invalid advisor id {args.id!r} (^[a-z0-9-]+$)", file=sys.stderr)
+        return 1
+    repos = [args.repo] if args.repo else resolve_repos(roster_get("github.owner"))
+    if not repos:
+        print("no repo scope — declare github.main_repo in roster.yaml or pass --repo",
+              file=sys.stderr)
+        return 2
+
+    label = advisor_label(args.id)
+    failed = 0
+    for repo in repos:
+        try:
+            if label in gh.list_labels(repo):
+                print(f"exists\t{repo}\t{label}")
+                continue
+            gh.create_label(repo, label)
+            print(f"created\t{repo}\t{label}")
+        except (RuntimeError, OSError) as exc:
+            # A gh that never answered must not read as "label in place".
+            print(f"FAILED\t{repo}\t{str(exc).strip() or exc!r}")
+            failed += 1
+    return 1 if failed else 0
+
+
 def register(sub) -> None:
     p = sub.add_parser("advisor", help="Advisor management commands.")
     vsub = p.add_subparsers(dest="advisor_verb", required=True)
@@ -97,6 +139,12 @@ def register(sub) -> None:
         help="Overwrite even an enriched wrapper (default: skip to preserve enrichment).",
     )
     r.set_defaults(func=_scaffold_router)
+
+    lb = vsub.add_parser(
+        "label", help="Ensure the advisor:<id> GH label exists on every repo in scope (hire).")
+    lb.add_argument("--id", default="", help="Advisor slug (^[a-z0-9-]+$).")
+    lb.add_argument("--repo", default="", help="One owner/repo; default: the roster's repo scope.")
+    lb.set_defaults(func=_label)
 
     rn = vsub.add_parser(
         "rename",

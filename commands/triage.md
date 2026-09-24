@@ -95,7 +95,7 @@ For each cluster in the digest, choose one of:
 
 | Decision | Meaning |
 |----------|---------|
-| `accepted` | Actionable, worth a fix. Assign an owner by `layer`. |
+| `accepted` | Actionable, worth a fix. Assign an owner by the contract's §Routing. |
 | `rejected` | Not actionable or already covered elsewhere. |
 | `deferred` | Valid but not this sprint. Re-surfaces in the next triage. |
 | `acknowledged` | Valid, and there is nothing to fix. The only honest verdict for `positive` and `near-miss`, and the only one available to them: `accepted` means "worth a fix" and Step 2.5 will demand a predicate for a condition that was never open, `resolved` claims a repair that never happened, `rejected` calls a valid finding invalid. Terminal — it archives, and the archive step is what carries the finding into `hot.md`. |
@@ -104,17 +104,10 @@ A `positive` or a `near-miss` is classified in one step: read it, then `acknowle
 There is no owner to assign and no issue to open, and the digest ranks both below every
 defect whatever their severity, so they cost the reviewer a read and nothing else (#250).
 
-**Owner routing by `layer`** (informational — override as needed):
-
-| `layer` | Default owner |
-|---------|---------------|
-| `infra` | forge |
-| `skill` | forge |
-| `contract` | forge |
-| `memory` | forge |
-| `workflow` | quorum |
-| *(any, `category: idea`)* | both forge + quorum |
-| *(any, `category: positive` / `near-miss`)* | no owner — `acknowledged`, not assigned |
+**Owner routing** follows `feedback-protocol.md` §Routing (imported above): the owner is whoever
+decides the shape of the fix, read from each advisor's declared scope — never from `layer`,
+which only says where the defect surfaced. A `positive` or `near-miss` has no owner:
+`acknowledged`, not assigned.
 
 ### Step 2.5 — Attach the closing condition BEFORE you accept (#165)
 
@@ -235,7 +228,7 @@ For each classified item:
 uv run --project engine/scripts/feedback \
   python engine/scripts/feedback/feedback_triage.py \
   --set <feedback_id> <item_id> <accepted|rejected|deferred> \
-  [--owner <forge|quorum|advisor-slug>]
+  [--owner <advisor-id>]
 ```
 
 **Acceptance is gated (#165).** `--set ... accepted` refuses an item that carries neither
@@ -370,7 +363,7 @@ labels — passing one fails with `could not add label: <layer> not found`):
 | `feedback` | always |
 | `agent-infra` | always — the canonical agent-system label |
 | `<priority>` | `p1` if `severity` ∈ {high, critical}, else `p2` |
-| `advisor:<owner>` | owner from the Step-2 layer→owner table (e.g. `advisor:forge`) |
+| `advisor:<owner>` | the owner Step 2 assigned under the contract's §Routing |
 
 **Bind the issue back to the item** — this is not optional bookkeeping:
 

@@ -124,8 +124,9 @@ evidence: "file excerpt: .claude/skills/exec.atlas-dev/SKILL.md:L88 — emit.sh 
 
 ### Routing hint (informational — triage sets the final owner)
 
-`layer` → fix owner at triage time: `skill` / `contract` / `memory` / `infra` → Forge;
-`workflow` → the facilitator role; `category: idea` → both.
+Triage assigns the owner by `feedback-protocol.md` §Routing: whoever decides the shape of the
+fix, read from each advisor's declared scope. `layer` records where the defect surfaced; it
+does not pick the owner.
 
 ## Step 5 — Finalize (validates, then flips `_draft: false`)
 
