@@ -26,6 +26,7 @@ attempts. A retried cell must not inflate its own denominator.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys as _sys
 
 from engine.cmd import eval as evalcmd
@@ -77,6 +78,23 @@ def _stub(tmp_path, monkeypatch, template, **fmt):
     return stub
 
 
+def _record_eval_sleeps(monkeypatch) -> list[float]:
+    """Record the waits `eval run` itself makes, and nothing else in the process."""
+    slept: list[float] = []
+    monkeypatch.setattr(evalcmd, "_sleep", lambda s: slept.append(s))
+    return slept
+
+
+def test_the_sleep_recorder_does_not_see_the_standard_library_sleeping(monkeypatch):
+    """GH#355. `Popen.wait(timeout=...)` on a child still running polls with `time.sleep`. Whether
+    the stub has exited by the time the harness waits on it is load, so a recorder that sees those
+    polls fails `slept == []` about one module run in three, on whichever test drew the slow child."""
+    slept = _record_eval_sleeps(monkeypatch)
+    child = subprocess.Popen([_sys.executable, "-c", "import time; time.sleep(0.2)"])
+    child.wait(timeout=10)
+    assert slept == [], f"the recorder saw a wait eval never made: {slept[:3]}"
+
+
 def _rows(data_root, run_id="run-test"):
     path = data_root / "eval" / "runs" / run_id / "trials.jsonl"
     return [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
@@ -124,8 +142,7 @@ def test_run_waits_and_retries_the_same_cell_after_a_session_limit(
     data_root = _preregistered_data_root(tmp_path, eval_store)
     monkeypatch.setenv("CONCLAVE_AI_ROOT", str(data_root))
 
-    slept: list[float] = []
-    monkeypatch.setattr(evalcmd.time, "sleep", lambda s: slept.append(s))
+    slept = _record_eval_sleeps(monkeypatch)
     # Two rate-limited attempts, both on the FIRST cell — under a consecutive-failures rule those
     # two cells would have been spent before the rule fired, and a spent cell is unrecoverable.
     _stub(tmp_path, monkeypatch, FLAKY_STUB, fail_first=2)
@@ -174,8 +191,7 @@ def test_run_reattempts_an_ordinary_harness_failure_without_sleeping(
     data_root = _preregistered_data_root(tmp_path, eval_store)
     monkeypatch.setenv("CONCLAVE_AI_ROOT", str(data_root))
 
-    slept: list[float] = []
-    monkeypatch.setattr(evalcmd.time, "sleep", lambda s: slept.append(s))
+    slept = _record_eval_sleeps(monkeypatch)
     _stub(tmp_path, monkeypatch, FLAKY_CONNECTION_STUB, fail_first=2)
 
     rc = _run(_args())
@@ -196,8 +212,7 @@ def test_run_abandons_a_cell_that_keeps_failing_and_moves_on(
     data_root = _preregistered_data_root(tmp_path, eval_store)
     monkeypatch.setenv("CONCLAVE_AI_ROOT", str(data_root))
 
-    slept: list[float] = []
-    monkeypatch.setattr(evalcmd.time, "sleep", lambda s: slept.append(s))
+    slept = _record_eval_sleeps(monkeypatch)
     _stub(tmp_path, monkeypatch, FLAKY_CONNECTION_STUB, fail_first=999)
 
     rc = _run(_args())
@@ -218,8 +233,7 @@ def test_run_gives_up_once_the_wait_budget_is_exhausted(
     data_root = _preregistered_data_root(tmp_path, eval_store)
     monkeypatch.setenv("CONCLAVE_AI_ROOT", str(data_root))
 
-    slept: list[float] = []
-    monkeypatch.setattr(evalcmd.time, "sleep", lambda s: slept.append(s))
+    slept = _record_eval_sleeps(monkeypatch)
     monkeypatch.setattr(evalcmd, "MAX_RATE_LIMIT_WAITS", 2)
     _stub(tmp_path, monkeypatch, ALWAYS_LIMITED_STUB)
 
