@@ -57,3 +57,15 @@ def roster_get_list(key: str, default: list[str] | None = None) -> list[str]:
     if isinstance(node, list):
         return [str(item) for item in node]
     return [str(node)]
+
+
+def roster_get_mapping(key: str) -> dict[str, str]:
+    """Return the roster mapping at dotted `key` with keys and values stringified.
+
+    Absent, null or non-mapping → {}. Values are left as strings so the caller validates
+    them and can name a bad one; coercing here would drop a typo silently (GH#292).
+    """
+    node = _resolve(key)
+    if not isinstance(node, dict):
+        return {}
+    return {str(k): str(v) for k, v in node.items()}

@@ -10,6 +10,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 #: Claude Code memory docs: imports nest at most five hops deep.
 MAX_IMPORT_DEPTH = 5
@@ -69,4 +70,47 @@ def autoload_set(project_root: Path) -> list[Loaded]:
         for rule in sorted(rules.rglob("*.md")):
             if not has_paths_frontmatter(rule.read_text(encoding="utf-8", errors="replace")):
                 visit(rule, "rule", 0)
+    return out
+
+
+@dataclass(frozen=True)
+class Breach:
+    rel: str
+    size: int | None  # None when the file is not in the loaded set at all
+    ceiling: int
+    kind: Literal["over", "not-loaded"]
+
+
+def parse_ceilings(raw: dict[str, str]) -> tuple[dict[str, int], list[str]]:
+    """Split declared ceilings into valid byte counts and one error per bad key (GH#292)."""
+    ok: dict[str, int] = {}
+    errors: list[str] = []
+    for rel, value in sorted(raw.items()):
+        try:
+            n = int(value)
+        except ValueError:
+            n = 0
+        if n <= 0:
+            errors.append(f"ceiling for {rel} is {value!r}, not a positive byte count — ignored")
+        else:
+            ok[rel] = n
+    return ok, errors
+
+
+def check_ceilings(
+    loaded: list[Loaded], project_root: Path, ceilings: dict[str, int]
+) -> list[Breach]:
+    """Breaches of `ceilings`; a ceiling naming a file no session loads is one too."""
+    by_real = {f.path: f for f in loaded}
+    out: list[Breach] = []
+    for rel, ceiling in sorted(ceilings.items()):
+        try:
+            real: Path | None = (project_root / rel).resolve()
+        except OSError:
+            real = None
+        hit = by_real.get(real) if real is not None else None
+        if hit is None:
+            out.append(Breach(rel, None, ceiling, "not-loaded"))
+        elif hit.size > ceiling:
+            out.append(Breach(rel, hit.size, ceiling, "over"))
     return out

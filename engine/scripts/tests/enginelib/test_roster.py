@@ -63,3 +63,14 @@ def test_roster_get_list_returns_yaml_list(tmp_path, monkeypatch):
 def test_roster_get_list_missing_key_returns_empty(roster_file):
     """Absent key → [] (no error), the domain-agnostic engine default."""
     assert roster_get_list("github.sticky_labels") == []
+
+
+def test_roster_get_mapping_returns_stringified_pairs(tmp_path, monkeypatch):
+    (tmp_path / "roster.yaml").write_text(
+        "knowledge:\n  autoload_ceilings:\n    .claude/progress.md: 40000\n", encoding="utf-8")
+    monkeypatch.setenv("ROSTER_FILE", str(tmp_path / "roster.yaml"))
+    from enginelib import roster
+    assert roster.roster_get_mapping("knowledge.autoload_ceilings") == {
+        ".claude/progress.md": "40000"}
+    assert roster.roster_get_mapping("knowledge.absent") == {}
+    assert roster.roster_get_mapping("knowledge") != {}  # a mapping node is returned whole

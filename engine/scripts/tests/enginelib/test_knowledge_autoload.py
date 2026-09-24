@@ -69,3 +69,27 @@ def test_import_depth_stops_after_five_hops(tmp_path):
 
 def test_empty_project_loads_nothing(tmp_path):
     assert autoload.autoload_set(tmp_path) == []
+
+
+def test_over_ceiling_is_reported_with_its_size(tmp_path):
+    _w(tmp_path / ".claude" / "CLAUDE.md", "@progress.md\n")
+    _w(tmp_path / ".claude" / "progress.md", "z" * 50)
+    loaded = autoload.autoload_set(tmp_path)
+    breaches = autoload.check_ceilings(loaded, tmp_path, {".claude/progress.md": 40})
+    assert breaches == [autoload.Breach(".claude/progress.md", 50, 40, "over")]
+    assert autoload.check_ceilings(loaded, tmp_path, {".claude/progress.md": 50}) == []
+
+
+def test_ceiling_for_an_unloaded_file_is_reported(tmp_path):
+    _w(tmp_path / ".claude" / "CLAUDE.md", "nothing imported\n")
+    _w(tmp_path / ".claude" / "progress.md", "z")  # exists, but no longer imported
+    breaches = autoload.check_ceilings(
+        autoload.autoload_set(tmp_path), tmp_path, {".claude/progress.md": 40})
+    assert breaches == [autoload.Breach(".claude/progress.md", None, 40, "not-loaded")]
+
+
+def test_malformed_ceiling_is_named_not_dropped():
+    ok, errors = autoload.parse_ceilings(
+        {"a.md": "40000", "b.md": "40k", "c.md": "-1", "d.md": "0"})
+    assert ok == {"a.md": 40000}
+    assert len(errors) == 3 and all(k in " ".join(errors) for k in ("b.md", "c.md", "d.md"))
