@@ -39,7 +39,8 @@ class Row:
 def blocks(text: str) -> list[Block]:
     """Split on `##`/`###` headings; text before the first one is the `(preamble)` block."""
     out: list[Block] = []
-    heading, start, buf = "(preamble)", 1, []
+    heading, start = "(preamble)", 1
+    buf: list[str] = []
 
     def flush() -> None:
         body = "".join(buf)
