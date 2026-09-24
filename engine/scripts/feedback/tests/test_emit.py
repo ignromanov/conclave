@@ -261,6 +261,29 @@ def test_finalize_invalid_frequency_rejected_keeps_draft(tmp_path):
     assert meta2["_draft"] is True
 
 
+def test_finalize_revalidates_an_already_finalized_review(tmp_path):
+    """#84: a review amended after finalize is re-checked, not waved through.
+
+    `_draft: false` is a stamp anyone can write, so `--finalize` must not treat it as proof
+    of validity. An amended item with an invented enum must still exit non-zero; only a
+    passing validation may report "already finalized".
+    """
+    meta = _valid_review_meta()
+    meta["_draft"] = False
+    meta["items"][0]["category"] = "not-a-category"
+    f = tmp_path / "rev.md"
+    _fm_write(f, meta, "## Review items\n")
+    result = run_finalize(f)
+    assert result.returncode != 0
+    assert "already finalized" not in result.stdout
+
+    meta["items"][0]["category"] = "process-friction"
+    _fm_write(f, meta, "## Review items\n")
+    result = run_finalize(f)
+    assert result.returncode == 0, result.stderr
+    assert "already finalized" in result.stdout
+
+
 # --- 093 P1 T5: re-occurred reopen on finalize (fingerprint match) ---
 
 import json as _json
