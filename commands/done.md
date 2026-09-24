@@ -79,7 +79,9 @@ Complete `/conclave:feedback` before continuing. The gate is the
      [--meeting <ref>] [--session <pre-computed-session-id>]
    ```
 
-3. For each mention, call:
+3. For each peer you need to reach, go live first (`session-lifecycle.md` §Peer sessions):
+   `SendMessage` to an online peer plus its one `hot.md` line, and no mention. Only when the
+   peer is offline, the send failed, or the tools are not in this session, file a mention:
    ```bash
    python -m engine mention create \
      --from <advisor> --to <recipient> \
